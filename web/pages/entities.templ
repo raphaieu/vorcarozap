@@ -1,0 +1,247 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ Entities(vm EntityListVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Consulta pública e documental de pessoas e organizações vinculadas ao caso Daniel Vorcaro e Banco Master. Filtros por grau, categoria e relevância com fontes rastreáveis."/>
+			<title>Pessoas e Organizações — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.Header()
+			<main class="container">
+				<!-- Aviso Editorial Obrigatório -->
+				<section class="editorial-notice" aria-label="Aviso Legal e Editorial">
+					<strong>Aviso Editorial e de Independência</strong>
+					<p>
+						Projeto independente de pesquisa e documentação jornalística. A presença de uma pessoa ou organização nesta base documental decorre de citação em documentos ou reportagens públicas e <strong>não implica culpa, envolvimento ilícito ou julgamento moral</strong>. Consulte nossa <a href="/metodologia" class="notice-link">Metodologia e Critérios Editoriais</a>.
+					</p>
+				</section>
+
+				<!-- Cabeçalho da Página -->
+				<header class="page-intro">
+					<h1 class="page-title">Pessoas e Organizações</h1>
+					<p class="page-subtitle">
+						Consulte nomes, cargos, relações documentadas e fontes de sustentação com classificação editorial de A a E.
+					</p>
+				</header>
+
+				<!-- Formulário de Busca e Filtros (100% Funcional sem JavaScript) -->
+				<section class="card filter-card" aria-label="Busca e Filtros">
+					<form method="GET" action="/pessoas" class="filter-form">
+						<div class="search-row">
+							<div class="form-group flex-grow">
+								<label for="search-input" class="form-label">Buscar</label>
+								<input
+									type="search"
+									id="search-input"
+									name="q"
+									class="form-control"
+									placeholder="Nome, cargo, organização, relação ou fonte..."
+									value={ vm.Filter.Search }
+								/>
+							</div>
+							<div class="form-actions-inline">
+								<button type="submit" class="btn btn-primary" id="btn-search">Buscar</button>
+								if vm.Filter.Search != "" || vm.Filter.Category != "" || vm.Filter.Grade != "" || vm.Filter.Relevance > 0 || vm.Filter.OrderBy != "name" {
+									<a href="/pessoas" class="btn btn-subtle" title="Limpar todos os filtros">Limpar</a>
+								}
+							</div>
+						</div>
+
+						<div class="filters-grid">
+							<!-- Categoria / Área -->
+							<div class="form-group">
+								<label for="filter-category" class="form-label">Área / Categoria</label>
+								<select id="filter-category" name="category" class="form-control">
+									<option value="">Todas as categorias</option>
+									for _, cat := range vm.Filter.Categories {
+										if cat == vm.Filter.Category {
+											<option value={ cat } selected>{ cat }</option>
+										} else {
+											<option value={ cat }>{ cat }</option>
+										}
+									}
+								</select>
+							</div>
+
+							<!-- Grau A–E -->
+							<div class="form-group">
+								<label for="filter-grade" class="form-label">Grau de Confirmação</label>
+								<select id="filter-grade" name="grade" class="form-control">
+									<option value="">Todos os graus (A–E)</option>
+									<option value="A" selected?={ vm.Filter.Grade == "A" }>Grau A (Documento direto)</option>
+									<option value="B" selected?={ vm.Filter.Grade == "B" }>Grau B (Reportagem fundamentada)</option>
+									<option value="C" selected?={ vm.Filter.Grade == "C" }>Grau C (Associação documentada)</option>
+									<option value="D" selected?={ vm.Filter.Grade == "D" }>Grau D (Atribuição não confirmada)</option>
+									<option value="E" selected?={ vm.Filter.Grade == "E" }>Grau E (Pista ou menção)</option>
+								</select>
+							</div>
+
+							<!-- Relevância (1–5) -->
+							<div class="form-group">
+								<label for="filter-relevance" class="form-label">Relevância Pública</label>
+								<select id="filter-relevance" name="relevance" class="form-control">
+									<option value="">Todas as relevâncias</option>
+									<option value="5" selected?={ vm.Filter.Relevance == 5 }>5 — Estratégica ou internacional</option>
+									<option value="4" selected?={ vm.Filter.Relevance == 4 }>4 — Alta relevância nacional</option>
+									<option value="3" selected?={ vm.Filter.Relevance == 3 }>3 — Nacional moderada</option>
+									<option value="2" selected?={ vm.Filter.Relevance == 2 }>2 — Setorial ou regional</option>
+									<option value="1" selected?={ vm.Filter.Relevance == 1 }>1 — Local ou circunstancial</option>
+								</select>
+							</div>
+
+							<!-- Ordenação -->
+							<div class="form-group">
+								<label for="filter-sort" class="form-label">Ordenar por</label>
+								<select id="filter-sort" name="sort" class="form-control">
+									<option value="name" selected?={ vm.Filter.OrderBy == "name" }>Nome alfabético</option>
+									<option value="relevance" selected?={ vm.Filter.OrderBy == "relevance" }>Relevância</option>
+									<option value="updated" selected?={ vm.Filter.OrderBy == "updated" }>Última atualização</option>
+								</select>
+							</div>
+
+							<!-- Direção -->
+							<div class="form-group">
+								<label for="filter-dir" class="form-label">Ordem</label>
+								<select id="filter-dir" name="dir" class="form-control">
+									<option value="asc" selected?={ vm.Filter.OrderDir == "asc" }>Crescente</option>
+									<option value="desc" selected?={ vm.Filter.OrderDir == "desc" }>Decrescente</option>
+								</select>
+							</div>
+						</div>
+
+						<div class="form-submit-row">
+							<button type="submit" class="btn btn-secondary">Aplicar Filtros</button>
+						</div>
+					</form>
+				</section>
+
+				<!-- Barra de Contadores e Resultados -->
+				<section class="results-header" aria-label="Resumo dos Resultados">
+					<span class="results-count">
+						if vm.Filter.TotalCount == 1 {
+							<strong>1</strong> pessoa ou organização encontrada
+						} else {
+							<strong>{ fmt.Sprintf("%d", vm.Filter.TotalCount) }</strong> pessoas ou organizações encontradas
+						}
+					</span>
+					if vm.Filter.TotalPages > 1 {
+						<span class="page-indicator">Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }</span>
+					}
+				</section>
+
+				<!-- Lista de Cards das Entidades -->
+				if len(vm.Entities) > 0 {
+					<section class="entities-grid" aria-label="Lista de Pessoas">
+						for _, ent := range vm.Entities {
+							<article class="card entity-card">
+								<div class="entity-card-header">
+									<h2 class="entity-name">
+										<a href={ templ.SafeURL(fmt.Sprintf("/pessoas/%s", ent.Slug)) } class="entity-link">
+											{ ent.Name }
+										</a>
+									</h2>
+									<div class="badge-cluster">
+										if ent.HighestGrade != "" {
+											<span class={ "grade-badge", fmt.Sprintf("grade-%s", ent.HighestGrade) } title={ ent.HighestGradeHuman }>
+												{ fmt.Sprintf("Grau %s", ent.HighestGrade) }
+											</span>
+										}
+										if ent.Category != "" {
+											<span class="category-badge">{ ent.Category }</span>
+										}
+									</div>
+								</div>
+
+								if ent.RoleOrContext != "" {
+									<p class="entity-role">
+										<strong>Cargo/Papel:</strong> { ent.RoleOrContext }
+									</p>
+								}
+
+								if ent.ShortSynthesis != "" {
+									<p class="entity-synthesis">
+										{ ent.ShortSynthesis }
+									</p>
+								}
+
+								<div class="entity-meta">
+									<span class="meta-item" title={ ent.RelevanceRationale }>
+										<strong>Relevância:</strong> { ent.RelevanceHuman }
+									</span>
+									if ent.Reach != "" {
+										<span class="meta-item">
+											<strong>Alcance:</strong> { ent.Reach }
+										</span>
+									}
+									<span class="meta-item">
+										<strong>Alegações públicas:</strong> { fmt.Sprintf("%d", ent.PublicClaimsCount) }
+									</span>
+									if ent.LastUpdatedHuman != "" {
+										<span class="meta-item meta-date">
+											<strong>Atualizado em:</strong> { ent.LastUpdatedHuman }
+										</span>
+									}
+								</div>
+
+								<div class="card-footer">
+									<a href={ templ.SafeURL(fmt.Sprintf("/pessoas/%s", ent.Slug)) } class="btn-card-action">
+										Consultar relações e fontes &rarr;
+									</a>
+								</div>
+							</article>
+						}
+					</section>
+
+					<!-- Paginação -->
+					if vm.Filter.TotalPages > 1 {
+						<nav class="pagination-nav" aria-label="Paginação dos resultados">
+							if vm.Filter.Page > 1 {
+								<a href={ templ.SafeURL("/pessoas" + vm.Filter.BuildQueryString(vm.Filter.Page - 1)) } class="btn btn-pagination" rel="prev">
+									&larr; Anterior
+								</a>
+							} else {
+								<span class="btn btn-pagination disabled" aria-disabled="true">&larr; Anterior</span>
+							}
+
+							<span class="pagination-status">
+								Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }
+							</span>
+
+							if vm.Filter.Page < vm.Filter.TotalPages {
+								<a href={ templ.SafeURL("/pessoas" + vm.Filter.BuildQueryString(vm.Filter.Page + 1)) } class="btn btn-pagination" rel="next">
+									Próxima &rarr;
+								</a>
+							} else {
+								<span class="btn btn-pagination disabled" aria-disabled="true">Próxima &rarr;</span>
+							}
+						</nav>
+					}
+				} else {
+					<!-- Estado Vazio -->
+					<section class="card empty-state" aria-label="Nenhum resultado">
+						<h3>Nenhum resultado encontrado</h3>
+						<p>
+							Não foram encontradas pessoas ou organizações públicas para os filtros ou busca informados.
+						</p>
+						<a href="/pessoas" class="btn btn-primary" style="display: inline-block; margin-top: 1rem;">
+							Ver todas as pessoas
+						</a>
+					</section>
+				}
+			</main>
+			<footer class="site-footer">
+				<p>VorcaroZAP &bull; Base investigativa e documental independente &bull; <a href="/metodologia" style="color: inherit; text-decoration: underline;">Metodologia e Fontes</a></p>
+			</footer>
+		</body>
+	</html>
+}

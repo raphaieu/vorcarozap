@@ -1,0 +1,256 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ EntityDetail(vm EntityDetailVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content={ fmt.Sprintf("Registro documental de %s no caso Daniel Vorcaro e Banco Master. Relações, alegações classificadas de A a E e fontes auditáveis.", vm.Name) }/>
+			<title>{ vm.Name } — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.Header()
+			<main class="container">
+				<!-- Navegação e Voltar -->
+				<nav class="breadcrumb-nav" aria-label="Navegação estrutural">
+					<a href="/pessoas" class="back-link">&larr; Voltar para Pessoas e Organizações</a>
+				</nav>
+
+				<!-- Aviso Editorial Obrigatório -->
+				<section class="editorial-notice" aria-label="Aviso Legal e Editorial">
+					<strong>Aviso Editorial e de Independência</strong>
+					<p>
+						Projeto documental e investigativo independente. Os dados abaixo compilam publicações e registros jornalísticos e documentais públicos. <strong>A menção a qualquer pessoa ou empresa não presume culpa, conluio ou ilícito</strong>. Conheça nossos critérios em <a href="/metodologia" class="notice-link">Metodologia</a>.
+					</p>
+				</section>
+
+				<!-- Cabeçalho do Perfil da Entidade -->
+				<header class="entity-profile-header card">
+					<div class="entity-profile-title-row">
+						<h1 class="entity-profile-name">{ vm.Name }</h1>
+						<div class="badge-cluster">
+							if vm.Category != "" {
+								<span class="category-badge">{ vm.Category }</span>
+							}
+							<span class="relevance-badge" title="Relevância pública">{ vm.RelevanceHuman }</span>
+						</div>
+					</div>
+
+					<div class="entity-profile-facts">
+						if vm.RoleOrContext != "" {
+							<div class="fact-item">
+								<span class="fact-label">Cargo ou Papel</span>
+								<span class="fact-value">{ vm.RoleOrContext }</span>
+							</div>
+						}
+						if vm.Reach != "" {
+							<div class="fact-item">
+								<span class="fact-label">Alcance da Atuação</span>
+								<span class="fact-value">{ vm.Reach }</span>
+							</div>
+						}
+						if vm.RelevanceRationale != "" {
+							<div class="fact-item fact-full">
+								<span class="fact-label">Por que importa (Justificativa da Relevância)</span>
+								<span class="fact-value">{ vm.RelevanceRationale }</span>
+							</div>
+						}
+						if vm.UpdatedAtHuman != "" {
+							<div class="fact-item">
+								<span class="fact-label">Última Atualização</span>
+								<span class="fact-value">{ vm.UpdatedAtHuman }</span>
+							</div>
+						}
+					</div>
+				</header>
+
+				<!-- Seção de Relações e Alegações Públicas -->
+				<section class="claims-section" aria-label="Relações e Alegações Documentadas">
+					<h2 class="section-heading">Relações e Alegações Documentadas</h2>
+
+					if len(vm.Claims) > 0 {
+						for _, cl := range vm.Claims {
+							<article class="card claim-card">
+								<!-- Cabeçalho do Claim: Relação e Classificação -->
+								<div class="claim-header">
+									<div class="claim-relation">
+										<span class="relation-label">Vínculo Documentado:</span>
+										<strong class="relation-type">{ cl.RelationshipType }</strong>
+										if cl.CaseName != "" {
+											<span class="relation-target">no contexto de <em>{ cl.CaseName }</em></span>
+										} else if cl.TargetName != "" {
+											<span class="relation-target">com <em>{ cl.TargetName }</em></span>
+										}
+									</div>
+									<div class="badge-cluster">
+										<span class={ "grade-badge", fmt.Sprintf("grade-%s", cl.Grade) } title={ cl.GradeHuman }>
+											{ cl.GradeHuman }
+										</span>
+										<span class="disposition-badge" title="Papel editorial da alegação">
+											{ cl.DispositionHuman }
+										</span>
+									</div>
+								</div>
+
+								<!-- Proposição Central -->
+								<div class="claim-body">
+									<h3 class="claim-proposition-title">O que está documentado</h3>
+									<p class="claim-proposition-text">{ cl.Proposition }</p>
+
+									if cl.ContextLimits != "" {
+										<div class="claim-limits-box">
+											<strong>Contraponto / Limites do Vínculo:</strong>
+											<p>{ cl.ContextLimits }</p>
+										</div>
+									}
+
+									if cl.ContextStatus != "" {
+										<div class="claim-status-desc">
+											<span class="status-desc-label">Situação:</span>
+											<span class="status-desc-value">{ cl.ContextStatus }</span>
+										</div>
+									}
+								</div>
+
+								<!-- Fontes que Sustentam -->
+								if len(cl.SupportsSources) > 0 {
+									<div class="sources-group supports-group">
+										<h4 class="sources-group-title">Fontes de Sustentação</h4>
+										<ul class="sources-list">
+											for _, src := range cl.SupportsSources {
+												<li class="source-item">
+													<div class="source-header-meta">
+														if src.IsTitleEnriched {
+															<strong class="source-title">{ src.Title }</strong>
+														} else {
+															<span class="source-title-pending">Título da publicação não enriquecido</span>
+														}
+
+														if src.IsAuthorEnriched {
+															<span class="source-publisher">&bull; { src.PublisherOrAuthor }</span>
+														} else {
+															<span class="source-publisher-pending">&bull; Veículo/autor não enriquecido</span>
+														}
+
+														if src.PublishedAtHuman != "" {
+															<span class="source-date">&bull; Publicado em { src.PublishedAtHuman }</span>
+														}
+													</div>
+
+													if src.Excerpt != "" {
+														<blockquote class="source-excerpt">
+															&ldquo;{ src.Excerpt }&rdquo;
+															if src.Locator != "" {
+																<cite class="source-locator">({ src.Locator })</cite>
+															}
+														</blockquote>
+													}
+
+													<div class="source-link-row">
+														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+															Acessar documento/fonte original &nearr;
+														</a>
+													</div>
+												</li>
+											}
+										</ul>
+									</div>
+								}
+
+								<!-- Seção de Defesa, Contestação ou Contraditório -->
+								if len(cl.ContradictsSources) > 0 {
+									<div class="sources-group defense-group" aria-label="Defesa, contestação ou contexto">
+										<h4 class="sources-group-title defense-title">Defesa, Contestação ou Contexto</h4>
+										<ul class="sources-list">
+											for _, src := range cl.ContradictsSources {
+												<li class="source-item defense-item">
+													<div class="source-header-meta">
+														if src.IsTitleEnriched {
+															<strong class="source-title">{ src.Title }</strong>
+														} else {
+															<span class="source-title-pending">Manifestação / nota de defesa</span>
+														}
+
+														if src.IsAuthorEnriched {
+															<span class="source-publisher">&bull; { src.PublisherOrAuthor }</span>
+														}
+
+														if src.PublishedAtHuman != "" {
+															<span class="source-date">&bull; Data: { src.PublishedAtHuman }</span>
+														}
+													</div>
+
+													if src.Excerpt != "" {
+														<blockquote class="source-excerpt">
+															&ldquo;{ src.Excerpt }&rdquo;
+														</blockquote>
+													}
+
+													<div class="source-link-row">
+														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+															Consultar manifestação na íntegra &nearr;
+														</a>
+													</div>
+												</li>
+											}
+										</ul>
+									</div>
+								}
+
+								<!-- Fontes de Contextualização -->
+								if len(cl.ContextSources) > 0 {
+									<div class="sources-group context-group">
+										<h4 class="sources-group-title">Fontes de Contextualização</h4>
+										<ul class="sources-list">
+											for _, src := range cl.ContextSources {
+												<li class="source-item">
+													<div class="source-header-meta">
+														if src.IsTitleEnriched {
+															<strong class="source-title">{ src.Title }</strong>
+														} else {
+															<span class="source-title-pending">Fonte de contexto</span>
+														}
+
+														if src.IsAuthorEnriched {
+															<span class="source-publisher">&bull; { src.PublisherOrAuthor }</span>
+														}
+													</div>
+
+													if src.Excerpt != "" {
+														<blockquote class="source-excerpt">
+															&ldquo;{ src.Excerpt }&rdquo;
+														</blockquote>
+													}
+
+													<div class="source-link-row">
+														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+															Consultar documento de contexto &nearr;
+														</a>
+													</div>
+												</li>
+											}
+										</ul>
+									</div>
+								}
+							</article>
+						}
+					} else {
+						<div class="card empty-state">
+							<p>Nenhuma alegação pública disponível para esta entidade no momento.</p>
+						</div>
+					}
+				</section>
+			</main>
+			<footer class="site-footer">
+				<p>VorcaroZAP &bull; Base investigativa e documental independente &bull; <a href="/metodologia" style="color: inherit; text-decoration: underline;">Metodologia e Escala A–E</a></p>
+			</footer>
+		</body>
+	</html>
+}

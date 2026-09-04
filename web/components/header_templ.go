@@ -29,7 +29,7 @@ func Header() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"site-header\"><div class=\"header-container\"><div class=\"site-title\"><span>VorcaroZAP</span> <span class=\"badge\">Fase 1 — Fundação</span></div><p class=\"site-tagline\">Plataforma documental e investigativa com fontes rastreáveis, classificação editorial e métricas públicas.</p></div></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"site-header\"><div class=\"header-container\"><div class=\"site-title-row\"><a href=\"/\" class=\"site-title\" aria-label=\"VorcaroZAP Página Inicial\"><span>VorcaroZAP</span> <span class=\"badge\">Documental</span></a><nav class=\"site-nav\" aria-label=\"Navegação Principal\"><a href=\"/\" class=\"nav-link\">Início</a> <a href=\"/pessoas\" class=\"nav-link\">Pessoas</a> <a href=\"/metodologia\" class=\"nav-link\">Metodologia</a></nav></div><p class=\"site-tagline\">Plataforma documental e investigativa com fontes rastreáveis, classificação editorial e métricas públicas.</p></div></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

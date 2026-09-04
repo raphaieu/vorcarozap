@@ -39,8 +39,10 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Get("/health/live", handlers.HandleHealthLive)
 	r.Get("/health/ready", handlers.HandleHealthReady)
 
-	// Página pública inicial
+	// Página pública inicial e navegação pública (VZ-006)
 	r.Get("/", handlers.HandleHome)
+	r.Get("/pessoas", handlers.HandleEntities)
+	r.Get("/pessoas/{slug}", handlers.HandleEntityDetail)
 
 	// Arquivos estáticos embutidos (/static/*)
 	staticSubFS, err := fs.Sub(static.FS, ".")
