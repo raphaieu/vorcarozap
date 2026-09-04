@@ -31,14 +31,16 @@ RUN addgroup -g 10001 -S appgroup && \
 # Criação do diretório de dados persistentes do SQLite
 RUN mkdir -p /data && chown -R appuser:appgroup /data
 
-# Cópia do binário compilado
+# Cópia do binário compilado e arquivos de configuração
 COPY --from=builder /bin/vorcarozap /usr/local/bin/vorcarozap
+COPY config/ /config/
 
 USER appuser
 
 ENV APP_PORT=8080 \
     APP_ENV=production \
-    DB_PATH=/data/vorcarozap.db
+    DB_PATH=/data/vorcarozap.db \
+    MAPPING_PATH=/config/import-mapping-v1.yaml
 
 EXPOSE 8080
 

@@ -1,7 +1,9 @@
 COMPOSE ?= docker compose
 DEV_RUN := $(COMPOSE) --profile dev run --rm dev
 
-.PHONY: all templ fmt tidy test test-race vet build shell run migrate compose-config compose-build compose-up compose-proxy clean
+IMPORT_FILE ?= _notes/mapa-vorcaro-contatos-2026-09-03.xlsx
+
+.PHONY: all templ fmt tidy test test-race vet build shell run migrate import-dry-run import compose-config compose-build compose-up compose-proxy clean
 
 all: templ fmt tidy test vet build
 
@@ -37,6 +39,12 @@ run:
 
 migrate:
 	$(COMPOSE) run --rm app migrate
+
+import-dry-run:
+	$(COMPOSE) run --rm -v $(CURDIR)/$(IMPORT_FILE):/imports/mapa.xlsx:ro app import --file /imports/mapa.xlsx --dry-run
+
+import:
+	$(COMPOSE) run --rm -v $(CURDIR)/$(IMPORT_FILE):/imports/mapa.xlsx:ro app import --file /imports/mapa.xlsx
 
 compose-config:
 	$(COMPOSE) config

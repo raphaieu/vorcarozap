@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/importer"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
@@ -35,6 +37,11 @@ func main() {
 			slog.Error("erro ao executar comando migrate", "error", err)
 			os.Exit(1)
 		}
+	case "import":
+		if err := runImport(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando import", "error", err)
+			os.Exit(1)
+		}
 	case "help", "-h", "--help":
 		printUsage(os.Stdout)
 		os.Exit(0)
@@ -54,12 +61,14 @@ Uso:
 Comandos disponíveis nesta fase:
   serve      Aplica migrations pendentes e inicia o servidor HTTP
   migrate    Aplica migrations pendentes no banco SQLite
+  import     Importa dados da planilha XLSX curated_seed (--file obrigatório, opcional --dry-run)
   help       Exibe esta mensagem de ajuda
 
 Configuração via variáveis de ambiente:
   APP_PORT          Porta HTTP do servidor (padrão: 8080)
   APP_ENV           Ambiente de execução (padrão: development)
   DB_PATH           Caminho do banco SQLite (padrão: ./data/vorcarozap.db)
+  MAPPING_PATH      Caminho do YAML de mapping (padrão: config/import-mapping-v1.yaml)
   APP_READ_TIMEOUT  Timeout de leitura HTTP (padrão: 5s)
   APP_WRITE_TIMEOUT Timeout de escrita HTTP (padrão: 10s)
   APP_IDLE_TIMEOUT  Timeout de conexões ociosas (padrão: 60s)
@@ -146,5 +155,77 @@ func runMigrate() error {
 	}
 
 	slog.Info("migrations concluídas com sucesso")
+	return nil
+}
+
+func runImport(args []string) error {
+	fs := flag.NewFlagSet("import", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando import:
+  vorcarozap import --file <caminho.xlsx> [--dry-run]
+
+Opções:
+  --file string   Caminho do arquivo XLSX da planilha curated_seed (obrigatório)
+  --dry-run       Analisa a planilha sem persistir alterações no banco de dados
+  -h, --help      Exibe esta ajuda
+`)
+	}
+
+	filePath := fs.String("file", "", "Caminho do arquivo XLSX a importar")
+	dryRun := fs.Bool("dry-run", false, "Executa simulação sem persistir dados")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	if *filePath == "" {
+		fs.Usage()
+		return fmt.Errorf("a flag --file é obrigatória")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("carregamento de configuração: %w", err)
+	}
+
+	ctx := context.Background()
+	db, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("inicialização do banco SQLite: %w", err)
+	}
+	defer db.Close()
+
+	// Garante que migrations estão aplicadas
+	if err := store.Migrate(ctx, db); err != nil {
+		return fmt.Errorf("aplicação de migrations: %w", err)
+	}
+
+	// Resolução do caminho do arquivo de mapping
+	mappingPath := os.Getenv("MAPPING_PATH")
+	if mappingPath == "" {
+		if _, err := os.Stat("config/import-mapping-v1.yaml"); err == nil {
+			mappingPath = "config/import-mapping-v1.yaml"
+		} else if _, err := os.Stat("/config/import-mapping-v1.yaml"); err == nil {
+			mappingPath = "/config/import-mapping-v1.yaml"
+		} else {
+			mappingPath = "config/import-mapping-v1.yaml"
+		}
+	}
+
+	imp := importer.NewImporter(db, mappingPath)
+
+	result, err := imp.ImportFromFile(ctx, importer.ImportOptions{
+		FilePath: *filePath,
+		DryRun:   *dryRun,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Print(result.SummaryReport())
 	return nil
 }
