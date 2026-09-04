@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+bin
+data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+coverage*
+tmp
+_notes

@@ -41,6 +41,11 @@ func TestMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao consultar entities após migrate: %v", err)
 	}
 
+	// Executa rollback da migration 00003
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00003: %v", err)
+	}
+
 	// Executa rollback da migration 00002
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00002: %v", err)
@@ -505,5 +510,186 @@ func TestTransactionRollback(t *testing.T) {
 	_, err = queries.GetEntityByID(ctx, "ent-tx-test")
 	if err == nil {
 		t.Fatal("entidade inserida em transação com falha não deveria existir no banco")
+	}
+}
+
+func TestMigration00003_Hardening(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	queries := sqlc.New(db)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// 1. Testa idempotência de import_runs: índice único parcial uq_import_runs_applied
+	hash := "sha256-test-hash-123"
+	version := "import-mapping-v1"
+
+	// Primeiro run aplicado (is_dry_run = 0, status = 'running')
+	run1, err := queries.CreateImportRun(ctx, sqlc.CreateImportRunParams{
+		ID:             "run-1",
+		FilePath:       "/imports/test.xlsx",
+		FileHash:       hash,
+		Origin:         "curated_seed",
+		MappingVersion: version,
+		Status:         "running",
+		IsDryRun:       0,
+		SummaryCounts:  "{}",
+		SummaryReport:  "",
+		CreatedAt:      now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar primeiro import run: %v", err)
+	}
+
+	// Segundo run aplicado com mesmo hash e versão DEVE falhar pelo índice único parcial
+	_, err = queries.CreateImportRun(ctx, sqlc.CreateImportRunParams{
+		ID:             "run-2-dup",
+		FilePath:       "/imports/test.xlsx",
+		FileHash:       hash,
+		Origin:         "curated_seed",
+		MappingVersion: version,
+		Status:         "running",
+		IsDryRun:       0,
+		SummaryCounts:  "{}",
+		SummaryReport:  "",
+		CreatedAt:      now,
+	})
+	if err == nil {
+		t.Fatal("esperava erro de constraint de unicidade ao inserir import_run duplicado em andamento, obteve sucesso")
+	}
+
+	// Inserção com is_dry_run = 1 DEVE ser permitida (não é barrada pelo índice parcial)
+	_, err = queries.CreateImportRun(ctx, sqlc.CreateImportRunParams{
+		ID:             "run-dry",
+		FilePath:       "/imports/test.xlsx",
+		FileHash:       hash,
+		Origin:         "curated_seed",
+		MappingVersion: version,
+		Status:         "dry_run",
+		IsDryRun:       1,
+		SummaryCounts:  "{}",
+		SummaryReport:  "",
+		CreatedAt:      now,
+	})
+	if err != nil {
+		t.Fatalf("dry-run não deveria ser barrado pelo índice único: %v", err)
+	}
+
+	// Inserção com status = 'failed' também não deve ser barrada pelo índice parcial
+	_, err = queries.CreateImportRun(ctx, sqlc.CreateImportRunParams{
+		ID:             "run-failed",
+		FilePath:       "/imports/test.xlsx",
+		FileHash:       "other-hash",
+		Origin:         "curated_seed",
+		MappingVersion: version,
+		Status:         "failed",
+		IsDryRun:       0,
+		SummaryCounts:  "{}",
+		SummaryReport:  "",
+		CreatedAt:      now,
+	})
+	if err != nil {
+		t.Fatalf("failed run não deveria ser barrado: %v", err)
+	}
+
+	// Consulta de run aplicado determinística
+	appliedRun, err := queries.GetAppliedImportRun(ctx, sqlc.GetAppliedImportRunParams{
+		FileHash:       hash,
+		MappingVersion: version,
+	})
+	if err != nil {
+		t.Fatalf("falha ao buscar run aplicado: %v", err)
+	}
+	if appliedRun.ID != run1.ID {
+		t.Fatalf("esperava run %s, obteve %s", run1.ID, appliedRun.ID)
+	}
+
+	// Atualização do run
+	updatedRun, err := queries.UpdateImportRun(ctx, sqlc.UpdateImportRunParams{
+		ID:            run1.ID,
+		Status:        "completed",
+		SummaryCounts: `{"total": 10}`,
+		SummaryReport: "ok",
+		CompletedAt:   sql.NullString{String: now, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("falha ao atualizar import run: %v", err)
+	}
+	if updatedRun.Status != "completed" {
+		t.Fatalf("esperava status completed, obteve %s", updatedRun.Status)
+	}
+
+	// 2. Testa criação de source com título e autor vazios (curated_seed sem inventar metadados)
+	src, err := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-seed-1",
+		Title:              "",
+		PublisherOrAuthor:  "",
+		OriginalUrl:        "https://example.com/article?id=1",
+		CanonicalUrl:       "https://example.com/article?id=1",
+		SourceType:         "article",
+		SourceAccessStatus: "not_checked",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar source com título/autor vazios: %v", err)
+	}
+	if src.Title != "" || src.PublisherOrAuthor != "" {
+		t.Errorf("título e autor deveriam estar vazios, obteve %q e %q", src.Title, src.PublisherOrAuthor)
+	}
+
+	// Unicidade de canonical_url em sources
+	_, err = queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-seed-dup",
+		Title:              "",
+		PublisherOrAuthor:  "",
+		OriginalUrl:        "https://example.com/article?id=1",
+		CanonicalUrl:       "https://example.com/article?id=1",
+		SourceType:         "article",
+		SourceAccessStatus: "not_checked",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err == nil {
+		t.Fatal("esperava erro de unicidade para canonical_url duplicada em sources")
+	}
+
+	// 3. Testa evidence_sources com excerpt vazio (síntese editorial não é trecho literal)
+	c, _ := queries.CreateCase(ctx, sqlc.CreateCaseParams{
+		ID: "case-seed-test", Name: "Caso Teste", Slug: "caso-teste", Description: "Desc", CreatedAt: now, UpdatedAt: now,
+	})
+	ent, _ := queries.CreateEntity(ctx, sqlc.CreateEntityParams{
+		ID: "ent-seed-test", Type: "person", Name: "Nome", NormalizedName: "nome", Slug: "nome",
+		RoleOrContext: "Cargo", Summary: "Resumo", Relevance: 3, RelevanceRationale: "Justificativa",
+		CreatedAt: now, UpdatedAt: now,
+	})
+	rel, _ := queries.CreateRelationship(ctx, sqlc.CreateRelationshipParams{
+		ID: "rel-seed-test", SubjectEntityID: ent.ID, CaseID: sql.NullString{String: c.ID, Valid: true},
+		RelationshipType: "vínculo", Summary: "Resumo", ContextLimits: "Limites",
+		CreatedAt: now, UpdatedAt: now,
+	})
+	cl, _ := queries.CreateClaim(ctx, sqlc.CreateClaimParams{
+		ID: "cl-seed-test", RelationshipID: rel.ID, Proposition: "Proposição", Origin: "curated_seed",
+		Grade: "A", Disposition: "supports_link", MetricEligible: 1, Status: "published",
+		CreatedAt: now, UpdatedAt: now,
+	})
+	ev, _ := queries.CreateEvidence(ctx, sqlc.CreateEvidenceParams{
+		ID: "ev-seed-test", ClaimID: cl.ID, Summary: "Resumo da evidência", EvidenceType: "document",
+		CreatedAt: now, UpdatedAt: now,
+	})
+	es, err := queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{
+		ID:         "es-seed-test",
+		EvidenceID: ev.ID,
+		SourceID:   src.ID,
+		Excerpt:    "", // vazio: sem citação literal forçada
+		Locator:    "",
+		Role:       "supports",
+		Status:     "active",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar evidence_source com excerpt vazio: %v", err)
+	}
+	if es.Excerpt != "" {
+		t.Errorf("esperava excerpt vazio, obteve %q", es.Excerpt)
 	}
 }

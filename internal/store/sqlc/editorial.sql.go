@@ -451,6 +451,38 @@ func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Sou
 	return i, err
 }
 
+const getAppliedImportRun = `-- name: GetAppliedImportRun :one
+SELECT id, file_path, file_hash, origin, mapping_version, status, is_dry_run, summary_counts, summary_report, error_message, created_at, completed_at FROM import_runs
+WHERE file_hash = ? AND mapping_version = ? AND is_dry_run = 0 AND status IN ('running', 'completed', 'partial')
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetAppliedImportRunParams struct {
+	FileHash       string `json:"file_hash"`
+	MappingVersion string `json:"mapping_version"`
+}
+
+func (q *Queries) GetAppliedImportRun(ctx context.Context, arg GetAppliedImportRunParams) (ImportRun, error) {
+	row := q.db.QueryRowContext(ctx, getAppliedImportRun, arg.FileHash, arg.MappingVersion)
+	var i ImportRun
+	err := row.Scan(
+		&i.ID,
+		&i.FilePath,
+		&i.FileHash,
+		&i.Origin,
+		&i.MappingVersion,
+		&i.Status,
+		&i.IsDryRun,
+		&i.SummaryCounts,
+		&i.SummaryReport,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const getCaseBySlug = `-- name: GetCaseBySlug :one
 SELECT id, name, slug, description, created_at, updated_at FROM cases
 WHERE slug = ? LIMIT 1
@@ -565,6 +597,7 @@ func (q *Queries) GetEvidenceByID(ctx context.Context, id string) (Evidence, err
 const getImportRunByHashAndVersion = `-- name: GetImportRunByHashAndVersion :one
 SELECT id, file_path, file_hash, origin, mapping_version, status, is_dry_run, summary_counts, summary_report, error_message, created_at, completed_at FROM import_runs
 WHERE file_hash = ? AND mapping_version = ?
+ORDER BY created_at DESC
 LIMIT 1
 `
 
@@ -670,7 +703,7 @@ func (q *Queries) GetSourceByID(ctx context.Context, id string) (Source, error) 
 }
 
 const listActiveSupportsByClaimID = `-- name: ListActiveSupportsByClaimID :many
-SELECT 
+SELECT
     c.id AS claim_id,
     c.proposition,
     c.grade,
@@ -792,4 +825,47 @@ func (q *Queries) ListAliasesByEntityID(ctx context.Context, entityID string) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateImportRun = `-- name: UpdateImportRun :one
+UPDATE import_runs
+SET status = ?, summary_counts = ?, summary_report = ?, error_message = ?, completed_at = ?
+WHERE id = ?
+RETURNING id, file_path, file_hash, origin, mapping_version, status, is_dry_run, summary_counts, summary_report, error_message, created_at, completed_at
+`
+
+type UpdateImportRunParams struct {
+	Status        string         `json:"status"`
+	SummaryCounts string         `json:"summary_counts"`
+	SummaryReport string         `json:"summary_report"`
+	ErrorMessage  sql.NullString `json:"error_message"`
+	CompletedAt   sql.NullString `json:"completed_at"`
+	ID            string         `json:"id"`
+}
+
+func (q *Queries) UpdateImportRun(ctx context.Context, arg UpdateImportRunParams) (ImportRun, error) {
+	row := q.db.QueryRowContext(ctx, updateImportRun,
+		arg.Status,
+		arg.SummaryCounts,
+		arg.SummaryReport,
+		arg.ErrorMessage,
+		arg.CompletedAt,
+		arg.ID,
+	)
+	var i ImportRun
+	err := row.Scan(
+		&i.ID,
+		&i.FilePath,
+		&i.FileHash,
+		&i.Origin,
+		&i.MappingVersion,
+		&i.Status,
+		&i.IsDryRun,
+		&i.SummaryCounts,
+		&i.SummaryReport,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
 }

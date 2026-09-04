@@ -62,7 +62,20 @@ RETURNING *;
 -- name: GetImportRunByHashAndVersion :one
 SELECT * FROM import_runs
 WHERE file_hash = ? AND mapping_version = ?
+ORDER BY created_at DESC
 LIMIT 1;
+
+-- name: GetAppliedImportRun :one
+SELECT * FROM import_runs
+WHERE file_hash = ? AND mapping_version = ? AND is_dry_run = 0 AND status IN ('running', 'completed', 'partial')
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: UpdateImportRun :one
+UPDATE import_runs
+SET status = ?, summary_counts = ?, summary_report = ?, error_message = ?, completed_at = ?
+WHERE id = ?
+RETURNING *;
 
 -- name: CreateSource :one
 INSERT INTO sources (
@@ -113,7 +126,7 @@ INSERT INTO evidence_sources (
 RETURNING *;
 
 -- name: ListActiveSupportsByClaimID :many
-SELECT 
+SELECT
     c.id AS claim_id,
     c.proposition,
     c.grade,
