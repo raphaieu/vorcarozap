@@ -57,6 +57,19 @@ Claims possuem estado `quarantined`, `published`, `rejected` ou `archived`. `evi
 - `import_runs.mapping_version` é obrigatório em importações aplicadas e referencia configuração versionada;
 - decisões automáticas registram aprovação/reprovação de cada gate e a regra da matriz A–E aplicada.
 
+## Representação temporal (VZ-004)
+
+- Todos os campos de timestamp utilizam strings formatadas em UTC no padrão ISO-8601 (`YYYY-MM-DDTHH:MM:SS.fZ`), compatível com RFC-3339Nano e com as funções de data do SQLite.
+- Valores default em inserção são gerados no SQLite via `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`.
+- Atualizações de `updated_at` são tratadas explicitamente nas queries/código da aplicação, sem recorrer a triggers desnecessárias.
+
+## Decisão de modelagem: claims e relacionamentos (VZ-004)
+
+- Todo `claim` referencia obrigatoriamente um `relationship_id` (`RELATIONSHIPS ||--o{ CLAIMS : frames`).
+- A entidade `relationships` implementa a restrição XOR (`target_entity_id preenchido XOR case_id preenchido`) e bloqueio de autorrelação (`target_entity_id != subject_entity_id`), ancorando a alegação ao sujeito e ao seu contexto (outra entidade ou um caso de investigação).
+- Isso elimina duplicidade e ambiguidade entre um eventual `case_id` direto no claim e o alvo definido na relação, preservando a hierarquia relacional e simplificando consultas de rede.
+- Todas as chaves estrangeiras contêm cláusulas `ON DELETE` explícitas (`RESTRICT` por padrão para histórico e integridade referencial, `CASCADE` para aliases e `SET NULL` para import_runs).
+
 ## Métricas
 
 Views/queries de rede agregam `claims.status = published AND claims.metric_eligible = true`. Contexto/correção público permanece na consulta e XLSX, mas não conta como contato/vínculo. `public_metric_snapshots` fica opcional para histórico P1; o MVP calcula o estado corrente.
