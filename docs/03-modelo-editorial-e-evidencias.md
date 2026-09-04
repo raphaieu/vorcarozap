@@ -1,50 +1,70 @@
 # Modelo editorial e evidências
 
-## Unidades e dimensões
+## Princípio
 
-Uma **entidade** existe independentemente do caso. Uma **relação** conecta entidade a entidade ou ao caso. Uma **alegação** é uma proposição textual, limitada, atribuível e verificável. Uma **evidência** explica como uma ou mais fontes sustentam ou contestam uma alegação. Uma fonte não comprova nada sozinha: exige trecho/localizador, contexto e papel (`supports`, `contradicts`, `contextualizes`).
+O VorcaroZAP organiza associações já publicadas. Uma pessoa estar na base não significa culpa, participação em irregularidade ou proximidade pessoal com Daniel Vorcaro.
 
-Três dimensões nunca se fundem:
+Uma **entidade** é uma pessoa ou organização. Uma **relação** descreve o contexto em que aparece. Uma **alegação** registra uma proposição atribuível. Uma **fonte** permite ao leitor conferir de onde veio a informação.
 
-1. **Grau A–E:** força do suporte público à alegação.
-2. **Confiança técnica 0–100:** confiança do pipeline na extração/identidade/deduplicação; não é verdade, culpa nem probabilidade jurídica.
-3. **Relevância 1–5:** alcance público, institucional, econômico ou político da entidade; não mede vínculo ou evidência.
+## Dimensões independentes
 
-## Escala de evidências
+1. **Evidência A–E:** força do suporte público à alegação.
+2. **Relevância 1–5:** alcance público, institucional, econômico ou político da pessoa.
+3. **Confiança técnica:** futuramente, confiança do pipeline em extração/deduplicação; nunca mede culpa ou verdade.
 
-| Grau | Definição operacional | Requisito mínimo | Exibição obrigatória |
-|---|---|---|---|
-| A | Evidência primária ou confirmação oficial | documento/registro institucional, decisão ou manifestação direta verificável e contextualizada | natureza, data, emissor e limites |
-| B | Evidência jornalística forte | investigação fundamentada ou confirmações independentes confiáveis | veículos, independência e eventuais divergências |
-| C | Associação documentada, mas incompleta | contato/relação demonstrado; significado ou consequência não confirmado | dizer expressamente o que não está demonstrado |
-| D | Alegação atribuída | terceiro identificado ou matéria baseada em fonte não identificada, sem confirmação independente suficiente | atribuição proeminente e contraditório |
-| E | Pista não confirmada | menção indireta, coincidência ou sinal que requer apuração | rótulo de pista e proibição de conclusão |
+O grau pertence à alegação. Relevância pertence à entidade. Confiança técnica pertence à execução automática/candidato.
 
-O grau pertence à alegação/relação contextual, não à pessoa. Promoção ou rebaixamento exige revisão, justificativa e nova versão. Quantidade de fontes não converte automaticamente D em B; independência, qualidade e proximidade ao fato importam.
+## Escala A–E
+
+| Grau | Significado | Como exibir |
+|---|---|---|
+| A | documento, decisão, registro institucional ou manifestação direta verificável | explicar natureza, data e limites |
+| B | reportagem fundamentada ou confirmações jornalísticas independentes | identificar veículos e contexto |
+| C | associação/contato documentado, com significado ou consequência incompletos | dizer claramente o que não está demonstrado |
+| D | alegação atribuída sem confirmação independente suficiente | destacar quem alegou e apresentar fonte |
+| E | pista, menção indireta ou coincidência que exige apuração | rotular como pista e não produzir conclusão |
+
+Quantidade de links não fortalece automaticamente o grau; vários veículos podem reproduzir a mesma origem.
+
+## Regra de publicação do MVP
+
+O MVP não terá workflow multiusuário. A revisão acontece manualmente antes da importação.
+
+- A–C podem ser publicados com síntese fiel, fonte e limites.
+- D pode ser publicado como alegação atribuída, nunca como fato confirmado.
+- E pode ser publicado somente quando a própria menção/associação estiver documentada por fonte pública e o texto não inferir crime, benefício ou intenção.
+- Item sem fonte pública identificável não entra na página.
+- Alegações graves que ultrapassem o que a fonte demonstra permanecem fora do texto público.
+
+Essa regra permite mostrar “onde há fumaça” sem vender fumaça como incêndio confirmado.
 
 ## Relevância
 
-1 local/circunstancial; 2 setorial/regional; 3 nacional moderada; 4 alta nacional; 5 nacional estratégica/internacional. Registrar justificativa factual e data. Não usar relevância para ordenar por padrão nem somá-la ao grau.
+- 1: local ou circunstancial;
+- 2: setorial ou regional;
+- 3: relevância nacional moderada;
+- 4: alta relevância nacional;
+- 5: relevância nacional estratégica ou internacional.
 
-## Linguagem e publicação
+Relevância não altera o grau e não representa intensidade da relação.
 
-Preferir “foi citado por”, “aparece em”, “segundo [fonte]”, “a investigação sustenta”, “a defesa afirmou”, “não foi localizada confirmação independente” e “permanece classificada como pista”. Termos como culpado, criminoso ou integrante de esquema só cabem em citação/contexto de decisão juridicamente adequado, com situação processual e revisão editorial/jurídica.
+## Linguagem
 
-Todo cartão/detalhe deve declarar: alegação precisa; autor da alegação quando aplicável; grau por texto/ícone/cor; fontes e excerto/localizador; limites; contraditório; estado e revisão. Contato social/profissional, presença em agenda/evento ou ausência de resposta nunca é descrito como prova de irregularidade.
+Preferir: “foi citado por”, “aparece em”, “segundo a fonte”, “a reportagem afirma”, “a defesa declarou”, “não foi localizada confirmação independente” e “permanece como pista”.
 
-## Fluxo e checklist
+Contato social/profissional, presença em agenda/evento ou ausência de resposta nunca é apresentado como prova de irregularidade.
 
-Antes de aprovar: resolver identidade sem inferência; limitar a proposição; verificar data/contexto; preferir primária; testar independência da segunda fonte; procurar contraditório; minimizar dados; avaliar interesse público/dano; conferir grau; revisar título e resumo; registrar responsável e motivo. Alegações graves ou grau D/E sobre pessoa identificável exigem revisão reforçada e podem permanecer apenas no painel.
+## Fonte mínima
 
-Correções criam nova versão e nota pública quando materiais. Contestação move o item a `disputed`, sem apagamento automático; conteúdo pode ficar oculto cautelarmente por decisão registrada. Pedidos usam canal publicado, SLA interno e preservação de evidências.
+Registrar, quando disponível: título, veículo/autor, URL, data de publicação, data de acesso, tipo e trecho/localizador. No MVP, não é obrigatório armazenar cópia integral ou snapshot. Preservação, hash, licença, dependência entre fontes e snapshots permanecem evolução futura.
 
-## Fonte e snapshot
+Mensagens e capturas exigem origem pública identificada e contexto. Telefones, documentos, endereços e dados pessoais sem interesse para a associação devem ser ocultados.
 
-Tipos controlados: documento oficial, decisão judicial, manifestação institucional, reportagem, entrevista, mensagem/captura, rede social, audiovisual, secundária e não verificada. Registrar URL canônica e arquivada, título, autoria/publicador, publicação/acesso, disponibilidade, hash e observação. Snapshots somente quando lícitos e necessários; guardar metadados e hash mesmo quando o conteúdo não puder ser redistribuído.
+## Correções
 
-Mensagens/capturas exigem procedência, cadeia de publicação, contexto, autenticidade conhecida/desconhecida e redação de telefone/endereço/documento. Marcar `public`, `leaked`, `court_record`, `user_submitted`; existência não autoriza republicação.
+O lançamento deve oferecer um canal de correção. Alterações iniciais podem ser registradas pelo histórico Git, data da importação e versão da planilha. Workflow imutável e histórico público detalhado entram com o painel editorial.
 
-## Planilha de referência
+## Planilha inicial
 
-Inspeção de 03/09/2026: quatro abas (`Resumo`, `Pessoas A-Z`, `Método e fontes`, `Leitura rápida`); 151 linhas na tabela principal, 13 colunas, todas com fonte principal, 44 com fonte adicional e nenhum nome exato duplicado. A escala legada é relacional (“direto confirmado”, “agenda apenas” etc.) e **não equivale** à nova escala epistemológica A–E. Importar valor bruto e mapear para campos estruturados somente após revisão linha a linha; nenhum registro será publicado pela importação.
+O arquivo de 03/09/2026 possui quatro abas (`Resumo`, `Pessoas A-Z`, `Método e fontes`, `Leitura rápida`), 151 linhas na tabela principal e fontes registradas. Ele está disponível no repositório público como artefato de pesquisa, mas suas linhas não são automaticamente aprovadas para exibição na aplicação. A escala legada deve ser preservada e não convertida silenciosamente para A–E.
 
