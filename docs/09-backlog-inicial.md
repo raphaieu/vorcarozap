@@ -9,7 +9,7 @@
 | VZ-005 | P0 | importador XLSX `curated_seed` com dry-run, mapeamento versionado enriquecido e idempotência | Concluído |
 | VZ-006 | P0 | listagem, busca, filtros e detalhe | Concluído |
 | VZ-007 | P0 | fontes, metodologia e linguagem A–E | Concluído |
-| VZ-008 | P0 | engine de métricas públicas por estado ativo |
+| VZ-008 | P0 | engine de métricas públicas por estado ativo | Concluído |
 | VZ-009 | P0 | exportação XLSX derivada do banco |
 | VZ-010 | P0 | ResearchProvider/OpenRouter e web search |
 | VZ-011 | P0 | schema estruturado, normalização e dedupe |
