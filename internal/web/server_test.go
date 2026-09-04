@@ -35,12 +35,13 @@ func setupTestServer(t *testing.T) *http.Server {
 	}
 
 	cfg := &config.Config{
-		Port:         8080,
-		Env:          "test",
-		DBPath:       dbPath,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Port:             8080,
+		Env:              "test",
+		DBPath:           dbPath,
+		PublicDataCutoff: "2026-09-03",
+		ReadTimeout:      5 * time.Second,
+		WriteTimeout:     10 * time.Second,
+		IdleTimeout:      60 * time.Second,
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -104,8 +105,14 @@ func TestHomeEndpoint(t *testing.T) {
 	if !strings.Contains(body, "Aviso Editorial e de Independência") {
 		t.Errorf("página não contém aviso editorial obrigatório")
 	}
-	if !strings.Contains(body, "Fase 1") {
-		t.Errorf("página não contém menção à Fase 1")
+	if !strings.Contains(body, "Métricas da Rede Documental") {
+		t.Errorf("página não contém título de métricas da rede documental")
+	}
+	if !strings.Contains(body, "Monitoramento automático ainda não ativado") {
+		t.Errorf("página não contém aviso neutro de monitoramento ainda não ativado")
+	}
+	if !strings.Contains(body, "03/09/2026") {
+		t.Errorf("página não contém data de corte formatada")
 	}
 
 	// Verifica headers de segurança
@@ -276,12 +283,13 @@ func setupTestServerWithData(t *testing.T) (*http.Server, *sql.DB) {
 	}
 
 	cfg := &config.Config{
-		Port:         8080,
-		Env:          "test",
-		DBPath:       dbPath,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Port:             8080,
+		Env:              "test",
+		DBPath:           dbPath,
+		PublicDataCutoff: "2026-09-03",
+		ReadTimeout:      5 * time.Second,
+		WriteTimeout:     10 * time.Second,
+		IdleTimeout:      60 * time.Second,
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -290,6 +298,66 @@ func setupTestServerWithData(t *testing.T) (*http.Server, *sql.DB) {
 	}
 
 	return srv, db
+}
+
+func TestHomeMetricsRendering(t *testing.T) {
+	srv, _ := setupTestServerWithData(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtido %d", w.Code)
+	}
+
+	body := w.Body.String()
+
+	// 1. Visão Geral e Rede Elegível
+	if !strings.Contains(body, "Pessoas na Rede") || !strings.Contains(body, "Vínculos Qualificados") {
+		t.Errorf("cards de rede qualificada não renderizados")
+	}
+	if !strings.Contains(body, "Total de Entidades") || !strings.Contains(body, "Total de Alegações") {
+		t.Errorf("cards de totais públicos não renderizados")
+	}
+
+	// 2. Distribuições estatísticas com links de filtro
+	if !strings.Contains(body, "Alegações por Grau Probatório (A–E)") {
+		t.Errorf("seção de graus não renderizada")
+	}
+	if !strings.Contains(body, `href="/pessoas?grade=A"`) {
+		t.Errorf("link para filtro de Grau A não encontrado: %s", body)
+	}
+	if !strings.Contains(body, `href="/pessoas?grade=B"`) {
+		t.Errorf("link para filtro de Grau B não encontrado: %s", body)
+	}
+
+	// Relevância
+	if !strings.Contains(body, "Entidades por Relevância Pública (1–5)") {
+		t.Errorf("seção de relevância não renderizada")
+	}
+	if !strings.Contains(body, `href="/pessoas?relevance=5"`) {
+		t.Errorf("link para relevância 5 não encontrado: %s", body)
+	}
+
+	// Categoria
+	if !strings.Contains(body, "Entidades por Categoria") {
+		t.Errorf("seção de categorias não renderizada")
+	}
+	if !strings.Contains(body, `href="/pessoas?category=Politica"`) {
+		t.Errorf("link para categoria Politica não encontrado: %s", body)
+	}
+
+	// 3. Alegações Recentes
+	if !strings.Contains(body, "Alegações Recentes na Rede") {
+		t.Errorf("seção de alegações recentes não renderizada")
+	}
+	if !strings.Contains(body, "Alice Santos &amp; Cia") && !strings.Contains(body, "Alice Santos") {
+		t.Errorf("recente da Alice não encontrada na home")
+	}
+	if !strings.Contains(body, "Bob Silveira") {
+		t.Errorf("recente do Bob não encontrada na home")
+	}
 }
 
 func TestPublicEntitiesList(t *testing.T) {

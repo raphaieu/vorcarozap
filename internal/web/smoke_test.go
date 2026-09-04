@@ -51,7 +51,7 @@ func TestSmokeWithRealSpreadsheet(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "smoke_disposable.db")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	db, err := store.Open(ctx, dbPath)
@@ -100,12 +100,13 @@ func TestSmokeWithRealSpreadsheet(t *testing.T) {
 
 	// 4. Inicializar servidor web HTTP
 	cfg := &config.Config{
-		Port:         8080,
-		Env:          "test",
-		DBPath:       dbPath,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Port:             8080,
+		Env:              "test",
+		DBPath:           dbPath,
+		PublicDataCutoff: "2026-09-03",
+		ReadTimeout:      5 * time.Second,
+		WriteTimeout:     10 * time.Second,
+		IdleTimeout:      60 * time.Second,
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -139,13 +140,25 @@ func TestSmokeWithRealSpreadsheet(t *testing.T) {
 
 	// --- 5. Bateria de testes de fumaça em endpoints públicos ---
 
-	// 5.1 / (Página Inicial)
+	// 5.1 / (Página Inicial com Métricas Reais da Planilha)
 	homeBody := doGet("/", http.StatusOK)
 	if !strings.Contains(homeBody, "VorcaroZAP") {
 		t.Errorf("Home não contém 'VorcaroZAP'")
 	}
 	if !strings.Contains(homeBody, "Aviso Editorial e de Independência") {
 		t.Errorf("Home não contém aviso editorial obrigatório")
+	}
+	if !strings.Contains(homeBody, "Métricas da Rede Documental") {
+		t.Errorf("Home não contém título de métricas da rede documental")
+	}
+	if !strings.Contains(homeBody, "Monitoramento automático ainda não ativado") {
+		t.Errorf("Home não contém aviso de monitoramento ainda não ativado")
+	}
+	if !strings.Contains(homeBody, "Pessoas na Rede") || !strings.Contains(homeBody, "Vínculos Qualificados") {
+		t.Errorf("Home não contém cards de métricas ativas")
+	}
+	if !strings.Contains(homeBody, "Alegações por Grau Probatório (A–E)") {
+		t.Errorf("Home não contém distribuição de graus")
 	}
 	if !strings.Contains(homeBody, `href="/pessoas"`) {
 		t.Errorf("Home não contém link para /pessoas")
