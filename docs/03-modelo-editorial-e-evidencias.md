@@ -50,7 +50,7 @@ Executado em Go, sem julgamento semântico:
 - limites de tamanho, deduplicação e custo dentro do orçamento;
 - validação local do schema e das citações retornadas.
 
-A acessibilidade da fonte usa `cited_by_provider`, `reachable`, `unreachable` ou `not_checked`. `unreachable` sempre leva a quarentena; `not_checked` não é rejeição e segue política configurável, conservadora por padrão.
+A acessibilidade da fonte usa `cited_by_provider`, `reachable`, `unreachable` ou `not_checked`. Conforme [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md), `unreachable` sempre leva a quarentena; `not_checked` não equivale a rejeição e sua política diferencia a origem: `openrouter` + `not_checked` vai para quarentena, enquanto `curated_seed` + `not_checked` preserva o `initial_state` do mapeamento versionado.
 
 ## Gate semântico
 
@@ -69,7 +69,7 @@ Uma segunda avaliação da LLM retorna JSON estruturado sobre: correspondência 
 }
 ```
 
-A/B são publicáveis quando os dois gates passam. C também exige linguagem de associação e limites explícitos. D/E entram em quarentena por padrão. Qualquer grau entra em quarentena diante de homônimo, source `unreachable`, trecho insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante; `not_checked` segue configuração conservadora por padrão.
+A/B são publicáveis quando os dois gates passam. C também exige linguagem de associação e limites explícitos. D/E entram em quarentena por padrão. Qualquer grau entra em quarentena diante de homônimo, source `unreachable`, trecho insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante; `not_checked` segue a política diferenciada por origem definida no [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md).
 
 Falha em gate gera quarentena, não descarte.
 

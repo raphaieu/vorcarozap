@@ -23,7 +23,7 @@ Não haverá upload público nem fetch/crawler genérico arbitrário no MVP. A �
 
 Fontes datadas e atribuição reduzem risco, mas não transformam alegação em fato. C/D/E exigem linguagem explícita. O administrador pode remover rapidamente um item e registrar motivo. Conteúdo sem gates suficientes vai para quarentena.
 
-D/E nunca são publicados automaticamente. Qualquer grau também vai para quarentena quando envolver homônimo, source `unreachable`, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou fingerprint semelhante previamente rejeitado. `not_checked` não equivale a rejeição e segue política configurável, conservadora por padrão.
+D/E nunca são publicados automaticamente. Qualquer grau também vai para quarentena quando envolver homônimo, source `unreachable`, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou fingerprint semelhante previamente rejeitado. `not_checked` não equivale a rejeição e segue a política diferenciada por origem definida no [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state do mapeamento para curated_seed).
 
 ## Futuro
 

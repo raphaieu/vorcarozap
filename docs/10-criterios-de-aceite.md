@@ -32,7 +32,7 @@ São obrigatórios testes unitários table-driven para decisão `published`/`qua
 - Gate estrutural Go aprova schema, URL, metadados, trecho/localizador, datas, grau, vínculo, PII, tamanho, dedupe, fingerprint e orçamento.
 - Gate semântico estruturado aprova identidade, suporte, não extrapolação, atribuição, grau, ausência de inferência ilícita e ambiguidades vazias.
 - Política Go publica A/B aprovados e C aprovado com linguagem/limites explícitos; D/E ficam em quarentena.
-- Homônimo, source `unreachable`, acusação criminal não confirmada, divergência entre estágios ou rejeição semelhante sempre levam a quarentena; `not_checked` respeita a configuração conservadora vigente.
+- Homônimo, source `unreachable`, acusação criminal não confirmada, divergência entre estágios ou rejeição semelhante sempre levam a quarentena; `not_checked` respeita a política por origem do [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state do mapeamento para curated_seed).
 
 ## Métricas e disposição
 
@@ -46,7 +46,7 @@ São obrigatórios testes unitários table-driven para decisão `published`/`qua
 - Uma source usada por dois claims continua válida no segundo quando o primeiro uso é rejeitado.
 - Rejeitar o último `supports` ativo põe o claim em quarentena na mesma transação.
 - O verificador usa GET limitado, bloqueia destino privado em redirects, não persiste corpo e nunca depende apenas de HEAD.
-- `unreachable` leva a quarentena; timeout/429/5xx vira `not_checked`, sem rejeição, e segue a configuração vigente.
+- `unreachable` leva a quarentena; timeout/429/5xx vira `not_checked`, sem rejeição, e segue a política do [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md). As variáveis `SOURCE_NOT_CHECKED_POLICY_*` serão incorporadas ao carregamento de configuração em VZ-020.
 
 ## Não bloqueiam o MVP
 

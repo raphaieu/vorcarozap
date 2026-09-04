@@ -24,7 +24,7 @@
 - **RF-MON-04:** aplicar gate estrutural determinístico em Go e registrar cada regra aprovada/reprovada.
 - **RF-MON-05:** executar segunda avaliação semântica estruturada para identidade, suporte, extrapolação, atribuição, grau, inferência ilícita e ambiguidades.
 - **RF-MON-06:** aplicar em Go a política final: publicar A/B com ambos os gates aprovados; publicar C somente com linguagem de associação e limites explícitos; colocar D/E em quarentena por padrão.
-- **RF-MON-07:** colocar qualquer grau em quarentena quando houver homônimo, source `unreachable`, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante; `not_checked` segue configuração conservadora por padrão.
+- **RF-MON-07:** colocar qualquer grau em quarentena quando houver homônimo, source `unreachable`, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante; `not_checked` segue a política diferenciada por origem do [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md).
 - **RF-MON-08:** nunca promover texto além do que a fonte citada demonstra.
 
 ## Painel simples — P0
@@ -57,7 +57,7 @@
 - **RF-SRC-01:** registrar `cited_by_provider`, `reachable`, `unreachable` ou `not_checked` para cada source.
 - **RF-SRC-02:** iniciar citações do OpenRouter como `cited_by_provider` e tentar validação por GET seguro, limitado e sem persistir o corpo.
 - **RF-SRC-03:** tratar erro definitivo como `unreachable` e timeout/erro transitório ou inconclusivo como `not_checked`; não usar HEAD.
-- **RF-SRC-04:** colocar `unreachable` em quarentena e aplicar a `not_checked` uma política configurável, conservadora por padrão.
+- **RF-SRC-04:** colocar `unreachable` em quarentena e aplicar a `not_checked` a política por origem do [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state do mapeamento para curated_seed).
 
 ## Contraditório no MVP
 

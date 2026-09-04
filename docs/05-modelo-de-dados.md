@@ -71,7 +71,7 @@ No MVP, defesa/contestação reutiliza `evidence_sources.role = contradicts`. A 
 
 ## Acessibilidade da fonte
 
-`sources.source_access_status` aceita `cited_by_provider`, `reachable`, `unreachable` ou `not_checked`, acompanhado por `source_access_checked_at`, status HTTP final anulável e código de erro normalizado anulável. Citação do OpenRouter começa em `cited_by_provider`; source do `curated_seed` começa em `not_checked`. GET seguro pode promover ambas a `reachable`. Erro definitivo, como 404/410, vira `unreachable`; timeout, 429, 5xx ou bloqueio inconclusivo vira `not_checked`. `unreachable` põe o candidato/claim novo em quarentena; `not_checked` segue configuração conservadora por padrão.
+`sources.source_access_status` aceita `cited_by_provider`, `reachable`, `unreachable` ou `not_checked`, acompanhado por `source_access_checked_at`, status HTTP final anulável e código de erro normalizado anulável. Citação do OpenRouter começa em `cited_by_provider`; source do `curated_seed` começa em `not_checked`. GET seguro pode promover ambas a `reachable`. Erro definitivo, como 404/410, vira `unreachable`; timeout, 429, 5xx ou bloqueio inconclusivo vira `not_checked`. `unreachable` põe o candidato/claim novo em quarentena; `not_checked` segue a política diferenciada por origem definida no [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state para curated_seed).
 
 ## Futuro
 

@@ -1,0 +1,16 @@
+# Binários compilados
+bin/
+
+# Banco de dados local SQLite
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Arquivos de ambiente locais com segredos
+.env
+.env.local
+
+# IDEs e temporários
+.DS_Store
+Thumbs.db

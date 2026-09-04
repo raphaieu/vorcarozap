@@ -65,13 +65,13 @@ A avaliação verifica identidade, suporte, extrapolação, atribuição, grau, 
 - A/B: publica quando os dois gates passam.
 - C: publica quando os dois gates passam e há linguagem de associação e limites explícitos.
 - D/E: quarentena por padrão; podem ser aprovados no painel.
-- Qualquer grau: quarentena para homônimo, source `unreachable`, trecho sem suporte direto, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante. `not_checked` segue configuração conservadora por padrão.
+- Qualquer grau: quarentena para homônimo, source `unreachable`, trecho sem suporte direto, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante; `not_checked` segue a política diferenciada por origem definida no [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state do mapeamento para curated_seed).
 
 Descoberta e gate semântico podem usar modelos diferentes por configuração. Os resultados, modelo, schema e motivos da política ficam registrados.
 
 ## Acessibilidade da fonte
 
-A citação recebida começa como `cited_by_provider`; source do `curated_seed` começa como `not_checked`. Antes da decisão automática/inicial, o verificador tenta GET seguro e limitado: não usa HEAD, não persiste o corpo, para de ler no limite configurado, aplica timeout e segue somente redirects controlados, revalidando host/IP em cada salto. Resposta válida promove a `reachable`; 404/410 ou outro erro comprovadamente definitivo vira `unreachable`; timeout, 429, 5xx ou bloqueio inconclusivo vira `not_checked`. O verificador não extrai conteúdo e não é crawler.
+A citação recebida começa como `cited_by_provider`; source do `curated_seed` começa como `not_checked`. Antes da decisão automática/inicial, o verificador tenta GET seguro e limitado: não usa HEAD, não persiste o corpo, para de ler no limite configurado, aplica timeout e segue somente redirects controlados, revalidando host/IP em cada salto. Resposta válida promove a `reachable`; 404/410 ou outro erro comprovadamente definitivo vira `unreachable`; timeout, 429, 5xx ou bloqueio inconclusivo vira `not_checked`. `unreachable` sempre leva a quarentena; `not_checked` segue a política do [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md). O verificador não extrai conteúdo e não é crawler.
 
 ## Economia e resiliência
 

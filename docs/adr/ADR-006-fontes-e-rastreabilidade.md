@@ -15,7 +15,14 @@ No MVP, `evidence_source.role = contradicts` representa também defesa ou contes
 
 Moderação atua exclusivamente sobre claim ou `evidence_source`, com constraint XOR. A source representa o documento e não recebe rejeição editorial global. Rejeitar um evidence_source remove apenas aquele uso; se o claim ficar sem `supports` ativo, ele vai para quarentena na mesma transação.
 
-`sources.source_access_status` aceita `cited_by_provider`, `reachable`, `unreachable` e `not_checked`. Citação do OpenRouter começa em `cited_by_provider`. Um adaptador estreito faz GET seguro e limitado, sem persistir corpo e sem usar HEAD: sucesso promove para `reachable`; erro definitivo vira `unreachable`; falha temporária ou inconclusiva vira `not_checked`. `unreachable` impede publicação automática e `not_checked` segue política configurável, conservadora por padrão.
+`sources.source_access_status` aceita `cited_by_provider`, `reachable`, `unreachable` e `not_checked`. Citação do OpenRouter começa em `cited_by_provider`. Um adaptador estreito faz GET seguro e limitado, sem persistir corpo e sem usar HEAD: sucesso promove para `reachable`; erro definitivo vira `unreachable`; falha temporária ou inconclusiva vira `not_checked`.
+
+A política para o estado de acessibilidade diferencia o tratamento conforme a origem:
+- `openrouter` + `not_checked` → `quarantined` (conservador por padrão para novas descobertas automatizadas);
+- `curated_seed` + `not_checked` → preservar o `initial_state` definido no mapeamento versionado (`config/import-mapping-v1.yaml`), evitando que portais jornalísticos com `429`, timeout, bloqueios anti-bot ou limitações ao bot ocultem a base curada inicial cuja URL funciona em navegador;
+- qualquer origem + `unreachable` → `quarantined`.
+
+O contrato futuro de configuração em ambiente prevê `SOURCE_NOT_CHECKED_POLICY_OPENROUTER=quarantine` e `SOURCE_NOT_CHECKED_POLICY_CURATED_SEED=allow`, a serem consumidas quando o módulo `sourcecheck` for implementado.
 
 Dependência entre fontes, snapshots e cadeia de custódia ficam P1, mas o schema pode evoluir sem alterar a identidade dos registros atuais.
 
