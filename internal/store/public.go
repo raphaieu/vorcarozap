@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
@@ -37,13 +38,44 @@ var allowedOrderDirs = map[string]bool{
 	OrderDirDesc: true,
 }
 
+// EscapeLike escapa os caracteres curinga do operador LIKE do SQLite (%, _, \).
+func EscapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+// AllowedPeriodPresets define os identificadores permitidos de filtro temporal.
+var allowedPeriodPresets = map[string]bool{
+	"7d":  true,
+	"30d": true,
+	"90d": true,
+	"all": true,
+}
+
+// ResolvePeriod converte um preset temporal em timestamp UTC RFC3339 a partir do relógio fornecido.
+func ResolvePeriod(preset string, now time.Time) string {
+	switch strings.ToLower(strings.TrimSpace(preset)) {
+	case "7d":
+		return now.AddDate(0, 0, -7).Format(time.RFC3339)
+	case "30d":
+		return now.AddDate(0, 0, -30).Format(time.RFC3339)
+	case "90d":
+		return now.AddDate(0, 0, -90).Format(time.RFC3339)
+	default:
+		return ""
+	}
+}
+
 // PublicEntityFilter encapsula os parâmetros de consulta pública.
 type PublicEntityFilter struct {
 	Search      string
 	Category    string
 	Grade       string
 	Relevance   int
-	PeriodSince string
+	Period      string // preset: 7d, 30d, 90d, all
+	PeriodSince string // timestamp RFC3339 gerado em Go
 	OrderBy     string
 	OrderDir    string
 	Page        int
@@ -71,8 +103,13 @@ type PublicEntityDetail struct {
 	Claims []PublicClaimWithSources
 }
 
-// SanitizeFilter valida parâmetros e aplica defaults seguros e conservadores.
+// SanitizeFilter valida parâmetros e aplica defaults seguros e conservadores utilizando o horário atual.
 func SanitizeFilter(f PublicEntityFilter) PublicEntityFilter {
+	return SanitizeFilterWithClock(f, time.Now().UTC())
+}
+
+// SanitizeFilterWithClock valida parâmetros e resolve períodos temporais a partir de um relógio injetável.
+func SanitizeFilterWithClock(f PublicEntityFilter, now time.Time) PublicEntityFilter {
 	// 1. Busca textual
 	f.Search = strings.TrimSpace(f.Search)
 
@@ -88,8 +125,15 @@ func SanitizeFilter(f PublicEntityFilter) PublicEntityFilter {
 		f.Relevance = 0
 	}
 
-	// 4. Período
-	f.PeriodSince = strings.TrimSpace(f.PeriodSince)
+	// 4. Período: presets com allowlist estrita; não aceita timestamps arbitrários da URL
+	preset := strings.ToLower(strings.TrimSpace(f.Period))
+	if allowedPeriodPresets[preset] && preset != "all" {
+		f.Period = preset
+		f.PeriodSince = ResolvePeriod(preset, now)
+	} else {
+		f.Period = ""
+		f.PeriodSince = ""
+	}
 
 	// 5. Ordenação com allowlist estrita em Go
 	f.OrderBy = strings.ToLower(strings.TrimSpace(f.OrderBy))
@@ -126,7 +170,7 @@ func ListPublicEntities(ctx context.Context, db *sql.DB, rawFilter PublicEntityF
 
 	searchQuery := ""
 	if filter.Search != "" {
-		searchQuery = "%" + filter.Search + "%"
+		searchQuery = "%" + EscapeLike(filter.Search) + "%"
 	}
 
 	offset := int64((filter.Page - 1) * filter.PageSize)

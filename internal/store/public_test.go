@@ -507,3 +507,311 @@ func TestPublic_EntityDetail(t *testing.T) {
 		}
 	})
 }
+
+func TestPublic_LateralLeakagePrevention(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	createPublicTestFixtures(t, db, ctx)
+	queries := sqlc.New(db)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Entidade 1 (Daniel Vorcaro) possui um claim público legítimo.
+	// Adicionamos para a mesma entidade um relationship/claim em quarentena
+	// e outro claim publicado mas com evidence_source rejeitado, contendo termos exclusivos.
+	rHidden, err := queries.CreateRelationship(ctx, sqlc.CreateRelationshipParams{
+		ID:               "rel-hidden-1",
+		SubjectEntityID:  "ent-1",
+		CaseID:           sql.NullString{String: "case-root", Valid: true},
+		RelationshipType: "VínculoOcultoExclusivo",
+		Summary:          "ResumoOcultoExclusivo",
+		ContextLimits:    "",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar relação oculta: %v", err)
+	}
+
+	clQuarantine, err := queries.CreateClaim(ctx, sqlc.CreateClaimParams{
+		ID:                "cl-hidden-quarantine",
+		RelationshipID:    rHidden.ID,
+		Proposition:       "ProposicaoOcultaQuarentenadaExclusiva",
+		Attribution:       "",
+		Origin:            "curated_seed",
+		Grade:             "E",
+		Disposition:       "possible_link",
+		MetricEligible:    0,
+		Status:            "quarantined",
+		ContextStatus:     "",
+		QuarantineReasons: `["SUSPICIOUS"]`,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar claim em quarentena: %v", err)
+	}
+
+	evHidden, err := queries.CreateEvidence(ctx, sqlc.CreateEvidenceParams{
+		ID:           "ev-hidden-1",
+		ClaimID:      clQuarantine.ID,
+		Summary:      "Evidência Oculta",
+		EvidenceType: "document",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar evidência oculta: %v", err)
+	}
+
+	srcHidden, err := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-hidden-1",
+		Title:              "FonteSecretaOculta",
+		PublisherOrAuthor:  "VeiculoOcultoExclusivo",
+		OriginalUrl:        "https://noticias.example.com/oculto-exclusivo",
+		CanonicalUrl:       "https://noticias.example.com/oculto-exclusivo",
+		SourceType:         "article",
+		SourceAccessStatus: "reachable",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar fonte oculta: %v", err)
+	}
+
+	_, err = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{
+		ID:         "es-hidden-1",
+		EvidenceID: evHidden.ID,
+		SourceID:   srcHidden.ID,
+		Excerpt:    "Trecho oculto",
+		Locator:    "",
+		Role:       "supports",
+		Status:     "active",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao vincular fonte oculta: %v", err)
+	}
+
+	// Cenários de busca que NÃO devem vazar a entidade ent-1
+	testCases := []struct {
+		name  string
+		query string
+	}{
+		{"Busca por tipo de vínculo oculto", "VínculoOcultoExclusivo"},
+		{"Busca por resumo de vínculo oculto", "ResumoOcultoExclusivo"},
+		{"Busca por proposição em quarentena", "ProposicaoOcultaQuarentenadaExclusiva"},
+		{"Busca por autor/veículo de fonte ligada a claim oculto", "VeiculoOcultoExclusivo"},
+		{"Busca por URL de fonte ligada exclusivamente a claim oculto", "oculto-exclusivo"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{Search: tc.query})
+			if err != nil {
+				t.Fatalf("erro ao executar busca: %v", err)
+			}
+			if res.TotalCount != 0 {
+				t.Errorf("vazamento lateral detectado para query %q: obteve %d resultados (esperava 0)",
+					tc.query, res.TotalCount)
+			}
+		})
+	}
+
+	// Busca pelo termo legítimo continua encontrando Daniel Vorcaro
+	t.Run("Busca por termo legítimo continua funcionando", func(t *testing.T) {
+		res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{Search: "Banco Master"})
+		if err != nil || res.TotalCount != 1 || res.Entities[0].Slug != "daniel-vorcaro" {
+			t.Errorf("esperava encontrar daniel-vorcaro para 'Banco Master', obteve %+v, err=%v", res, err)
+		}
+	})
+}
+
+func TestPublic_SearchEscaping(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	createPublicTestFixtures(t, db, ctx)
+	queries := sqlc.New(db)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Inserir entidade com caracteres especiais literais: %, _, \
+	eSpecial, err := queries.CreateEntity(ctx, sqlc.CreateEntityParams{
+		ID:                 "ent-special",
+		Type:               "person",
+		Name:               "Pessoa 100%_Livre\\Teste",
+		NormalizedName:     "pessoa 100%_livre\\teste",
+		Slug:               "pessoa-100-livre-teste",
+		Category:           "Especial",
+		RoleOrContext:      "Auditor",
+		Reach:              "Nacional",
+		Summary:            "Síntese especial",
+		Relevance:          3,
+		RelevanceRationale: "Justificativa",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar entidade com caracteres especiais: %v", err)
+	}
+
+	rSpecial, err := queries.CreateRelationship(ctx, sqlc.CreateRelationshipParams{
+		ID:               "rel-special",
+		SubjectEntityID:  eSpecial.ID,
+		CaseID:           sql.NullString{String: "case-root", Valid: true},
+		RelationshipType: "Vínculo 50%_Confirmado\\",
+		Summary:          "Resumo com 10%_taxa",
+		ContextLimits:    "",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar relação especial: %v", err)
+	}
+
+	clSpecial, err := queries.CreateClaim(ctx, sqlc.CreateClaimParams{
+		ID:             "cl-special",
+		RelationshipID: rSpecial.ID,
+		Proposition:    "Proposição com 100%_certeza\\fato",
+		Attribution:    "",
+		Origin:         "curated_seed",
+		Grade:          "A",
+		Disposition:    "supports_link",
+		MetricEligible: 1,
+		Status:         "published",
+		ContextStatus:  "Ativo",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar claim especial: %v", err)
+	}
+
+	evSpecial, err := queries.CreateEvidence(ctx, sqlc.CreateEvidenceParams{
+		ID:           "ev-special",
+		ClaimID:      clSpecial.ID,
+		Summary:      "Evidência especial",
+		EvidenceType: "document",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar evidência especial: %v", err)
+	}
+
+	srcSpecial, err := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-special",
+		Title:              "Fonte Especial 100%",
+		PublisherOrAuthor:  "Jornal 100%_Fatos",
+		OriginalUrl:        "https://noticias.example.com/100%_fatos",
+		CanonicalUrl:       "https://noticias.example.com/100%_fatos",
+		SourceType:         "article",
+		SourceAccessStatus: "reachable",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar fonte especial: %v", err)
+	}
+
+	_, err = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{
+		ID:         "es-special",
+		EvidenceID: evSpecial.ID,
+		SourceID:   srcSpecial.ID,
+		Excerpt:    "Trecho 100%_verídico",
+		Locator:    "",
+		Role:       "supports",
+		Status:     "active",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao vincular fonte especial: %v", err)
+	}
+
+	t.Run("Busca por '%' não retorna toda a base", func(t *testing.T) {
+		res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{Search: "%"})
+		if err != nil {
+			t.Fatalf("erro na busca por '%%': %v", err)
+		}
+		// Apenas a entidade especial contém '%' literalmente
+		if res.TotalCount != 1 || res.Entities[0].Slug != "pessoa-100-livre-teste" {
+			t.Errorf("busca por '%%' deveria retornar apenas a entidade com %% literal, obteve %d resultados", res.TotalCount)
+		}
+	})
+
+	t.Run("Busca por '_' não atua como curinga de caractere único", func(t *testing.T) {
+		res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{Search: "_"})
+		if err != nil {
+			t.Fatalf("erro na busca por '_': %v", err)
+		}
+		// Apenas a entidade especial contém '_' literalmente
+		if res.TotalCount != 1 || res.Entities[0].Slug != "pessoa-100-livre-teste" {
+			t.Errorf("busca por '_' deveria retornar apenas a entidade com _ literal, obteve %d resultados", res.TotalCount)
+		}
+	})
+
+	t.Run("Busca por barra invertida funciona previsivelmente", func(t *testing.T) {
+		res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{Search: `\`})
+		if err != nil {
+			t.Fatalf("erro na busca por '\\': %v", err)
+		}
+		if res.TotalCount != 1 || res.Entities[0].Slug != "pessoa-100-livre-teste" {
+			t.Errorf("busca por '\\' deveria retornar a entidade especial, obteve %d resultados", res.TotalCount)
+		}
+	})
+
+	t.Run("Busca por sequência exata '100%_Livre'", func(t *testing.T) {
+		res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{Search: "100%_Livre"})
+		if err != nil {
+			t.Fatalf("erro na busca: %v", err)
+		}
+		if res.TotalCount != 1 || res.Entities[0].Slug != "pessoa-100-livre-teste" {
+			t.Errorf("esperava encontrar entidade para '100%%_Livre', obteve %d", res.TotalCount)
+		}
+	})
+}
+
+func TestPublic_PeriodFilter(t *testing.T) {
+	baseTime, _ := time.Parse(time.RFC3339, "2026-09-04T12:00:00Z")
+
+	t.Run("Preset 7d é resolvido corretamente", func(t *testing.T) {
+		f := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: "7d"}, baseTime)
+		expected := "2026-08-28T12:00:00Z"
+		if f.Period != "7d" || f.PeriodSince != expected {
+			t.Errorf("preset 7d esperado (%s, %s), obteve (%s, %s)", "7d", expected, f.Period, f.PeriodSince)
+		}
+	})
+
+	t.Run("Preset 30d é resolvido corretamente", func(t *testing.T) {
+		f := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: "30d"}, baseTime)
+		expected := "2026-08-05T12:00:00Z"
+		if f.Period != "30d" || f.PeriodSince != expected {
+			t.Errorf("preset 30d esperado (%s, %s), obteve (%s, %s)", "30d", expected, f.Period, f.PeriodSince)
+		}
+	})
+
+	t.Run("Preset 90d é resolvido corretamente", func(t *testing.T) {
+		f := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: "90d"}, baseTime)
+		expected := "2026-06-06T12:00:00Z"
+		if f.Period != "90d" || f.PeriodSince != expected {
+			t.Errorf("preset 90d esperado (%s, %s), obteve (%s, %s)", "90d", expected, f.Period, f.PeriodSince)
+		}
+	})
+
+	t.Run("Preset all ou vazio zera PeriodSince", func(t *testing.T) {
+		fAll := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: "all"}, baseTime)
+		if fAll.Period != "" || fAll.PeriodSince != "" {
+			t.Errorf("preset all deveria zerar Period/PeriodSince, obteve %q / %q", fAll.Period, fAll.PeriodSince)
+		}
+
+		fEmpty := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: ""}, baseTime)
+		if fEmpty.Period != "" || fEmpty.PeriodSince != "" {
+			t.Errorf("preset vazio deveria zerar Period/PeriodSince, obteve %q / %q", fEmpty.Period, fEmpty.PeriodSince)
+		}
+	})
+
+	t.Run("Timestamp arbitrário não é aceito e cai no default", func(t *testing.T) {
+		fArbitrary := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: "2026-01-01T00:00:00Z"}, baseTime)
+		if fArbitrary.Period != "" || fArbitrary.PeriodSince != "" {
+			t.Errorf("timestamp arbitrário não deveria ser aceito, obteve %q / %q", fArbitrary.Period, fArbitrary.PeriodSince)
+		}
+	})
+}

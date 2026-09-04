@@ -41,6 +41,11 @@ func TestMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao consultar entities após migrate: %v", err)
 	}
 
+	// Executa rollback da migration 00005
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00005: %v", err)
+	}
+
 	// Executa rollback da migration 00004
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00004: %v", err)
@@ -715,7 +720,10 @@ func TestMigration00004_SeedFidelity(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// 2. Reverte a 00004 para simular estado do VZ-005 antes da 00004
+	// 2. Reverte 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00005: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00004: %v", err)
 	}
@@ -755,9 +763,9 @@ func TestMigration00004_SeedFidelity(t *testing.T) {
 		t.Fatalf("falha ao inserir claim legado: %v", err)
 	}
 
-	// 3. Aplica a migration 00004 sobre o banco com dados preexistentes
+	// 3. Aplica as migrations sobre o banco com dados preexistentes
 	if err := store.Migrate(ctx, db); err != nil {
-		t.Fatalf("falha ao aplicar migration 00004 sobre dados legados: %v", err)
+		t.Fatalf("falha ao aplicar migrations sobre dados legados: %v", err)
 	}
 
 	// 4. Valida que reach recebeu 'Nacional' e summary foi limpo
@@ -802,7 +810,10 @@ func TestMigration00003_DownFailsOnIncompatibleData(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// Reverte 00004 para ficar exatamente na 00003
+	// Reverte 00005 e 00004 para ficar exatamente na 00003
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00005: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00004: %v", err)
 	}

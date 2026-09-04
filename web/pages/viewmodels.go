@@ -120,6 +120,7 @@ type FilterParamsVM struct {
 	Category    string
 	Grade       string
 	Relevance   int
+	Period      string
 	PeriodSince string
 	OrderBy     string
 	OrderDir    string
@@ -145,8 +146,8 @@ func (f FilterParamsVM) BuildQueryString(page int) string {
 	if f.Relevance > 0 {
 		v.Set("relevance", fmt.Sprintf("%d", f.Relevance))
 	}
-	if f.PeriodSince != "" {
-		v.Set("period", f.PeriodSince)
+	if f.Period != "" && f.Period != "all" {
+		v.Set("period", f.Period)
 	}
 	if f.OrderBy != "" && f.OrderBy != store.OrderFieldName {
 		v.Set("sort", f.OrderBy)

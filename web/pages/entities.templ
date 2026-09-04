@@ -51,7 +51,7 @@ templ Entities(vm EntityListVM) {
 							</div>
 							<div class="form-actions-inline">
 								<button type="submit" class="btn btn-primary" id="btn-search">Buscar</button>
-								if vm.Filter.Search != "" || vm.Filter.Category != "" || vm.Filter.Grade != "" || vm.Filter.Relevance > 0 || vm.Filter.OrderBy != "name" {
+								if vm.Filter.Search != "" || vm.Filter.Category != "" || vm.Filter.Grade != "" || vm.Filter.Relevance > 0 || vm.Filter.Period != "" || vm.Filter.OrderBy != "name" {
 									<a href="/pessoas" class="btn btn-subtle" title="Limpar todos os filtros">Limpar</a>
 								}
 							</div>
@@ -96,6 +96,17 @@ templ Entities(vm EntityListVM) {
 									<option value="3" selected?={ vm.Filter.Relevance == 3 }>3 — Nacional moderada</option>
 									<option value="2" selected?={ vm.Filter.Relevance == 2 }>2 — Setorial ou regional</option>
 									<option value="1" selected?={ vm.Filter.Relevance == 1 }>1 — Local ou circunstancial</option>
+								</select>
+							</div>
+
+							<!-- Período -->
+							<div class="form-group">
+								<label for="filter-period" class="form-label">Período</label>
+								<select id="filter-period" name="period" class="form-control">
+									<option value="" selected?={ vm.Filter.Period == "" || vm.Filter.Period == "all" }>Todo o período</option>
+									<option value="7d" selected?={ vm.Filter.Period == "7d" }>Últimos 7 dias</option>
+									<option value="30d" selected?={ vm.Filter.Period == "30d" }>Últimos 30 dias</option>
+									<option value="90d" selected?={ vm.Filter.Period == "90d" }>Últimos 90 dias</option>
 								</select>
 							</div>
 

@@ -158,22 +158,8 @@ WHERE c.id = ?
 ORDER BY es.created_at ASC;
 
 -- name: ListPublicEntities :many
-WITH public_claims AS (
-    SELECT
-        r.subject_entity_id AS entity_id,
-        c.id AS claim_id,
-        c.grade AS grade,
-        c.updated_at AS updated_at
-    FROM relationships r
-    JOIN claims c ON c.relationship_id = r.id
-    WHERE c.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM evidence ev
-          JOIN evidence_sources es ON es.evidence_id = ev.id
-          WHERE ev.claim_id = c.id
-            AND es.status = 'active'
-            AND es.role = 'supports'
-      )
+WITH order_params AS (
+    SELECT CAST(@order_by AS text) AS order_by, CAST(@order_dir AS text) AS order_dir
 ),
 entity_public_stats AS (
     SELECT
@@ -181,7 +167,7 @@ entity_public_stats AS (
         COUNT(DISTINCT claim_id) AS public_claims_count,
         CAST(MIN(grade) AS TEXT) AS highest_grade,
         CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
-    FROM public_claims
+    FROM public_claims_view
     GROUP BY entity_id
 )
 SELECT
@@ -198,12 +184,14 @@ SELECT
     stats.last_public_updated_at,
     COALESCE(
         (
-            SELECT r.summary
-            FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
-              AND length(trim(r.summary)) > 0
+            SELECT pcv.relationship_summary
+            FROM public_claims_view pcv
+            WHERE pcv.entity_id = e.id
+              AND length(trim(pcv.relationship_summary)) > 0
+            ORDER BY
+                pcv.grade ASC,
+                pcv.updated_at DESC,
+                pcv.claim_id ASC
             LIMIT 1
         ),
         e.role_or_context
@@ -211,90 +199,62 @@ SELECT
 FROM entities e
 JOIN entity_public_stats stats ON stats.entity_id = e.id
 WHERE
-    (@order_by = '' OR @order_by != '')
-    AND (@order_dir = '' OR @order_dir != '')
-    AND (@filter_category = '' OR e.category = @filter_category)
+    (@filter_category = '' OR e.category = @filter_category)
     AND (@filter_grade = '' OR EXISTS (
-        SELECT 1 FROM public_claims pc
-        WHERE pc.entity_id = e.id AND pc.grade = @filter_grade
+        SELECT 1 FROM public_claims_view pcv
+        WHERE pcv.entity_id = e.id AND pcv.grade = @filter_grade
     ))
     AND (@filter_relevance = 0 OR e.relevance = @filter_relevance)
     AND (@filter_period_since = '' OR stats.last_public_updated_at >= @filter_period_since)
     AND (
         @search_query = '' OR
-        e.name LIKE @search_query OR
-        e.normalized_name LIKE @search_query OR
-        e.role_or_context LIKE @search_query OR
-        e.category LIKE @search_query OR
+        like(@search_query, e.name, '\') OR
+        like(@search_query, e.normalized_name, '\') OR
+        like(@search_query, e.role_or_context, '\') OR
+        like(@search_query, e.category, '\') OR
         EXISTS (
             SELECT 1 FROM entity_aliases ea
-            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE @search_query
+            WHERE ea.entity_id = e.id AND like(@search_query, ea.normalized_alias, '\')
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            WHERE r.subject_entity_id = e.id AND (
-                r.relationship_type LIKE @search_query OR
-                r.summary LIKE @search_query
+            SELECT 1 FROM public_claims_view pcv
+            WHERE pcv.entity_id = e.id AND (
+                like(@search_query, pcv.relationship_type, '\') OR
+                like(@search_query, pcv.relationship_summary, '\') OR
+                like(@search_query, pcv.proposition, '\')
             )
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
-              AND c.proposition LIKE @search_query
-        ) OR
-        EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            JOIN evidence ev ON ev.claim_id = c.id
+            SELECT 1 FROM public_claims_view pcv
+            JOIN evidence ev ON ev.claim_id = pcv.claim_id
             JOIN evidence_sources es ON es.evidence_id = ev.id
             JOIN sources s ON s.id = es.source_id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
+            WHERE pcv.entity_id = e.id
               AND es.status = 'active'
               AND (
-                  s.publisher_or_author LIKE @search_query OR
-                  s.original_url LIKE @search_query OR
-                  s.canonical_url LIKE @search_query
+                  like(@search_query, s.publisher_or_author, '\') OR
+                  like(@search_query, s.original_url, '\') OR
+                  like(@search_query, s.canonical_url, '\')
               )
         )
     )
 ORDER BY
-    CASE WHEN ?1 = 'name' AND ?2 = 'asc' THEN e.name END ASC,
-    CASE WHEN ?1 = 'name' AND ?2 = 'desc' THEN e.name END DESC,
-    CASE WHEN ?1 = 'relevance' AND ?2 = 'asc' THEN e.relevance END ASC,
-    CASE WHEN ?1 = 'relevance' AND ?2 = 'desc' THEN e.relevance END DESC,
-    CASE WHEN ?1 = 'updated' AND ?2 = 'asc' THEN stats.last_public_updated_at END ASC,
-    CASE WHEN ?1 = 'updated' AND ?2 = 'desc' THEN stats.last_public_updated_at END DESC,
-    e.name ASC
+    CASE WHEN (SELECT order_by FROM order_params) = 'name' AND (SELECT order_dir FROM order_params) = 'asc' THEN e.name END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'name' AND (SELECT order_dir FROM order_params) = 'desc' THEN e.name END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'relevance' AND (SELECT order_dir FROM order_params) = 'asc' THEN e.relevance END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'relevance' AND (SELECT order_dir FROM order_params) = 'desc' THEN e.relevance END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'asc' THEN stats.last_public_updated_at END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'desc' THEN stats.last_public_updated_at END DESC,
+    e.name ASC,
+    e.id ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountPublicEntities :one
-WITH public_claims AS (
-    SELECT
-        r.subject_entity_id AS entity_id,
-        c.id AS claim_id,
-        c.grade AS grade,
-        c.updated_at AS updated_at
-    FROM relationships r
-    JOIN claims c ON c.relationship_id = r.id
-    WHERE c.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM evidence ev
-          JOIN evidence_sources es ON es.evidence_id = ev.id
-          WHERE ev.claim_id = c.id
-            AND es.status = 'active'
-            AND es.role = 'supports'
-      )
-),
-entity_public_stats AS (
+WITH entity_public_stats AS (
     SELECT
         entity_id,
-        COUNT(DISTINCT claim_id) AS public_claims_count,
-        CAST(MIN(grade) AS TEXT) AS highest_grade,
         CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
-    FROM public_claims
+    FROM public_claims_view
     GROUP BY entity_id
 )
 SELECT COUNT(*)
@@ -303,48 +263,40 @@ JOIN entity_public_stats stats ON stats.entity_id = e.id
 WHERE
     (@filter_category = '' OR e.category = @filter_category)
     AND (@filter_grade = '' OR EXISTS (
-        SELECT 1 FROM public_claims pc
-        WHERE pc.entity_id = e.id AND pc.grade = @filter_grade
+        SELECT 1 FROM public_claims_view pcv
+        WHERE pcv.entity_id = e.id AND pcv.grade = @filter_grade
     ))
     AND (@filter_relevance = 0 OR e.relevance = @filter_relevance)
     AND (@filter_period_since = '' OR stats.last_public_updated_at >= @filter_period_since)
     AND (
         @search_query = '' OR
-        e.name LIKE @search_query OR
-        e.normalized_name LIKE @search_query OR
-        e.role_or_context LIKE @search_query OR
-        e.category LIKE @search_query OR
+        like(@search_query, e.name, '\') OR
+        like(@search_query, e.normalized_name, '\') OR
+        like(@search_query, e.role_or_context, '\') OR
+        like(@search_query, e.category, '\') OR
         EXISTS (
             SELECT 1 FROM entity_aliases ea
-            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE @search_query
+            WHERE ea.entity_id = e.id AND like(@search_query, ea.normalized_alias, '\')
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            WHERE r.subject_entity_id = e.id AND (
-                r.relationship_type LIKE @search_query OR
-                r.summary LIKE @search_query
+            SELECT 1 FROM public_claims_view pcv
+            WHERE pcv.entity_id = e.id AND (
+                like(@search_query, pcv.relationship_type, '\') OR
+                like(@search_query, pcv.relationship_summary, '\') OR
+                like(@search_query, pcv.proposition, '\')
             )
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
-              AND c.proposition LIKE @search_query
-        ) OR
-        EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            JOIN evidence ev ON ev.claim_id = c.id
+            SELECT 1 FROM public_claims_view pcv
+            JOIN evidence ev ON ev.claim_id = pcv.claim_id
             JOIN evidence_sources es ON es.evidence_id = ev.id
             JOIN sources s ON s.id = es.source_id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
+            WHERE pcv.entity_id = e.id
               AND es.status = 'active'
               AND (
-                  s.publisher_or_author LIKE @search_query OR
-                  s.original_url LIKE @search_query OR
-                  s.canonical_url LIKE @search_query
+                  like(@search_query, s.publisher_or_author, '\') OR
+                  like(@search_query, s.original_url, '\') OR
+                  like(@search_query, s.canonical_url, '\')
               )
         )
     );
@@ -353,17 +305,8 @@ WHERE
 SELECT DISTINCT e.category
 FROM entities e
 JOIN (
-    SELECT DISTINCT r.subject_entity_id AS entity_id
-    FROM relationships r
-    JOIN claims c ON c.relationship_id = r.id
-    WHERE c.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM evidence ev
-          JOIN evidence_sources es ON es.evidence_id = ev.id
-          WHERE ev.claim_id = c.id
-            AND es.status = 'active'
-            AND es.role = 'supports'
-      )
+    SELECT DISTINCT entity_id
+    FROM public_claims_view
 ) active_ents ON active_ents.entity_id = e.id
 WHERE length(trim(e.category)) > 0
 ORDER BY e.category ASC;
@@ -386,59 +329,41 @@ SELECT
 FROM entities e
 WHERE e.slug = ?
   AND EXISTS (
-      SELECT 1 FROM relationships r
-      JOIN claims c ON c.relationship_id = r.id
-      WHERE r.subject_entity_id = e.id
-        AND c.status = 'published'
-        AND EXISTS (
-            SELECT 1 FROM evidence ev
-            JOIN evidence_sources es ON es.evidence_id = ev.id
-            WHERE ev.claim_id = c.id
-              AND es.status = 'active'
-              AND es.role = 'supports'
-        )
+      SELECT 1 FROM public_claims_view pcv
+      WHERE pcv.entity_id = e.id
   )
 LIMIT 1;
 
 -- name: ListPublicClaimsByEntityID :many
 SELECT
-    c.id AS claim_id,
-    c.relationship_id,
-    r.relationship_type,
-    r.summary AS relationship_summary,
-    r.context_limits,
-    r.target_entity_id,
+    pcv.claim_id,
+    pcv.relationship_id,
+    pcv.relationship_type,
+    pcv.relationship_summary,
+    pcv.context_limits,
+    pcv.target_entity_id,
     te.name AS target_entity_name,
     te.slug AS target_entity_slug,
-    r.case_id,
+    pcv.case_id,
     cs.name AS case_name,
     cs.slug AS case_slug,
-    c.proposition,
-    c.attribution,
-    c.origin,
-    c.grade,
-    c.disposition,
-    c.metric_eligible,
-    c.status,
-    c.context_status,
-    c.created_at,
-    c.updated_at
-FROM claims c
-JOIN relationships r ON r.id = c.relationship_id
-LEFT JOIN entities te ON te.id = r.target_entity_id
-LEFT JOIN cases cs ON cs.id = r.case_id
-WHERE r.subject_entity_id = ?
-  AND c.status = 'published'
-  AND EXISTS (
-      SELECT 1 FROM evidence ev
-      JOIN evidence_sources es ON es.evidence_id = ev.id
-      WHERE ev.claim_id = c.id
-        AND es.status = 'active'
-        AND es.role = 'supports'
-  )
+    pcv.proposition,
+    pcv.attribution,
+    pcv.origin,
+    pcv.grade,
+    pcv.disposition,
+    pcv.metric_eligible,
+    pcv.status,
+    pcv.context_status,
+    pcv.created_at,
+    pcv.updated_at
+FROM public_claims_view pcv
+LEFT JOIN entities te ON te.id = pcv.target_entity_id
+LEFT JOIN cases cs ON cs.id = pcv.case_id
+WHERE pcv.entity_id = ?
 ORDER BY
-    c.grade ASC,
-    c.updated_at DESC;
+    pcv.grade ASC,
+    pcv.updated_at DESC;
 
 -- name: ListPublicEvidenceSourcesByClaimID :many
 SELECT

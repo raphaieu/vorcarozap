@@ -67,14 +67,14 @@ func (h *Handlers) HandleEntities(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(q.Get("page"))
 
 	filter := store.PublicEntityFilter{
-		Search:      q.Get("q"),
-		Category:    q.Get("category"),
-		Grade:       q.Get("grade"),
-		Relevance:   rel,
-		PeriodSince: q.Get("period"),
-		OrderBy:     q.Get("sort"),
-		OrderDir:    q.Get("dir"),
-		Page:        page,
+		Search:    q.Get("q"),
+		Category:  q.Get("category"),
+		Grade:     q.Get("grade"),
+		Relevance: rel,
+		Period:    q.Get("period"),
+		OrderBy:   q.Get("sort"),
+		OrderDir:  q.Get("dir"),
+		Page:      page,
 	}
 
 	res, err := store.ListPublicEntities(r.Context(), h.db, filter)
@@ -103,6 +103,7 @@ func (h *Handlers) HandleEntities(w http.ResponseWriter, r *http.Request) {
 			Category:    sanitized.Category,
 			Grade:       sanitized.Grade,
 			Relevance:   sanitized.Relevance,
+			Period:      sanitized.Period,
 			PeriodSince: sanitized.PeriodSince,
 			OrderBy:     sanitized.OrderBy,
 			OrderDir:    sanitized.OrderDir,

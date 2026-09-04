@@ -94,6 +94,27 @@ type ImportRun struct {
 	CompletedAt    sql.NullString `json:"completed_at"`
 }
 
+type PublicClaimsView struct {
+	ClaimID             string         `json:"claim_id"`
+	RelationshipID      string         `json:"relationship_id"`
+	EntityID            string         `json:"entity_id"`
+	TargetEntityID      sql.NullString `json:"target_entity_id"`
+	CaseID              sql.NullString `json:"case_id"`
+	RelationshipType    string         `json:"relationship_type"`
+	RelationshipSummary string         `json:"relationship_summary"`
+	ContextLimits       string         `json:"context_limits"`
+	Proposition         string         `json:"proposition"`
+	Attribution         string         `json:"attribution"`
+	Origin              string         `json:"origin"`
+	Grade               string         `json:"grade"`
+	Disposition         string         `json:"disposition"`
+	MetricEligible      int64          `json:"metric_eligible"`
+	Status              string         `json:"status"`
+	ContextStatus       string         `json:"context_status"`
+	CreatedAt           string         `json:"created_at"`
+	UpdatedAt           string         `json:"updated_at"`
+}
+
 type Relationship struct {
 	ID               string         `json:"id"`
 	SubjectEntityID  string         `json:"subject_entity_id"`

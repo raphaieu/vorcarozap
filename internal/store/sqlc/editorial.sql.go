@@ -11,30 +11,11 @@ import (
 )
 
 const countPublicEntities = `-- name: CountPublicEntities :one
-WITH public_claims AS (
-    SELECT
-        r.subject_entity_id AS entity_id,
-        c.id AS claim_id,
-        c.grade AS grade,
-        c.updated_at AS updated_at
-    FROM relationships r
-    JOIN claims c ON c.relationship_id = r.id
-    WHERE c.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM evidence ev
-          JOIN evidence_sources es ON es.evidence_id = ev.id
-          WHERE ev.claim_id = c.id
-            AND es.status = 'active'
-            AND es.role = 'supports'
-      )
-),
-entity_public_stats AS (
+WITH entity_public_stats AS (
     SELECT
         entity_id,
-        COUNT(DISTINCT claim_id) AS public_claims_count,
-        CAST(MIN(grade) AS TEXT) AS highest_grade,
         CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
-    FROM public_claims
+    FROM public_claims_view
     GROUP BY entity_id
 )
 SELECT COUNT(*)
@@ -43,48 +24,40 @@ JOIN entity_public_stats stats ON stats.entity_id = e.id
 WHERE
     (?1 = '' OR e.category = ?1)
     AND (?2 = '' OR EXISTS (
-        SELECT 1 FROM public_claims pc
-        WHERE pc.entity_id = e.id AND pc.grade = ?2
+        SELECT 1 FROM public_claims_view pcv
+        WHERE pcv.entity_id = e.id AND pcv.grade = ?2
     ))
     AND (?3 = 0 OR e.relevance = ?3)
     AND (?4 = '' OR stats.last_public_updated_at >= ?4)
     AND (
         ?5 = '' OR
-        e.name LIKE ?5 OR
-        e.normalized_name LIKE ?5 OR
-        e.role_or_context LIKE ?5 OR
-        e.category LIKE ?5 OR
+        like(?5, e.name, '\') OR
+        like(?5, e.normalized_name, '\') OR
+        like(?5, e.role_or_context, '\') OR
+        like(?5, e.category, '\') OR
         EXISTS (
             SELECT 1 FROM entity_aliases ea
-            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE ?5
+            WHERE ea.entity_id = e.id AND like(?5, ea.normalized_alias, '\')
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            WHERE r.subject_entity_id = e.id AND (
-                r.relationship_type LIKE ?5 OR
-                r.summary LIKE ?5
+            SELECT 1 FROM public_claims_view pcv
+            WHERE pcv.entity_id = e.id AND (
+                like(?5, pcv.relationship_type, '\') OR
+                like(?5, pcv.relationship_summary, '\') OR
+                like(?5, pcv.proposition, '\')
             )
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
-              AND c.proposition LIKE ?5
-        ) OR
-        EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            JOIN evidence ev ON ev.claim_id = c.id
+            SELECT 1 FROM public_claims_view pcv
+            JOIN evidence ev ON ev.claim_id = pcv.claim_id
             JOIN evidence_sources es ON es.evidence_id = ev.id
             JOIN sources s ON s.id = es.source_id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
+            WHERE pcv.entity_id = e.id
               AND es.status = 'active'
               AND (
-                  s.publisher_or_author LIKE ?5 OR
-                  s.original_url LIKE ?5 OR
-                  s.canonical_url LIKE ?5
+                  like(?5, s.publisher_or_author, '\') OR
+                  like(?5, s.original_url, '\') OR
+                  like(?5, s.canonical_url, '\')
               )
         )
     )
@@ -789,17 +762,8 @@ SELECT
 FROM entities e
 WHERE e.slug = ?
   AND EXISTS (
-      SELECT 1 FROM relationships r
-      JOIN claims c ON c.relationship_id = r.id
-      WHERE r.subject_entity_id = e.id
-        AND c.status = 'published'
-        AND EXISTS (
-            SELECT 1 FROM evidence ev
-            JOIN evidence_sources es ON es.evidence_id = ev.id
-            WHERE ev.claim_id = c.id
-              AND es.status = 'active'
-              AND es.role = 'supports'
-        )
+      SELECT 1 FROM public_claims_view pcv
+      WHERE pcv.entity_id = e.id
   )
 LIMIT 1
 `
@@ -1046,17 +1010,8 @@ const listPublicCategories = `-- name: ListPublicCategories :many
 SELECT DISTINCT e.category
 FROM entities e
 JOIN (
-    SELECT DISTINCT r.subject_entity_id AS entity_id
-    FROM relationships r
-    JOIN claims c ON c.relationship_id = r.id
-    WHERE c.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM evidence ev
-          JOIN evidence_sources es ON es.evidence_id = ev.id
-          WHERE ev.claim_id = c.id
-            AND es.status = 'active'
-            AND es.role = 'supports'
-      )
+    SELECT DISTINCT entity_id
+    FROM public_claims_view
 ) active_ents ON active_ents.entity_id = e.id
 WHERE length(trim(e.category)) > 0
 ORDER BY e.category ASC
@@ -1087,43 +1042,34 @@ func (q *Queries) ListPublicCategories(ctx context.Context) ([]string, error) {
 
 const listPublicClaimsByEntityID = `-- name: ListPublicClaimsByEntityID :many
 SELECT
-    c.id AS claim_id,
-    c.relationship_id,
-    r.relationship_type,
-    r.summary AS relationship_summary,
-    r.context_limits,
-    r.target_entity_id,
+    pcv.claim_id,
+    pcv.relationship_id,
+    pcv.relationship_type,
+    pcv.relationship_summary,
+    pcv.context_limits,
+    pcv.target_entity_id,
     te.name AS target_entity_name,
     te.slug AS target_entity_slug,
-    r.case_id,
+    pcv.case_id,
     cs.name AS case_name,
     cs.slug AS case_slug,
-    c.proposition,
-    c.attribution,
-    c.origin,
-    c.grade,
-    c.disposition,
-    c.metric_eligible,
-    c.status,
-    c.context_status,
-    c.created_at,
-    c.updated_at
-FROM claims c
-JOIN relationships r ON r.id = c.relationship_id
-LEFT JOIN entities te ON te.id = r.target_entity_id
-LEFT JOIN cases cs ON cs.id = r.case_id
-WHERE r.subject_entity_id = ?
-  AND c.status = 'published'
-  AND EXISTS (
-      SELECT 1 FROM evidence ev
-      JOIN evidence_sources es ON es.evidence_id = ev.id
-      WHERE ev.claim_id = c.id
-        AND es.status = 'active'
-        AND es.role = 'supports'
-  )
+    pcv.proposition,
+    pcv.attribution,
+    pcv.origin,
+    pcv.grade,
+    pcv.disposition,
+    pcv.metric_eligible,
+    pcv.status,
+    pcv.context_status,
+    pcv.created_at,
+    pcv.updated_at
+FROM public_claims_view pcv
+LEFT JOIN entities te ON te.id = pcv.target_entity_id
+LEFT JOIN cases cs ON cs.id = pcv.case_id
+WHERE pcv.entity_id = ?
 ORDER BY
-    c.grade ASC,
-    c.updated_at DESC
+    pcv.grade ASC,
+    pcv.updated_at DESC
 `
 
 type ListPublicClaimsByEntityIDRow struct {
@@ -1150,8 +1096,8 @@ type ListPublicClaimsByEntityIDRow struct {
 	UpdatedAt           string         `json:"updated_at"`
 }
 
-func (q *Queries) ListPublicClaimsByEntityID(ctx context.Context, subjectEntityID string) ([]ListPublicClaimsByEntityIDRow, error) {
-	rows, err := q.db.QueryContext(ctx, listPublicClaimsByEntityID, subjectEntityID)
+func (q *Queries) ListPublicClaimsByEntityID(ctx context.Context, entityID string) ([]ListPublicClaimsByEntityIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicClaimsByEntityID, entityID)
 	if err != nil {
 		return nil, err
 	}
@@ -1196,22 +1142,8 @@ func (q *Queries) ListPublicClaimsByEntityID(ctx context.Context, subjectEntityI
 }
 
 const listPublicEntities = `-- name: ListPublicEntities :many
-WITH public_claims AS (
-    SELECT
-        r.subject_entity_id AS entity_id,
-        c.id AS claim_id,
-        c.grade AS grade,
-        c.updated_at AS updated_at
-    FROM relationships r
-    JOIN claims c ON c.relationship_id = r.id
-    WHERE c.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM evidence ev
-          JOIN evidence_sources es ON es.evidence_id = ev.id
-          WHERE ev.claim_id = c.id
-            AND es.status = 'active'
-            AND es.role = 'supports'
-      )
+WITH order_params AS (
+    SELECT CAST(?8 AS text) AS order_by, CAST(?9 AS text) AS order_dir
 ),
 entity_public_stats AS (
     SELECT
@@ -1219,7 +1151,7 @@ entity_public_stats AS (
         COUNT(DISTINCT claim_id) AS public_claims_count,
         CAST(MIN(grade) AS TEXT) AS highest_grade,
         CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
-    FROM public_claims
+    FROM public_claims_view
     GROUP BY entity_id
 )
 SELECT
@@ -1236,12 +1168,14 @@ SELECT
     stats.last_public_updated_at,
     COALESCE(
         (
-            SELECT r.summary
-            FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
-              AND length(trim(r.summary)) > 0
+            SELECT pcv.relationship_summary
+            FROM public_claims_view pcv
+            WHERE pcv.entity_id = e.id
+              AND length(trim(pcv.relationship_summary)) > 0
+            ORDER BY
+                pcv.grade ASC,
+                pcv.updated_at DESC,
+                pcv.claim_id ASC
             LIMIT 1
         ),
         e.role_or_context
@@ -1249,69 +1183,58 @@ SELECT
 FROM entities e
 JOIN entity_public_stats stats ON stats.entity_id = e.id
 WHERE
-    (?1 = '' OR ?1 != '')
-    AND (?2 = '' OR ?2 != '')
-    AND (?3 = '' OR e.category = ?3)
-    AND (?4 = '' OR EXISTS (
-        SELECT 1 FROM public_claims pc
-        WHERE pc.entity_id = e.id AND pc.grade = ?4
+    (?1 = '' OR e.category = ?1)
+    AND (?2 = '' OR EXISTS (
+        SELECT 1 FROM public_claims_view pcv
+        WHERE pcv.entity_id = e.id AND pcv.grade = ?2
     ))
-    AND (?5 = 0 OR e.relevance = ?5)
-    AND (?6 = '' OR stats.last_public_updated_at >= ?6)
+    AND (?3 = 0 OR e.relevance = ?3)
+    AND (?4 = '' OR stats.last_public_updated_at >= ?4)
     AND (
-        ?7 = '' OR
-        e.name LIKE ?7 OR
-        e.normalized_name LIKE ?7 OR
-        e.role_or_context LIKE ?7 OR
-        e.category LIKE ?7 OR
+        ?5 = '' OR
+        like(?5, e.name, '\') OR
+        like(?5, e.normalized_name, '\') OR
+        like(?5, e.role_or_context, '\') OR
+        like(?5, e.category, '\') OR
         EXISTS (
             SELECT 1 FROM entity_aliases ea
-            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE ?7
+            WHERE ea.entity_id = e.id AND like(?5, ea.normalized_alias, '\')
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            WHERE r.subject_entity_id = e.id AND (
-                r.relationship_type LIKE ?7 OR
-                r.summary LIKE ?7
+            SELECT 1 FROM public_claims_view pcv
+            WHERE pcv.entity_id = e.id AND (
+                like(?5, pcv.relationship_type, '\') OR
+                like(?5, pcv.relationship_summary, '\') OR
+                like(?5, pcv.proposition, '\')
             )
         ) OR
         EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
-              AND c.proposition LIKE ?7
-        ) OR
-        EXISTS (
-            SELECT 1 FROM relationships r
-            JOIN claims c ON c.relationship_id = r.id
-            JOIN evidence ev ON ev.claim_id = c.id
+            SELECT 1 FROM public_claims_view pcv
+            JOIN evidence ev ON ev.claim_id = pcv.claim_id
             JOIN evidence_sources es ON es.evidence_id = ev.id
             JOIN sources s ON s.id = es.source_id
-            WHERE r.subject_entity_id = e.id
-              AND c.status = 'published'
+            WHERE pcv.entity_id = e.id
               AND es.status = 'active'
               AND (
-                  s.publisher_or_author LIKE ?7 OR
-                  s.original_url LIKE ?7 OR
-                  s.canonical_url LIKE ?7
+                  like(?5, s.publisher_or_author, '\') OR
+                  like(?5, s.original_url, '\') OR
+                  like(?5, s.canonical_url, '\')
               )
         )
     )
 ORDER BY
-    CASE WHEN ?1 = 'name' AND ?2 = 'asc' THEN e.name END ASC,
-    CASE WHEN ?1 = 'name' AND ?2 = 'desc' THEN e.name END DESC,
-    CASE WHEN ?1 = 'relevance' AND ?2 = 'asc' THEN e.relevance END ASC,
-    CASE WHEN ?1 = 'relevance' AND ?2 = 'desc' THEN e.relevance END DESC,
-    CASE WHEN ?1 = 'updated' AND ?2 = 'asc' THEN stats.last_public_updated_at END ASC,
-    CASE WHEN ?1 = 'updated' AND ?2 = 'desc' THEN stats.last_public_updated_at END DESC,
-    e.name ASC
-LIMIT ?9 OFFSET ?8
+    CASE WHEN (SELECT order_by FROM order_params) = 'name' AND (SELECT order_dir FROM order_params) = 'asc' THEN e.name END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'name' AND (SELECT order_dir FROM order_params) = 'desc' THEN e.name END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'relevance' AND (SELECT order_dir FROM order_params) = 'asc' THEN e.relevance END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'relevance' AND (SELECT order_dir FROM order_params) = 'desc' THEN e.relevance END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'asc' THEN stats.last_public_updated_at END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'desc' THEN stats.last_public_updated_at END DESC,
+    e.name ASC,
+    e.id ASC
+LIMIT ?7 OFFSET ?6
 `
 
 type ListPublicEntitiesParams struct {
-	OrderBy           interface{} `json:"order_by"`
-	OrderDir          interface{} `json:"order_dir"`
 	FilterCategory    interface{} `json:"filter_category"`
 	FilterGrade       interface{} `json:"filter_grade"`
 	FilterRelevance   interface{} `json:"filter_relevance"`
@@ -1319,6 +1242,8 @@ type ListPublicEntitiesParams struct {
 	SearchQuery       interface{} `json:"search_query"`
 	PageOffset        int64       `json:"page_offset"`
 	PageLimit         int64       `json:"page_limit"`
+	OrderBy           string      `json:"order_by"`
+	OrderDir          string      `json:"order_dir"`
 }
 
 type ListPublicEntitiesRow struct {
@@ -1338,8 +1263,6 @@ type ListPublicEntitiesRow struct {
 
 func (q *Queries) ListPublicEntities(ctx context.Context, arg ListPublicEntitiesParams) ([]ListPublicEntitiesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPublicEntities,
-		arg.OrderBy,
-		arg.OrderDir,
 		arg.FilterCategory,
 		arg.FilterGrade,
 		arg.FilterRelevance,
@@ -1347,6 +1270,8 @@ func (q *Queries) ListPublicEntities(ctx context.Context, arg ListPublicEntities
 		arg.SearchQuery,
 		arg.PageOffset,
 		arg.PageLimit,
+		arg.OrderBy,
+		arg.OrderDir,
 	)
 	if err != nil {
 		return nil, err
