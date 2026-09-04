@@ -6,7 +6,9 @@ Aplicação pública, investigativa e documental para organizar informações pu
 
 ## Estado
 
-**Fase 0 — especificação consolidada.** O MVP prioriza o motor público: coleta via OpenRouter, normalização, validação, publicação automática controlada, métricas, consulta pública e painel simples para pós-moderação.
+**Fase 1 — Fundação Executável concluída.** Módulo Go, CLI, configuração com defaults seguros, SQLite em modo WAL com validação efetiva de pragmas e driver Pure Go `modernc.org/sqlite` ([ADR-010](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-010-escolha-do-driver-sqlite.md)), migrations com Goose, servidor HTTP Chi, renderização SSR com Templ, página base mobile-first, Dockerfile enxuto não-root e Compose com proxy Caddy opcional.
+
+A política de acessibilidade de fontes para o status `not_checked` está registrada canonicamente no [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preservação do `initial_state` do mapeamento para `curated_seed`), com variáveis de ambiente documentadas em `.env.example` para futura incorporação no módulo `sourcecheck` (VZ-020).
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
@@ -44,15 +46,29 @@ flowchart TB
   P --> OUT[Página + métricas + XLSX]
 ```
 
-## Comandos planejados
+## Comandos executáveis (Fase 1)
 
 ```bash
+# Iniciar servidor HTTP (aplica migrations pendentes antes de iniciar)
 vorcarozap serve
+
+# Executar migrations pendentes explicitamente
 vorcarozap migrate
+
+# Ajuda contextual
+vorcarozap help
+```
+
+### Comandos planejados para fases posteriores
+
+```bash
+# Fase 2:
 vorcarozap import --file arquivo.xlsx --dry-run
 vorcarozap import --file arquivo.xlsx
-vorcarozap monitor
 vorcarozap export
+
+# Fase 4:
+vorcarozap monitor
 ```
 
 ## Validação econômica

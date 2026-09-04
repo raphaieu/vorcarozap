@@ -1,10 +1,10 @@
 # Backlog inicial priorizado
 
-| ID | P | Entrega |
-|---|---|---|
-| VZ-001 | P0 | módulo Go, CLI, config e build |
-| VZ-002 | P0 | SQLite/WAL, migrations e volume |
-| VZ-003 | P0 | Compose/Caddy e página base mobile |
+| ID | P | Entrega | Status |
+|---|---|---|---|
+| VZ-001 | P0 | módulo Go, CLI, config e build | Concluído (Fase 1) |
+| VZ-002 | P0 | SQLite/WAL, migrations e volume | Concluído (Fase 1) |
+| VZ-003 | P0 | Compose/Caddy e página base mobile | Concluído (Fase 1) |
 | VZ-004 | P0 | schema de entidades, claims com disposição/métrica, evidence_sources moderáveis e sources com acesso |
 | VZ-005 | P0 | importador XLSX `curated_seed` com dry-run, mapeamento versionado enriquecido e idempotência |
 | VZ-006 | P0 | listagem, busca, filtros e detalhe |
@@ -21,7 +21,7 @@
 | VZ-017 | P0 | invalidação imediata de página/métricas/export |
 | VZ-018 | P0 | deploy VPS, cron, persistência e smoke checklist |
 | VZ-019 | P0 | testes table-driven de publicação/quarentena, fingerprint rejeitado e métricas por estado/elegibilidade |
-| VZ-020 | P0 | verificador GET seguro/limitado e política de `source_access_status` |
+| VZ-020 | P0 | verificador GET seguro/limitado e política de `source_access_status` (incorporar `SOURCE_NOT_CHECKED_POLICY_*` ao config) |
 | VZ-021 | P0 | moderação XOR de claim/evidence_source e quarentena ao perder último suporte |
 
 ## P1
