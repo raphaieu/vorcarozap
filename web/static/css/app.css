@@ -1,0 +1,209 @@
+:root {
+  --color-primary-dark: #075e54;
+  --color-primary: #128c7e;
+  --color-accent: #25d366;
+  --color-accent-hover: #1ebd5a;
+  --color-bg: #f0f2f5;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f9fafb;
+  --color-text-main: #111b21;
+  --color-text-muted: #667781;
+  --color-border: #e9edef;
+  --color-border-subtle: #d1d7db;
+  --color-notice-bg: #fff8e5;
+  --color-notice-border: #ffd580;
+  --color-notice-text: #664d03;
+  --color-badge-bg: #e7f7ed;
+  --color-badge-text: #0b6832;
+
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 2px rgba(11, 20, 26, 0.08);
+  --shadow-md: 0 2px 5px rgba(11, 20, 26, 0.1);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 2rem;
+}
+
+.site-header {
+  background-color: var(--color-primary-dark);
+  color: #ffffff;
+  padding: 1rem;
+  box-shadow: var(--shadow-md);
+}
+
+.header-container {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.site-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.site-title .badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: var(--color-accent);
+  color: #075e54;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.site-tagline {
+  font-size: 0.95rem;
+  color: #d1f4ec;
+}
+
+.container {
+  max-width: 960px;
+  margin: 1.5rem auto;
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Aviso Editorial Obrigatório */
+.editorial-notice {
+  background-color: var(--color-notice-bg);
+  border: 1px solid var(--color-notice-border);
+  color: var(--color-notice-text);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.editorial-notice strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+
+/* Cartões e Seções */
+.card {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.card-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-title .status-tag {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background-color: var(--color-bg);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Espaço Visual de Métricas (Fase 1) */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.metric-box {
+  background-color: var(--color-bg);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem;
+  text-align: center;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+
+.metric-value-placeholder {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* Placeholder descritivo de fases */
+.placeholder-banner {
+  background-color: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.placeholder-banner h3 {
+  font-size: 1rem;
+  color: var(--color-text-main);
+  margin-bottom: 0.5rem;
+}
+
+.placeholder-banner p {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Rodapé */
+.site-footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: 2rem;
+  padding: 1rem;
+}
+
+@media (max-width: 480px) {
+  .site-title {
+    font-size: 1.25rem;
+  }
+  .header-container {
+    gap: 0.25rem;
+  }
+  .card {
+    padding: 1rem;
+  }
+}

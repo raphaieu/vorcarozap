@@ -1,0 +1,88 @@
+package pages
+
+import "github.com/raphaieu/vorcarozap/web/components"
+
+templ Home() {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="VorcaroZAP — Plataforma investigativa e documental para organizar informações públicas sobre Daniel Vorcaro, Banco Master e pessoas relacionadas."/>
+			<title>VorcaroZAP — Base Documental e Investigativa</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.Header()
+			<main class="container">
+				<!-- Aviso Editorial Obrigatório -->
+				<section class="editorial-notice" aria-label="Aviso Legal e Editorial">
+					<strong>Aviso Editorial e de Independência</strong>
+					<p>
+						Projeto independente de pesquisa e documentação jornalística, sem qualquer vínculo com WhatsApp, Meta Platforms Inc., Banco Master ou pessoas e organizações citadas. “WhatsApp” é marca registrada de seu titular. A identidade deste projeto adota referência cromática inspirada, sem reproduzir logotipos, ícones ou interfaces proprietárias.
+					</p>
+				</section>
+
+				<!-- Espaço Visual: Indicadores de Rede (Fase 1 - Estrutura Inicial) -->
+				<section class="card" aria-label="Indicadores da Rede">
+					<h2 class="card-title">
+						<span>Métricas da Rede</span>
+						<span class="status-tag">Estrutura Inicial (Fase 1)</span>
+					</h2>
+					<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;">
+						Os indicadores consolidados serão calculados e exibidos a partir das Fases 2 e 3, considerando exclusivamente alegações públicas ativas com elegibilidade métrica confirmada.
+					</p>
+					<div class="metrics-grid">
+						<div class="metric-box">
+							<div class="metric-label">Pessoas / Org.</div>
+							<div class="metric-value-placeholder">—</div>
+						</div>
+						<div class="metric-box">
+							<div class="metric-label">Fontes Públicas</div>
+							<div class="metric-value-placeholder">—</div>
+						</div>
+						<div class="metric-box">
+							<div class="metric-label">Graus A–E</div>
+							<div class="metric-value-placeholder">—</div>
+						</div>
+						<div class="metric-box">
+							<div class="metric-label">Último Monitoramento</div>
+							<div class="metric-value-placeholder">—</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- Espaço Visual: Consulta e Filtros (Fase 1 - Estrutura Inicial) -->
+				<section class="card" aria-label="Busca e Consulta">
+					<h2 class="card-title">
+						<span>Consulta e Filtros</span>
+						<span class="status-tag">Em Preparação</span>
+					</h2>
+					<div class="placeholder-banner">
+						<h3>Módulo de Consulta Pública</h3>
+						<p>
+							A busca por nomes, cargos, relações e fontes, bem como a filtragem por graus de confirmação (A–E) e categorias, estará ativa após a importação da base curada inicial (Fase 2).
+						</p>
+					</div>
+				</section>
+
+				<!-- Espaço Visual: Base Documental (Fase 1 - Estrutura Inicial) -->
+				<section class="card" aria-label="Base de Evidências">
+					<h2 class="card-title">
+						<span>Base Documental e Fontes</span>
+						<span class="status-tag">Em Preparação</span>
+					</h2>
+					<div class="placeholder-banner">
+						<h3>Rastreabilidade e Contraditório</h3>
+						<p>
+							Cada registro público conterá citação direta, localizador e link para a fonte original verificável, acompanhado de espaço para registro de contraditório e contexto.
+						</p>
+					</div>
+				</section>
+			</main>
+			<footer class="site-footer">
+				<p>VorcaroZAP &bull; Monólito Go com SQLite, SSR e Caddy &bull; Fundação Executável</p>
+			</footer>
+		</body>
+	</html>
+}
