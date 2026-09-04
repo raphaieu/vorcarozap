@@ -1,58 +1,53 @@
 # Modelo de dados
 
-## Estratégia incremental
+## Núcleo do MVP
 
-O schema inicial implementa apenas o necessário para importar e publicar a base. Tabelas de autenticação, monitoramento, revisão multiusuário, snapshots e auditoria avançada serão adicionadas por migrations futuras.
+- `entities`: identidade, tipo, nome, slug, cargo, resumo, relevância e justificativa.
+- `entity_aliases`: aliases normalizados.
+- `cases`: recorte editorial.
+- `relationships`: sujeito, alvo/caso, tipo, síntese e limites.
+- `claims`: relação/caso, proposição, atribuição, grau A–E, estado e datas.
+- `evidence`: claim, resumo, tipo e papel.
+- `sources`: título, veículo/autor, URLs, publicação/acesso, tipo e disponibilidade.
+- `evidence_sources`: evidence, source, trecho, localizador e papel; ID próprio permite múltiplos trechos.
+- `monitoring_runs`: janela, provider/modelo, status, tokens/custo, erro e timestamps.
+- `monitoring_candidates`: run, fingerprint global, payload normalizado, entidade encontrada, confiança técnica e estado.
+- `moderation_decisions`: alvo, decisão, motivo, fingerprint, ator único e data.
+- `import_runs`: arquivo/hash, mapeamento, status e relatório.
+- `exports`: arquivo, geração e hash opcional.
 
-## Schema mínimo do MVP
-
-- **entities:** identidade comum, nome, nome normalizado, slug, tipo, resumo, cargo/função, relevância, justificativa e datas.
-- **entity_aliases:** nomes alternativos utilizados na busca.
-- **cases:** caso/recorte editorial e resumo.
-- **relationships:** entidade relacionada ao caso ou a outra entidade, tipo, síntese e limites.
-- **claims:** proposição atribuível ligada à relação/caso, grau A–E, atribuição, estado público e datas.
-- **sources:** título, veículo/autor, URL, publicação, acesso, tipo e observação.
-- **claim_sources:** ligação entre alegação e fonte, papel, trecho/localizador e observação.
-- **import_runs:** arquivo, hash, mapeamento, status, data e resumo de erros.
-- **exports:** arquivo gerado, data, versão e hash quando aplicável.
-
-O grau A–E pertence à alegação. A relação pode exibir um grau derivado das alegações publicadas, mas não mantém uma segunda classificação independente.
-
-A confiança técnica pertence futuramente ao candidato/execução de monitoramento, não à alegação publicada.
+`evidence_grade` existe somente em `claims`. Grau de relação é derivado. `technical_confidence` existe somente no candidato/run.
 
 ```mermaid
 erDiagram
-  ENTITIES ||--o{ ENTITY_ALIASES : has
   ENTITIES ||--o{ RELATIONSHIPS : subject
   CASES ||--o{ RELATIONSHIPS : context
   RELATIONSHIPS ||--o{ CLAIMS : frames
-  CLAIMS ||--o{ CLAIM_SOURCES : cites
-  SOURCES ||--o{ CLAIM_SOURCES : referenced_by
+  CLAIMS ||--o{ EVIDENCE : has
+  EVIDENCE ||--o{ EVIDENCE_SOURCES : cites
+  SOURCES ||--o{ EVIDENCE_SOURCES : referenced
+  MONITORING_RUNS ||--o{ MONITORING_CANDIDATES : produces
+  MODERATION_DECISIONS }o--|| CLAIMS : moderates
 ```
 
-## Convenções
+## Estados
 
-- `INTEGER PRIMARY KEY` interno e slug público estável no MVP;
-- datas em ISO-8601 UTC;
-- booleanos com `CHECK`;
-- enums pequenos com `CHECK`;
-- foreign keys habilitadas;
-- índices em nome normalizado, slug, status, grau, relevância e chaves estrangeiras;
-- exclusão editorial por arquivamento quando o dado já esteve público.
+Claims/evidências/fontes possuem estado coerente com `quarantined`, `published`, `rejected` ou `archived`. A visibilidade pública é uma consulta explícita, não apenas um campo isolado: claim, evidência e fonte aplicáveis precisam estar publicados.
 
-`claim_sources` usa ID próprio, permitindo múltiplos trechos/localizadores da mesma fonte.
+## Constraints e índices
 
-## Importação
+- foreign keys e `CHECKs` para enums/faixas;
+- nomes/aliases normalizados indexados;
+- índices por estado, grau, relevância, atualização e fingerprint;
+- XOR em relacionamentos com alvo entidade ou caso;
+- URL/fingerprint sugerem duplicidade, mas pessoas nunca são mescladas automaticamente;
+- decisões rejeitadas preservam fingerprint para bloquear republicação automática.
 
-1. calcular hash do arquivo;
-2. validar formato e cabeçalhos;
-3. executar dry-run e apresentar erros;
-4. normalizar nomes sem apagar o valor original relevante;
-5. evitar duplicação pelo hash e chaves naturais auxiliares;
-6. importar em transação;
-7. não fortalecer automaticamente a classificação original.
+## Métricas
 
-## Tabelas futuras
+Views/queries agregam apenas a visão pública. `public_metric_snapshots` fica opcional para histórico P1; o MVP calcula o estado corrente.
 
-Quando painel e monitoramento forem implementados: `users`, `sessions`, `editorial_reviews`, `change_log`, `publication_revisions`, `editorial_summaries`, `monitoring_runs`, `monitoring_candidates`, `evidence`, `source_snapshots`, `source_relationships` e estruturas de contraditório.
+## Futuro
+
+`users`, `sessions`, `publication_revisions`, `editorial_summaries`, `source_snapshots`, `source_relationships`, auditoria completa e contraditório estruturado entram quando painel/equipe amadurecerem.
 

@@ -3,26 +3,17 @@
 - **Status:** aceito
 - **Data:** 2026-09-04
 
-## Contexto
-
-O desenho completo inclui segurança avançada, painel, automação, testes e operação robusta. Implementar tudo antes do primeiro acesso aumentaria tempo e consumo de tokens sem evidência de demanda.
-
 ## Decisão
 
-Entregar primeiro uma aplicação pública somente de leitura, alimentada por CLI, com controles básicos de baixo custo. Não haverá meta de cobertura nem E2E no MVP; build, análise estática e smoke test manual formam o gate inicial.
+O MVP inclui o motor que diferencia o produto: página/métricas, OpenRouter, publicação automática controlada e pós-moderação simples. Segurança avançada, workflow multiusuário e suíte abrangente são adiados.
 
-Funcionalidades futuras permanecem documentadas e sobem de prioridade por gatilhos observáveis: tráfego, colaboração, regressão, incidente, frequência de atualização ou integração externa.
-
-## Alternativas
-
-- Implementar o desenho completo: maior robustez inicial, maior prazo e custo.
-- Protótipo sem banco/arquitetura: lançamento ainda mais rápido, mas cria retrabalho na importação e evolução.
+O gate inicial usa formatação, vet, build e smoke manual. Testes automatizados entram primeiro em gates, dedupe e métricas após estabilização/regressão.
 
 ## Consequências
 
-Menor prazo, custo e superfície de ataque inicial. Há maior dependência de verificação manual e menor proteção contra regressões, aceita conscientemente até surgirem gatilhos.
+Lançamento rápido sem reduzir o produto a uma página estática. Há maior dependência de monitoramento humano posterior e menor proteção contra regressões, aceita até surgirem gatilhos reais.
 
-## Gatilhos de revisão
+## Gatilhos
 
-Erros recorrentes, colaboradores adicionais, painel, OpenRouter, uploads, tráfego relevante, contestação ou necessidade de releases frequentes.
+Tráfego, equipe, incidentes, regressões, contestação, custo de LLM ou frequência de releases.
 

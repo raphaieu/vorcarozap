@@ -1,31 +1,31 @@
 # Instruções para agentes — VorcaroZAP
 
-## Antes de alterar código
+## Leitura obrigatória
 
-1. Leia `README.md`, `docs/00-visao-do-produto.md`, `docs/08-roadmap.md` e os ADRs relacionados.
-2. Preserve o objetivo do MVP rápido: página pública de leitura, importação por CLI e SQLite.
-3. Não antecipe painel, autenticação, OpenRouter, scheduler, snapshots, observabilidade avançada ou suíte E2E.
-4. Não transforme itens FUTURO em bloqueadores sem registrar um gatilho concreto.
+Antes de implementar, leia `README.md`, visão, arquitetura, modelo editorial, modelo de dados, roadmap e ADRs relacionados.
 
-## Regras de implementação
+## Prioridade do MVP
 
-- Prefira stdlib e dependências já decididas.
-- Não crie microsserviços, SPA, Redis ou PostgreSQL no MVP.
-- Não acople domínio a HTTP, SQLite, Excelize ou futuro provedor de LLM.
-- Use queries parametrizadas e templates com escape.
-- Não faça commit de chaves, `.env`, bancos SQLite ou arquivos temporários.
-- Preserve fontes, datas e classificação editorial importadas.
-- Não converta automaticamente a classificação legada da planilha em verdade editorial.
-- Não publique conteúdo produzido por IA sem revisão humana quando essa capacidade existir.
+1. página pública e métricas;
+2. importação da base inicial;
+3. OpenRouter e monitoramento automático;
+4. validação/publicação automática controlada;
+5. painel simples de pós-moderação;
+6. deploy econômico em uma VPS.
 
-## Validação do MVP
+Não retire OpenRouter, métricas ou painel do MVP. Não transforme painel em CMS genérico nem implemente RBAC/MFA/workflow multiusuário agora.
 
-- Execute `go fmt ./...`, `go vet ./...` e `go build ./...`.
-- Execute o smoke test manual descrito nos critérios de aceite.
-- Não busque cobertura de testes por percentual nesta fase.
-- Adicione teste automatizado apenas quando ele proteger lógica crítica já implementada ou reproduzir regressão real.
+## Regras
 
-## Alterações arquiteturais
+- Monólito Go, SQLite, SSR e uma instância.
+- Domínio não importa HTTP, SQLite, Excelize ou OpenRouter.
+- Grau A–E pertence à alegação; relevância 1–5 pertence à entidade; confiança técnica pertence ao candidato/run.
+- Métricas contam somente registros públicos ativos.
+- Automação publica apenas quando gates determinísticos mínimos passarem; caso contrário, quarentena.
+- Admin pode desaprovar, restaurar e revisar; toda moderação altera imediatamente a consulta e métricas.
+- Queries parametrizadas, templates escapados, segredos fora do Git e proteção básica do `/admin` são obrigatórios.
+- Não criar microsserviços, SPA, Redis ou PostgreSQL no MVP.
+- Sem meta de cobertura. Execute `go fmt`, `go vet`, `go build` e smoke checklist.
 
-Mudanças em banco, stack, publicação automática ou fronteiras do monólito exigem ADR novo ou atualização explícita de ADR existente.
+Mudanças de publicação automática, schema, stack ou fronteiras exigem ADR.
 

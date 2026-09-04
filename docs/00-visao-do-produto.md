@@ -1,64 +1,51 @@
 # Visão do produto
 
-## Problema
+## Problema e proposta
 
-Informações públicas sobre o caso Vorcaro/Banco Master estão fragmentadas em reportagens, documentos, decisões, entrevistas, mensagens e redes sociais. O VorcaroZAP organiza esse material numa página navegável, com nomes, contexto, relevância, classificação e links para as fontes.
+As informações do caso estão fragmentadas em mídia, documentos, decisões, entrevistas, mensagens e redes. O VorcaroZAP monitora, organiza e publica essas associações com fontes, datas, classificação e métricas.
 
-O produto não decide culpa. Ele demonstra por que um nome aparece associado ao caso e qual fonte pública sustenta essa associação.
+O produto não decide culpa. Ele responde por que um nome aparece relacionado, quem publicou a informação, qual a força documental e quando houve atualização.
 
-## Objetivo do primeiro lançamento
+## Resultado do MVP
 
-Publicar rapidamente uma experiência mobile first que permita:
+- página mobile first com resumo, métricas, busca, filtros, nomes e detalhes;
+- fontes e evidências acessíveis;
+- planilha inicial importada;
+- novas fontes encontradas automaticamente via OpenRouter;
+- conteúdo válido publicado automaticamente;
+- conteúdo duvidoso colocado em quarentena;
+- painel simples para localizar, desaprovar, restaurar e revisar;
+- métricas recalculadas após ingestão ou moderação.
 
-- visualizar pessoas em ordem alfabética;
-- pesquisar e filtrar registros;
-- compreender cargo, relevância e tipo de relação;
-- abrir as fontes datadas;
-- distinguir confirmação, associação, alegação e pista;
-- baixar a base disponível.
+## Modelo operacional
 
-## Escopo do MVP rápido
+O MVP usa pós-moderação. O pipeline automático não depende de aprovação item a item quando cumpre os gates mínimos. O administrador acompanha os registros e pode removê-los da área pública. Casos ambíguos não são publicados automaticamente.
 
-- monólito Go;
-- HTML server-side com `templ` e HTMX apenas onde agregar valor;
-- SQLite;
-- importação da planilha por comando local;
-- página pública de leitura;
-- resumo editorial simples;
-- listagem, busca, filtros e detalhes;
-- metodologia e disclaimer;
-- download de XLSX;
-- Docker/Caddy e deploy em uma VPS.
+## Fora do MVP
 
-## Fora do primeiro lançamento
+RBAC multiusuário, MFA, dupla revisão, CMS completo, snapshots integrais, cadeia de custódia, alertas sofisticados, HA, múltiplas instâncias, API pública e suíte ampla de testes.
 
-- painel administrativo;
-- autenticação, MFA e RBAC;
-- monitoramento automático e OpenRouter;
-- uploads públicos;
-- captura ou armazenamento integral de páginas;
-- workflows editoriais multiusuário;
-- auditoria imutável avançada;
-- observabilidade e alertas sofisticados;
-- suíte unitária, integração ou E2E abrangente;
-- alta disponibilidade e múltiplas instâncias.
+## Métricas públicas essenciais
 
-Esses itens permanecem documentados para evolução e não bloqueiam o início do desenvolvimento.
+- pessoas/organizações ativas;
+- fontes públicas ativas;
+- alegações por grau A–E;
+- entidades por categoria e relevância;
+- registros adicionados/atualizados recentemente;
+- data/hora do último monitoramento concluído.
+
+Confiança técnica da IA não é exibida como probabilidade de verdade ou culpa.
 
 ## Premissas
 
-- poucos acessos e uma única instância no início;
-- atualização manual por uma pessoa responsável;
-- conteúdo baseado em material já publicado e com URLs registradas;
-- nenhum endpoint público de escrita no MVP;
-- português do Brasil, datas persistidas em UTC e exibidas em `America/Fortaleza`;
-- a planilha atual é insumo de pesquisa e precisa de conferência editorial antes de virar página pública.
+- uma instância e um administrador no início;
+- volume e tráfego baixos/moderados;
+- fontes são públicas e registradas por URL/data;
+- atualizações automáticas têm limites de custo;
+- conteúdo desaprovado deixa imediatamente a página e os números públicos;
+- português do Brasil, timestamps em UTC e exibição em `America/Fortaleza`.
 
-## Medida de sucesso inicial
+## Riscos registrados
 
-O MVP está validado quando pode ser publicado na VPS, carrega a base, funciona bem no celular e permite chegar de um nome à fonte correspondente. Métricas avançadas serão adicionadas após existir tráfego real.
-
-## Riscos registrados, não bloqueantes
-
-Erro de identidade, perda de contexto, link indisponível, privacidade, direito de resposta, segurança do painel futuro, custo de LLM e escala. No MVP, a mitigação principal é conteúdo revisado manualmente, fonte visível, linguagem neutra, página somente de leitura e canal de correção.
+Erro de identidade, fontes circulares, perda de contexto, links indisponíveis, prompt injection, custo de LLM, contestação e dados pessoais. São tratados inicialmente por gates, quarentena, fonte visível, pós-moderação e canal de correção; controles avançados evoluem com uso real.
 

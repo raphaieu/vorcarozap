@@ -1,55 +1,59 @@
 # VorcaroZAP
 
-Aplicação pública e documental para organizar informações publicadas sobre Daniel Vorcaro, Banco Master e pessoas, organizações e acontecimentos relacionados. O produto separa relação, alegação, fonte, relevância e força da evidência; presença na base não significa culpa ou irregularidade.
+Aplicação pública, investigativa e documental para organizar informações publicadas sobre Daniel Vorcaro, Banco Master e pessoas, organizações e acontecimentos relacionados. A plataforma combina monitoramento automatizado, fontes rastreáveis, classificação editorial, métricas públicas e pós-moderação humana.
 
-> Projeto independente, sem vínculo com WhatsApp, Meta, Banco Master ou pessoas e instituições citadas. “WhatsApp” é marca de seu titular. A identidade visual usa apenas referência cromática e não reproduz marca ou interface oficial.
+> Projeto independente, sem vínculo com WhatsApp, Meta, Banco Master ou pessoas e instituições citadas. “WhatsApp” é marca de seu titular. A identidade usa referência cromática, sem reproduzir logotipo ou interface oficial.
 
 ## Estado
 
-**Fase 0 concluída — escopo do MVP rápido definido.** A próxima etapa é construir a primeira versão pública de leitura. O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa com fontes, mas não equivale a conteúdo editorial automaticamente aprovado.
+**Fase 0 — especificação consolidada.** O MVP prioriza o motor público: coleta via OpenRouter, normalização, validação, publicação automática controlada, métricas, consulta pública e painel simples para pós-moderação.
 
-## Primeira versão
+O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
-O primeiro lançamento terá:
+## MVP
 
-- aplicação Go server-side, mobile first;
-- SQLite em volume local;
-- importação da planilha por CLI;
-- listagem alfabética, busca e filtros essenciais;
-- páginas de detalhes com fontes e classificação;
-- resumo e metodologia;
-- download da base;
-- deploy em uma Oracle VPS com Docker e Caddy.
+- Go, SSR com `templ`/HTMX, SQLite e Caddy;
+- importação da planilha inicial;
+- monitoramento via OpenRouter/web search;
+- validação determinística e estruturação por schema;
+- publicação automática do conteúdo que cumprir os gates mínimos;
+- quarentena automática do conteúdo ambíguo/incompleto;
+- painel simples protegido para fontes, evidências e moderação;
+- listagem, busca, filtros, detalhes e fontes;
+- métricas públicas derivadas apenas dos registros ativos;
+- download da planilha/base;
+- deploy em Oracle VPS.
 
-Ficam para as próximas versões: painel administrativo, usuários/RBAC/MFA, monitoramento por OpenRouter, ingestão automática, snapshots, auditoria avançada, observabilidade, backup externo sofisticado e suíte automatizada de testes.
+Não integram o MVP: RBAC multiusuário, MFA, workflow de dupla revisão, snapshots completos, observabilidade sofisticada, alta disponibilidade e cobertura ampla de testes.
 
-## Arquitetura inicial
+## Fluxo
 
 ```mermaid
 flowchart LR
-  U[Leitor] --> C[Caddy/HTTPS]
-  C --> G[Go + SSR]
-  G --> S[(SQLite)]
-  XLSX[Planilha] --> CLI[Importador CLI]
-  CLI --> S
-  S --> EXP[Exportação]
+  OR[OpenRouter + web search] --> V[Normalização e validação]
+  V -->|válido| P[(Publicado)]
+  V -->|ambíguo| Q[(Quarentena)]
+  A[Painel simples] --> P
+  A --> Q
+  P --> W[Página pública]
+  P --> M[Métricas]
+  P --> X[XLSX]
 ```
 
-O desenho continua sendo um monólito modular. Capacidades futuras terão fronteiras previstas, mas não serão implementadas antes de serem necessárias.
-
-## Comandos previstos no primeiro corte
+## Comandos planejados
 
 ```bash
 vorcarozap serve
 vorcarozap migrate
-vorcarozap import --file ./arquivo.xlsx --dry-run
-vorcarozap import --file ./arquivo.xlsx
+vorcarozap import --file arquivo.xlsx --dry-run
+vorcarozap import --file arquivo.xlsx
+vorcarozap monitor
 vorcarozap export
 ```
 
-## Validação inicial
+## Validação econômica
 
-Não haverá meta de cobertura nem suíte E2E no primeiro lançamento. O gate inicial é econômico:
+Sem meta de cobertura no MVP. Gate inicial:
 
 ```bash
 go fmt ./...
@@ -57,16 +61,7 @@ go vet ./...
 go build ./...
 ```
 
-Além disso, migrations, importação e jornadas públicas passam por smoke test manual documentado. Testes automatizados serão introduzidos quando bugs recorrentes, colaboração, painel, monitoramento ou crescimento justificarem o custo.
-
-## Princípios editoriais
-
-- Relação não é culpa e contato não prova ilícito.
-- Toda associação exibida possui fonte e linguagem compatível com seu grau.
-- Evidência A–E e relevância 1–5 são dimensões independentes.
-- Fontes e datas ficam visíveis ao leitor.
-- Pistas e alegações são identificadas como tais.
-- Atualizações iniciais são revisadas manualmente antes da importação/publicação.
+Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Testes automatizados entram primeiro nas regras críticas que apresentarem regressão.
 
 ## Documentação
 

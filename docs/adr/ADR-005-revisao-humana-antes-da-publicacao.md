@@ -1,23 +1,23 @@
-# ADR-005 — Revisão humana antes da publicação automatizada
+# ADR-005 — Pós-moderação humana
 
-- **Status:** aceito com implementação incremental
-- **Data:** 2026-09-03; sequenciamento revisto em 2026-09-04
+- **Status:** substitui revisão prévia obrigatória no MVP
+- **Data:** 2026-09-04
 
 ## Contexto
 
-O conteúdo envolve pessoas identificáveis. Ao mesmo tempo, o primeiro lançamento será operado por uma pessoa, sem painel ou ingestão automática.
+Aprovar manualmente cada item elimina a velocidade do monitoramento e exige painel complexo. Publicar tudo sem gate aumenta ruído.
 
 ## Decisão
 
-No MVP, a revisão ocorre manualmente antes da importação/publicação e não exige workflow, RBAC ou dupla aprovação no software. Quando painel ou monitoramento forem introduzidos, automação terminará em `pending_review` e publicação continuará sendo uma ação humana.
+Adotar publicação automática controlada: gates válidos levam a `published`; falhas/ambiguidade levam a `quarantined`. Um administrador acompanha o painel e pode rejeitar, restaurar ou aprovar quarentena.
 
-Dupla revisão, MFA, papéis separados e trilha avançada permanecem futuras, acionadas por equipe maior, alegações sensíveis, tráfego ou risco real.
+Fingerprint rejeitado bloqueia republicação automática imediata. Moderação altera consulta, métricas e exportação.
 
 ## Consequências
 
-O MVP evita construir um sistema editorial multiusuário antes de precisar dele. Em contrapartida, a disciplina inicial depende do responsável e de checkpoints no Git/arquivo de importação.
+Atualização rápida e baixo custo operacional, aceitando janela entre publicação e eventual desaprovação. Linguagem neutra, fonte visível, gates e quarentena são obrigatórios.
 
 ## Gatilhos
 
-Segundo colaborador, volume recorrente de atualizações, ingestão automática, contestação relevante ou necessidade de demonstrar autoria detalhada.
+Contestação relevante, equipe maior, alegações mais sensíveis ou incidentes podem exigir aprovação prévia/dupla revisão.
 

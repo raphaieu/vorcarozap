@@ -1,23 +1,19 @@
-# ADR-004 — OpenRouter como provedor futuro de pesquisa/LLM
+# ADR-004 — OpenRouter como provedor inicial
 
-- **Status:** aceito para fase futura
-- **Data:** 2026-09-03; sequenciamento revisto em 2026-09-04
-
-## Contexto
-
-O produto poderá monitorar novas publicações, mas o primeiro lançamento pode ser alimentado manualmente. Antecipar LLM, scheduler, fila, revisão e observabilidade aumentaria custo antes da validação do site.
+- **Status:** aceito
+- **Data:** 2026-09-03; escopo confirmado em 2026-09-04
 
 ## Decisão
 
-OpenRouter continua escolhido como primeiro candidato, isolado por `ResearchProvider`, porém não integra o MVP público. A documentação da API será revalidada quando a fase de monitoramento começar.
+OpenRouter integra o MVP por meio de `ResearchProvider`. Modelos/engine são configuração. Structured outputs e `openrouter:web_search` alimentam candidatos normalizados. Revalidar a API antes de codificar.
 
-Quando implementado, usará modelo configurável, structured outputs e ferramenta vigente de web search. Saídas produzirão candidatos e não publicação direta.
+O pipeline publica automaticamente candidatos que passam nos gates locais e coloca os demais em quarentena. A confiança do modelo não substitui os gates.
 
 ## Consequências
 
-O lançamento fica mais rápido e barato. Atualizações serão manuais no início. A automação posterior exigirá mecanismos próprios de custo, validação, idempotência e revisão.
+Monitoramento é o motor de atualização, com custo/instabilidade externos. Limites, idempotência, citações e pós-moderação reduzem o risco sem criar workflow pesado.
 
 ## Gatilhos
 
-Frequência de atualização manual se tornar alta, audiência justificar conteúdo mais recente ou fluxo editorial já suportar revisão de candidatos.
+Mudança da API, custo/qualidade inadequados, política de dados incompatível ou provedor superior.
 

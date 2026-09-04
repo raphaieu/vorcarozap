@@ -1,70 +1,59 @@
 # Modelo editorial e evidências
 
-## Princípio
+## Unidades
 
-O VorcaroZAP organiza associações já publicadas. Uma pessoa estar na base não significa culpa, participação em irregularidade ou proximidade pessoal com Daniel Vorcaro.
+Entidade é pessoa/organização. Relação fornece contexto. Alegação é uma proposição atribuível. Evidência descreve o suporte. Fonte identifica a publicação verificável.
 
-Uma **entidade** é uma pessoa ou organização. Uma **relação** descreve o contexto em que aparece. Uma **alegação** registra uma proposição atribuível. Uma **fonte** permite ao leitor conferir de onde veio a informação.
+## Dimensões
 
-## Dimensões independentes
+- **Grau A–E:** força pública da alegação; pertence à alegação.
+- **Relevância 1–5:** alcance da entidade; não mede culpa ou proximidade.
+- **Confiança técnica:** qualidade da extração/deduplicação; pertence ao candidato/run e não aparece como verdade pública.
 
-1. **Evidência A–E:** força do suporte público à alegação.
-2. **Relevância 1–5:** alcance público, institucional, econômico ou político da pessoa.
-3. **Confiança técnica:** futuramente, confiança do pipeline em extração/deduplicação; nunca mede culpa ou verdade.
+## Escala
 
-O grau pertence à alegação. Relevância pertence à entidade. Confiança técnica pertence à execução automática/candidato.
-
-## Escala A–E
-
-| Grau | Significado | Como exibir |
+| Grau | Significado | Publicação automática |
 |---|---|---|
-| A | documento, decisão, registro institucional ou manifestação direta verificável | explicar natureza, data e limites |
-| B | reportagem fundamentada ou confirmações jornalísticas independentes | identificar veículos e contexto |
-| C | associação/contato documentado, com significado ou consequência incompletos | dizer claramente o que não está demonstrado |
-| D | alegação atribuída sem confirmação independente suficiente | destacar quem alegou e apresentar fonte |
-| E | pista, menção indireta ou coincidência que exige apuração | rotular como pista e não produzir conclusão |
+| A | documento/registro/manifestação direta contextualizada | sim, se gates passarem |
+| B | reportagem fundamentada ou confirmação independente | sim, se gates passarem |
+| C | associação documentada com significado incompleto | sim, explicitando limites |
+| D | alegação atribuída sem confirmação independente | sim somente com atribuição explícita e fonte pública |
+| E | pista/menção indireta | sim somente se a menção estiver documentada e sem inferir ilícito |
 
-Quantidade de links não fortalece automaticamente o grau; vários veículos podem reproduzir a mesma origem.
+Sem URL pública, entidade inequívoca, linguagem compatível, trecho/localizador suficiente ou data mínima, o candidato vai para quarentena.
 
-## Regra de publicação do MVP
+## Estados e visibilidade
 
-O MVP não terá workflow multiusuário. A revisão acontece manualmente antes da importação.
+```text
+quarantined  -> não público; aguarda administrador
+published    -> público; entra nas métricas
+rejected     -> não público; decisão evita republicação automática
+archived     -> não público; preservado para histórico
+```
 
-- A–C podem ser publicados com síntese fiel, fonte e limites.
-- D pode ser publicado como alegação atribuída, nunca como fato confirmado.
-- E pode ser publicado somente quando a própria menção/associação estiver documentada por fonte pública e o texto não inferir crime, benefício ou intenção.
-- Item sem fonte pública identificável não entra na página.
-- Alegações graves que ultrapassem o que a fonte demonstra permanecem fora do texto público.
+Somente `published` aparece em páginas, busca, métricas e XLSX. Entidade sem claim/relação publicada não aparece por associação vazia. Moderar claim/fonte recalcula a visibilidade derivada.
 
-Essa regra permite mostrar “onde há fumaça” sem vender fumaça como incêndio confirmado.
+## Gates automáticos mínimos
+
+- URL `http/https` válida;
+- título/veículo ou emissor;
+- entidade resolvida sem ambiguidade relevante;
+- alegação limitada ao conteúdo citado;
+- trecho/localizador suficiente;
+- grau válido e linguagem obrigatória para C/D/E;
+- ausência de telefone/documento/endereço desnecessário;
+- fingerprint não rejeitado anteriormente;
+- validação local do schema e das citações retornadas.
+
+Falha em gate gera quarentena, não descarte.
 
 ## Relevância
 
-- 1: local ou circunstancial;
-- 2: setorial ou regional;
-- 3: relevância nacional moderada;
-- 4: alta relevância nacional;
-- 5: relevância nacional estratégica ou internacional.
+1 local/circunstancial; 2 setorial/regional; 3 nacional moderada; 4 alta nacional; 5 estratégica/internacional. Justificativa factual obrigatória.
 
-Relevância não altera o grau e não representa intensidade da relação.
+## Fontes
 
-## Linguagem
+Registrar título, publicador/autor, URL canônica, publicação/acesso, tipo, trecho/localizador e papel (`supports`, `contradicts`, `contextualizes`). Múltiplos veículos que derivam da mesma origem não contam automaticamente como confirmações independentes.
 
-Preferir: “foi citado por”, “aparece em”, “segundo a fonte”, “a reportagem afirma”, “a defesa declarou”, “não foi localizada confirmação independente” e “permanece como pista”.
-
-Contato social/profissional, presença em agenda/evento ou ausência de resposta nunca é apresentado como prova de irregularidade.
-
-## Fonte mínima
-
-Registrar, quando disponível: título, veículo/autor, URL, data de publicação, data de acesso, tipo e trecho/localizador. No MVP, não é obrigatório armazenar cópia integral ou snapshot. Preservação, hash, licença, dependência entre fontes e snapshots permanecem evolução futura.
-
-Mensagens e capturas exigem origem pública identificada e contexto. Telefones, documentos, endereços e dados pessoais sem interesse para a associação devem ser ocultados.
-
-## Correções
-
-O lançamento deve oferecer um canal de correção. Alterações iniciais podem ser registradas pelo histórico Git, data da importação e versão da planilha. Workflow imutável e histórico público detalhado entram com o painel editorial.
-
-## Planilha inicial
-
-O arquivo de 03/09/2026 possui quatro abas (`Resumo`, `Pessoas A-Z`, `Método e fontes`, `Leitura rápida`), 151 linhas na tabela principal e fontes registradas. Ele está disponível no repositório público como artefato de pesquisa, mas suas linhas não são automaticamente aprovadas para exibição na aplicação. A escala legada deve ser preservada e não convertida silenciosamente para A–E.
+Snapshots, cadeia de custódia e licença avançada ficam P1. Canal de correção e linguagem neutra entram no MVP.
 

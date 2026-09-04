@@ -1,20 +1,6 @@
 # Critérios de aceite
 
-## Fase 0
-
-- escopo do primeiro lançamento está separado das evoluções;
-- segurança e testes futuros estão documentados sem bloquear o MVP;
-- Go, SQLite, SSR, importação e deploy possuem decisões claras;
-- OpenRouter está explicitamente fora do primeiro lançamento;
-- classificação editorial e fontes continuam obrigatórias.
-
-## Definition of Done do MVP
-
-Uma entrega está pronta quando compila, cumpre a jornada manual relacionada, não expõe segredo/erro interno e atualiza a documentação quando alterar comportamento.
-
-Não há meta de cobertura automatizada nesta fase.
-
-## Gate técnico
+## Gate técnico econômico
 
 ```bash
 go fmt ./...
@@ -22,35 +8,35 @@ go vet ./...
 go build ./...
 ```
 
-Migrations devem funcionar em banco vazio. Importação deve ser testada primeiro com `--dry-run`.
+Sem percentual de cobertura ou E2E obrigatório no MVP.
 
-## Smoke test manual
+## Smoke funcional
 
-1. subir ambiente limpo;
-2. criar/migrar SQLite;
-3. executar dry-run da planilha;
-4. importar e repetir sem duplicar;
-5. abrir home em viewport mobile;
-6. pesquisar e filtrar;
-7. abrir pessoa, alegação e fonte;
-8. baixar XLSX;
-9. reiniciar containers e confirmar persistência;
-10. confirmar que não existe endpoint público de escrita.
+1. subir ambiente/banco vazio;
+2. migrar e importar planilha sem duplicação;
+3. consultar home, métricas, busca, filtros e detalhe;
+4. executar monitor limitado e registrar custo;
+5. candidato válido vira público;
+6. candidato incompleto vai para quarentena;
+7. desaprovar remove de página, busca, métricas e XLSX;
+8. restaurar/autorizar reverte a visibilidade;
+9. execuções simultâneas do monitor não se sobrepõem;
+10. reiniciar containers preservando SQLite;
+11. acessar `/admin` sem credencial falha;
+12. baixar XLSX apenas com conteúdo público.
 
-## Gate editorial mínimo
+## Gate automático de publicação
 
-- nome e homônimos conferidos;
-- síntese não presume culpa;
-- grau e relevância não são confundidos;
-- associação possui ao menos uma fonte pública;
-- título/veículo/URL/data disponíveis são exibidos;
-- pista ou alegação é identificada como tal;
-- dados pessoais desnecessários não são exibidos;
-- contato para correção está disponível.
+- schema/citação/URL válidos;
+- identidade sem ambiguidade relevante;
+- alegação não excede a fonte;
+- classificação A–E e linguagem compatíveis;
+- trecho/localizador suficiente;
+- ausência de PII desnecessária;
+- fingerprint não rejeitado;
+- custo dentro do limite.
 
-## Não bloqueiam o primeiro lançamento
+## Não bloqueiam o MVP
 
-Painel, MFA/RBAC, dupla revisão, OpenRouter, scheduler, snapshots, logs/métricas avançados, testes unitários abrangentes, integração, E2E, WCAG formal, backup externo criptografado, RPO/RTO formal e parecer jurídico completo.
-
-Esses itens permanecem no backlog e tornam-se obrigatórios quando a funcionalidade associada for criada ou o projeto demonstrar tráfego, colaboração ou risco que justifique o custo.
+MFA, RBAC multiusuário, dupla revisão, snapshots, trilha imutável, métricas históricas, cobertura abrangente, E2E, observabilidade completa, HA, PostgreSQL e política jurídica operacional extensa.
 

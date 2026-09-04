@@ -1,12 +1,8 @@
 # Monitoramento, pesquisa e LLM
 
-## Status
+## Papel no MVP
 
-**Planejado para uma fase posterior ao primeiro lançamento.** Nenhuma integração com OpenRouter é necessária para colocar a página pública inicial no ar.
-
-As primeiras atualizações serão produzidas manualmente e aplicadas por importação/CLI. Isso reduz custo de tokens e evita construir painel, fila e mecanismos de verificação antes de validar interesse no produto.
-
-## Arquitetura futura preservada
+O monitoramento via OpenRouter é parte central do produto. Ele encontra novas publicações, extrai dados estruturados, deduplica e alimenta automaticamente a base.
 
 ```go
 type ResearchProvider interface {
@@ -15,19 +11,46 @@ type ResearchProvider interface {
 }
 ```
 
-`OpenRouterProvider` será o primeiro adaptador, sem acoplamento do domínio. Modelos, URL e engine serão configuração.
+## OpenRouter
 
-## Referência técnica consultada em 03/09/2026
-
-O plano utiliza structured outputs com JSON Schema em modelo compatível e a server tool beta `openrouter:web_search`. O plugin `web` e o sufixo `:online` estão depreciados. Revalidar a documentação oficial quando esta fase começar:
+Configurar modelo, base URL e engine por ambiente. Usar structured outputs com JSON Schema e a ferramenta vigente `openrouter:web_search`, revalidando documentação no início da implementação:
 
 - [Web Search Server Tool](https://openrouter.ai/docs/guides/features/server-tools/web-search)
 - [Structured Outputs](https://openrouter.ai/docs/guides/features/structured-outputs)
 - [Quickstart](https://openrouter.ai/docs/quickstart)
 
-## Pipeline futuro
+## Pipeline
 
-Descoberta por janela → normalização → deduplicação → verificação dirigida → fontes/contraditório → candidato → revisão humana → publicação.
+```mermaid
+flowchart LR
+  A[run + lock] --> B[descoberta]
+  B --> C[JSON + citações]
+  C --> D[validação local]
+  D --> E[dedupe]
+  E -->|gates OK| P[published]
+  E -->|ambíguo| Q[quarantined]
+  P --> M[métricas]
+  ADM[admin] --> P
+  ADM --> Q
+```
 
-Antes de ativá-lo serão implementados apenas os controles necessários à funcionalidade: limite de custo, idempotência, validação de citações, armazenamento restrito do bruto e proteção contra prompt injection. Testes de contrato substituirão uma suíte ampla inicialmente.
+## Gates
+
+Schema válido, URL/citação presente, entidade resolvida, alegação limitada, linguagem compatível com grau, dados pessoais minimizados, fingerprint não rejeitado e custo dentro do teto.
+
+A validação pode usar uma segunda chamada mais forte apenas para candidatos relevantes/ambíguos. O modelo sugere classificação; regras locais decidem publicação/quarentena.
+
+## Economia e resiliência
+
+- busca incremental por janela;
+- cache/fingerprint de URLs;
+- modelo econômico para descoberta;
+- verificação seletiva;
+- limites por run/dia;
+- timeout e retry somente transitório;
+- lock e idempotência;
+- registro de modelo, tokens e custo;
+- execução parcial não remove dados já válidos.
+
+Testes de contrato automatizados são P1; no MVP usar fixtures mínimas e smoke run com orçamento baixo.
 
