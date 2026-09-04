@@ -10,7 +10,7 @@ CLI, config, SSR, SQLite/WAL, migrations, Compose/Caddy, layout e smoke page.
 
 ## Fase 2 — núcleo editorial e importação
 
-Entidades, relações, claims, evidências/fontes, estados, importador XLSX com `origin = curated_seed`, mapeamento legado versionado, deduplicação e exportação.
+Entidades, relações, claims com disposição/eligibilidade métrica, evidence_sources moderáveis, sources com acessibilidade, estados, importador XLSX com `origin = curated_seed`, mapeamento legado versionado, deduplicação e exportação.
 
 ## Fase 3 — página pública e métricas
 
@@ -18,11 +18,11 @@ Home, cards, busca, filtros, detalhes, fontes, metodologia, métricas correntes 
 
 ## Fase 4 — monitoramento OpenRouter
 
-ResearchProvider, web search, schema, gate estrutural, segunda avaliação semântica, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e custo.
+ResearchProvider, web search, schema, verificador GET seguro, gate estrutural, segunda avaliação semântica, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e custo.
 
 ## Fase 5 — painel simples
 
-Proteção de `/admin`, listagem/filtros, detalhes, desaprovação, restauração/aprovação de quarentena e execução manual do monitor.
+Proteção de `/admin`, listagem/filtros, detalhes, moderação de claim ou evidence_source, restauração/aprovação de quarentena e execução manual do monitor.
 
 ## Fase 6 — deploy MVP
 

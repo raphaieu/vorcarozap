@@ -11,7 +11,8 @@ flowchart TB
   C --> H[Go HTTP]
   H --> APP[Casos de uso]
   MON[CLI/cron monitor] --> RP[Descoberta OpenRouter]
-  RP --> GE[Gate estrutural em Go]
+  RP --> AV[Verificador GET seguro e limitado]
+  AV --> GE[Gate estrutural em Go]
   GE -->|passou| GS[Gate semântico por segunda avaliação]
   GE -->|falha| Q[Quarentena]
   GS --> POL[Política Go por grau]
@@ -30,7 +31,7 @@ flowchart TB
 
 ```text
 cmd/vorcarozap/
-internal/{config,domain,store,editorial,research,monitoring,metrics,importer,exporter,web,admin}
+internal/{config,domain,store,editorial,research,monitoring,sourcecheck,metrics,importer,exporter,web,admin}
 migrations/ queries/ web/{components,pages,static}/
 config/import-mapping-v1.yaml
 ```
@@ -45,11 +46,15 @@ O servidor atende leitura e raras mutações administrativas. `monitor` é chama
 
 ## Métricas
 
-Consultas SQL agregam somente registros `published`. Para a escala inicial, cálculo direto/cache em memória é suficiente. Publicação, rejeição e restauração invalidam o cache. Snapshot histórico fica P1.
+Consultas SQL de rede agregam somente claims `published` e `metric_eligible = true`. Claims públicos de contexto/correção permanecem consultáveis sem inflar vínculos. Para a escala inicial, cálculo direto/cache em memória é suficiente. Publicação, rejeição, restauração e mudança de disposição/eligibilidade invalidam o cache. Snapshot histórico fica P1.
 
 ## Admin
 
-SSR/HTMX, uma credencial administrativa e ações pequenas: listar, detalhar, rejeitar, restaurar/aprovar quarentena e disparar monitor. Não é CMS completo.
+SSR/HTMX, uma credencial administrativa e ações pequenas: listar, detalhar, moderar claim ou uso específico de fonte, restaurar/aprovar quarentena e disparar monitor. Uma source não é rejeitada globalmente. Não é CMS completo.
+
+## Verificação de fonte
+
+`sourcecheck` é um adaptador estreito de acessibilidade, não crawler. Ele faz GET com timeout, limite de bytes e redirects controlados, encerra a leitura ao atingir o limite e não persiste o corpo. Valida esquema, host e IP a cada redirect e bloqueia destinos locais, privados, link-local e de metadata. HEAD não é usado, porque muitos veículos o bloqueiam mesmo quando GET funciona.
 
 ## Evolução
 

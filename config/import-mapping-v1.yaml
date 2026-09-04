@@ -7,12 +7,36 @@ source:
   legacy_grade_column: "Grau de confirmação"
 
 legacy_grade_mapping:
-  "A — direto confirmado": "A"
-  "B — direto documentado/controvertido": "B"
-  "C — agenda apenas": "C"
-  "D — indireto/potencial": "D"
-  "E — fraco/ambíguo": "E"
-  "E — fraco/corrigido": "E"
+  "A — direto confirmado":
+    grade: "A"
+    initial_state: "published"
+    disposition: "supports_link"
+    metric_eligible: true
+  "B — direto documentado/controvertido":
+    grade: "B"
+    initial_state: "published"
+    disposition: "supports_link"
+    metric_eligible: true
+  "C — agenda apenas":
+    grade: "C"
+    initial_state: "published"
+    disposition: "supports_link"
+    metric_eligible: true
+  "D — indireto/potencial":
+    grade: "D"
+    initial_state: "published"
+    disposition: "possible_link"
+    metric_eligible: true
+  "E — fraco/ambíguo":
+    grade: "E"
+    initial_state: "quarantined"
+    disposition: "possible_link"
+    metric_eligible: false
+  "E — fraco/corrigido":
+    grade: "E"
+    initial_state: "published"
+    disposition: "context_only"
+    metric_eligible: false
 
 unmapped_grade_action: quarantined
 

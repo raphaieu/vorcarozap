@@ -11,7 +11,7 @@ Aprovar manualmente cada item elimina a velocidade do monitoramento e exige pain
 
 Adotar dois gates:
 
-1. gate estrutural determinístico em Go para schema, URL/metadados, trecho/localizador, datas, grau, entidade vinculada, PII, tamanho, deduplicação, fingerprint e orçamento;
+1. gate estrutural determinístico em Go para schema, URL/metadados, trecho/localizador, datas, grau, entidade vinculada, PII, tamanho, deduplicação, fingerprint, acessibilidade conforme política e orçamento;
 2. gate semântico por segunda avaliação estruturada da LLM para identidade, suporte, extrapolação, atribuição, compatibilidade do grau, inferência ilícita e ambiguidades.
 
 A LLM somente recomenda. A política Go toma e registra a decisão final:
@@ -19,7 +19,7 @@ A LLM somente recomenda. A política Go toma e registra a decisão final:
 - A/B: publicação automática quando ambos os gates passam;
 - C: publicação automática somente com linguagem de associação e limites explícitos;
 - D/E: quarentena por padrão, com possível aprovação no painel;
-- qualquer grau: quarentena diante de homônimo, fonte inacessível, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante.
+- qualquer grau: quarentena diante de homônimo, source `unreachable`, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante. `not_checked` segue configuração conservadora por padrão, sem equivaler a rejeição.
 
 Um administrador pode desaprovar, restaurar ou aprovar quarentena. Fingerprint rejeitado bloqueia republicação automática semelhante. A moderação altera imediatamente consulta, métricas e exportação.
 
@@ -45,4 +45,3 @@ Concordância falsa entre modelos, fonte inacessível depois da avaliação, err
 ## Gatilhos de revisão
 
 Contestação relevante, incidente, aumento de sensibilidade, equipe maior, baixa precisão dos gates ou mudança de política automática exige novo ADR e pode restabelecer aprovação prévia/dupla revisão.
-

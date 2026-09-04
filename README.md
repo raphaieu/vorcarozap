@@ -10,7 +10,7 @@ Aplicação pública, investigativa e documental para organizar informações pu
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
-A carga inicial usa `origin = curated_seed` e o mapeamento editorial versionado em `config/import-mapping-v1.yaml`. Linhas que não satisfazem os requisitos da carga curada entram em quarentena.
+A carga inicial usa `origin = curated_seed` e o mapeamento editorial versionado em `config/import-mapping-v1.yaml`. O mapeamento define grau, estado inicial, disposição e elegibilidade métrica; correções/contexto podem ser públicos sem contar como vínculo. Linhas que não satisfazem os requisitos da carga curada entram em quarentena.
 
 ## MVP
 
@@ -22,7 +22,7 @@ A carga inicial usa `origin = curated_seed` e o mapeamento editorial versionado 
 - quarentena por padrão para D/E e para qualquer conteúdo ambíguo/incompleto;
 - painel simples protegido para fontes, evidências e moderação;
 - listagem, busca, filtros, detalhes e fontes;
-- métricas públicas derivadas apenas dos registros ativos;
+- métricas públicas de rede derivadas apenas de claims ativos e elegíveis;
 - download da planilha/base;
 - deploy em Oracle VPS.
 
@@ -65,7 +65,7 @@ go vet ./...
 go build ./...
 ```
 
-Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Três grupos têm testes unitários table-driven desde o MVP: decisão `published`/`quarantined`, fingerprint rejeitado impedindo republicação e métricas excluindo estados não públicos.
+Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Três grupos têm testes unitários table-driven desde o MVP: decisão `published`/`quarantined`, fingerprint rejeitado impedindo republicação e métricas excluindo estados não públicos ou claims não elegíveis.
 
 ## Documentação
 

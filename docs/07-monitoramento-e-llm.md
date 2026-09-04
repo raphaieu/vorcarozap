@@ -25,7 +25,8 @@ Configurar modelo, base URL e engine por ambiente. Usar structured outputs com J
 flowchart LR
   A[run + lock] --> B[descoberta]
   B --> C[JSON + citações]
-  C --> D[gate estrutural em Go]
+  C --> V[GET seguro de acessibilidade]
+  V --> D[gate estrutural em Go]
   D -->|passou| S[gate semântico por segunda avaliação]
   D -->|falha| Q[quarantined]
   S --> G[política Go por grau]
@@ -38,7 +39,7 @@ flowchart LR
 
 ## Gate estrutural
 
-Executado deterministicamente em Go: schema válido; URL `http/https`; título/publicador; trecho ou localizador; datas normalizadas; grau A–E; entidade vinculada; fingerprint não rejeitado; PII proibida ausente; limites de tamanho; deduplicação; e custo dentro do orçamento.
+Executado deterministicamente em Go: schema válido; URL `http/https`; título/publicador; trecho ou localizador; datas normalizadas; grau A–E; entidade vinculada; fingerprint não rejeitado; PII proibida ausente; limites de tamanho; deduplicação; acessibilidade conforme política; e custo dentro do orçamento.
 
 ## Gate semântico
 
@@ -64,9 +65,13 @@ A avaliação verifica identidade, suporte, extrapolação, atribuição, grau, 
 - A/B: publica quando os dois gates passam.
 - C: publica quando os dois gates passam e há linguagem de associação e limites explícitos.
 - D/E: quarentena por padrão; podem ser aprovados no painel.
-- Qualquer grau: quarentena para homônimo, fonte inacessível, trecho sem suporte direto, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante.
+- Qualquer grau: quarentena para homônimo, source `unreachable`, trecho sem suporte direto, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante. `not_checked` segue configuração conservadora por padrão.
 
 Descoberta e gate semântico podem usar modelos diferentes por configuração. Os resultados, modelo, schema e motivos da política ficam registrados.
+
+## Acessibilidade da fonte
+
+A citação recebida começa como `cited_by_provider`; source do `curated_seed` começa como `not_checked`. Antes da decisão automática/inicial, o verificador tenta GET seguro e limitado: não usa HEAD, não persiste o corpo, para de ler no limite configurado, aplica timeout e segue somente redirects controlados, revalidando host/IP em cada salto. Resposta válida promove a `reachable`; 404/410 ou outro erro comprovadamente definitivo vira `unreachable`; timeout, 429, 5xx ou bloqueio inconclusivo vira `not_checked`. O verificador não extrai conteúdo e não é crawler.
 
 ## Economia e resiliência
 

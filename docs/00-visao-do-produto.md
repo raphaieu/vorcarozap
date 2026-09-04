@@ -37,6 +37,8 @@ RBAC multiusuário, MFA, dupla revisão, CMS completo, snapshots integrais, cade
 
 Confiança técnica da IA não é exibida como probabilidade de verdade ou culpa.
 
+Uma correção ou contexto pode permanecer público sem aumentar totais de contatos/vínculos. Métricas de rede exigem claim `published` e `metric_eligible = true`; métricas operacionais, como último monitoramento, seguem sua própria consulta.
+
 ## Premissas
 
 - uma instância e um administrador no início;

@@ -9,7 +9,16 @@ A planilha inicial passou por curadoria anterior ao sistema e usa uma escala leg
 
 ## Decisão
 
-Registrar `claims.origin = curated_seed` para conteúdo criado pela planilha. Manter o mapeamento exato dos rótulos legados em arquivo declarativo versionado (`config/import-mapping-v1.yaml`) e persistir `mapping_version` em cada `import_run` aplicado. A carga cria claims diretamente; não cria um `monitoring_run` artificial.
+Registrar `claims.origin = curated_seed` para conteúdo criado pela planilha. Manter o mapeamento exato dos rótulos legados em arquivo declarativo versionado (`config/import-mapping-v1.yaml`) e persistir `mapping_version` em cada `import_run` aplicado. Cada rótulo define `grade`, `initial_state`, `disposition` e `metric_eligible`. A carga cria claims diretamente; não cria um `monitoring_run` artificial.
+
+`claims.disposition` aceita inicialmente `supports_link`, `possible_link`, `contradicts_link`, `context_only` e `correction`. Conteúdo público só integra métricas de contato/vínculo quando `metric_eligible = true`.
+
+No mapping v1:
+
+- A/B/C: `published`, `supports_link`, elegíveis;
+- D indireto/potencial: `published`, `possible_link`, elegível;
+- E fraco/ambíguo: `quarantined`, `possible_link`, não elegível;
+- E fraco/corrigido: `published`, `context_only`, não elegível.
 
 Uma linha pode iniciar `published` somente quando possui nome identificável, cargo/contexto, explicação da relação, fonte principal, classificação legada reconhecida e texto que não extrapola a fonte. Falta de fonte, ambiguidade, rótulo desconhecido, mapeamento impossível, extrapolação ou dado essencial ausente leva a `quarantined`. O importador nunca adivinha rótulo nem identidade.
 
@@ -24,9 +33,11 @@ Uma linha pode iniciar `published` somente quando possui nome identificável, ca
 
 Importação reproduzível e auditável, transformação visível em revisão e tratamento conservador de exceções.
 
+Correções e contexto continuam disponíveis ao leitor sem aumentar artificialmente métricas da rede.
+
 ## Consequências negativas
 
-O arquivo de mapeamento passa a ser artefato editorial que exige revisão. Uma nova versão pode produzir resultado diferente e não deve reclassificar dados existentes silenciosamente.
+O arquivo de mapeamento passa a ser artefato editorial que exige revisão. Uma nova versão pode produzir resultado diferente e não deve reclassificar dados existentes silenciosamente. `metric_eligible` adiciona uma dimensão que toda consulta de métricas precisa respeitar.
 
 ## Riscos
 
