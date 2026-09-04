@@ -89,7 +89,7 @@ func TestLoadMappingFromFile_RealMapping(t *testing.T) {
 		},
 		{
 			rawLabel:       "Rótulo Desconhecido ou Inexistente",
-			expectedGrade:  "",
+			expectedGrade:  domain.EvidenceGradeE,
 			expectedState:  domain.ClaimStatusQuarantined,
 			expectedDisp:   domain.DispositionPossibleLink,
 			expectedMetric: false,

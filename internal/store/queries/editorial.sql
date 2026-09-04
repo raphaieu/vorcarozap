@@ -14,6 +14,10 @@ WHERE id = ? LIMIT 1;
 SELECT * FROM entities
 WHERE slug = ? LIMIT 1;
 
+-- name: GetEntityByNormalizedName :one
+SELECT * FROM entities
+WHERE normalized_name = ? LIMIT 1;
+
 -- name: CreateEntityAlias :one
 INSERT INTO entity_aliases (
     id, entity_id, alias, normalized_alias, created_at

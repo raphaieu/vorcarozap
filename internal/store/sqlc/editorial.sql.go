@@ -551,6 +551,30 @@ func (q *Queries) GetEntityByID(ctx context.Context, id string) (Entity, error) 
 	return i, err
 }
 
+const getEntityByNormalizedName = `-- name: GetEntityByNormalizedName :one
+SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at FROM entities
+WHERE normalized_name = ? LIMIT 1
+`
+
+func (q *Queries) GetEntityByNormalizedName(ctx context.Context, normalizedName string) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, getEntityByNormalizedName, normalizedName)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Name,
+		&i.NormalizedName,
+		&i.Slug,
+		&i.RoleOrContext,
+		&i.Summary,
+		&i.Relevance,
+		&i.RelevanceRationale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getEntityBySlug = `-- name: GetEntityBySlug :one
 SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at FROM entities
 WHERE slug = ? LIMIT 1

@@ -129,7 +129,7 @@ func (m *MappingConfig) LookupGrade(rawLabel string) (GradeRule, bool) {
 	rule, found := m.normalizedRules[normLabel]
 	if !found {
 		return GradeRule{
-			Grade:          "",
+			Grade:          string(domain.EvidenceGradeE),
 			InitialState:   string(domain.ClaimStatusQuarantined),
 			Disposition:    string(domain.DispositionPossibleLink),
 			MetricEligible: false,
