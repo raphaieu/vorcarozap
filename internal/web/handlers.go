@@ -150,3 +150,13 @@ func (h *Handlers) HandleEntityDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
 	}
 }
+
+// HandleMethodology renderiza a página pública de metodologia e critérios editoriais.
+func (h *Handlers) HandleMethodology(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	component := pages.Methodology()
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render methodology template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}

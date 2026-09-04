@@ -116,6 +116,48 @@ func TestHomeEndpoint(t *testing.T) {
 	}
 }
 
+func TestMethodologyEndpoint(t *testing.T) {
+	srv := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/metodologia", nil)
+	w := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtido %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "Metodologia e Critérios Editoriais") {
+		t.Errorf("título da metodologia não encontrado")
+	}
+	if !strings.Contains(body, "Aviso Editorial e de Independência") {
+		t.Errorf("aviso editorial não encontrado na metodologia")
+	}
+	// Escala A–E
+	for _, g := range []string{"Grau A", "Grau B", "Grau C", "Grau D", "Grau E"} {
+		if !strings.Contains(body, g) {
+			t.Errorf("menção ao %s não encontrada na metodologia", g)
+		}
+	}
+	// Relevância 1–5
+	if !strings.Contains(body, "1 — Local ou circunstancial") || !strings.Contains(body, "5 — Estratégica ou internacional") {
+		t.Errorf("níveis de relevância 1 a 5 não encontrados na metodologia")
+	}
+	// Regras de métricas e status de fontes
+	if !strings.Contains(body, "metric_eligible") {
+		t.Errorf("explicação de elegibilidade métrica não encontrada")
+	}
+	if !strings.Contains(body, "not_checked") {
+		t.Errorf("explicação de status de fonte not_checked não encontrada")
+	}
+	// Política de contraditório
+	if !strings.Contains(body, "Direito de Resposta") {
+		t.Errorf("seção de direito de resposta não encontrada")
+	}
+}
+
 func TestStaticCSSEndpoint(t *testing.T) {
 	srv := setupTestServer(t)
 
