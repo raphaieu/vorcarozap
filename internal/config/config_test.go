@@ -74,3 +74,46 @@ func TestConfigInvalidPort(t *testing.T) {
 		t.Fatal("esperava erro para porta inválida, obteve nil")
 	}
 }
+
+func TestConfigTimeoutsTableDriven(t *testing.T) {
+	tests := []struct {
+		name      string
+		envKey    string
+		envVal    string
+		expectErr bool
+	}{
+		// APP_READ_TIMEOUT
+		{"read timeout invalid string", "APP_READ_TIMEOUT", "invalid-duration", true},
+		{"read timeout zero seconds", "APP_READ_TIMEOUT", "0s", true},
+		{"read timeout zero without unit", "APP_READ_TIMEOUT", "0", true},
+		{"read timeout negative duration", "APP_READ_TIMEOUT", "-1s", true},
+		{"read timeout valid duration", "APP_READ_TIMEOUT", "2s", false},
+
+		// APP_WRITE_TIMEOUT
+		{"write timeout invalid string", "APP_WRITE_TIMEOUT", "xyz", true},
+		{"write timeout zero duration", "APP_WRITE_TIMEOUT", "0s", true},
+		{"write timeout negative duration", "APP_WRITE_TIMEOUT", "-500ms", true},
+		{"write timeout valid duration", "APP_WRITE_TIMEOUT", "15s", false},
+
+		// APP_IDLE_TIMEOUT
+		{"idle timeout invalid string", "APP_IDLE_TIMEOUT", "not-time", true},
+		{"idle timeout zero duration", "APP_IDLE_TIMEOUT", "0m", true},
+		{"idle timeout negative duration", "APP_IDLE_TIMEOUT", "-10s", true},
+		{"idle timeout valid duration", "APP_IDLE_TIMEOUT", "120s", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear all timeouts first
+			t.Setenv("APP_READ_TIMEOUT", "")
+			t.Setenv("APP_WRITE_TIMEOUT", "")
+			t.Setenv("APP_IDLE_TIMEOUT", "")
+
+			t.Setenv(tt.envKey, tt.envVal)
+			_, err := config.Load()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("config.Load() com %s=%q: esperado erro=%v, obtido err=%v", tt.envKey, tt.envVal, tt.expectErr, err)
+			}
+		})
+	}
+}

@@ -1,55 +1,51 @@
-GO ?= $(shell which go 2>/dev/null || echo /home/raphael/.local/go-1.27/bin/go)
-TEMPL ?= $(shell which templ 2>/dev/null || echo /home/raphael/.local/bin/templ)
+COMPOSE ?= docker compose
+DEV_RUN := $(COMPOSE) --profile dev run --rm dev
 
-.PHONY: all templ fmt vet build run migrate test compose-config compose-build compose-up compose-proxy clean
+.PHONY: all templ fmt tidy test test-race vet build shell run migrate compose-config compose-build compose-up compose-proxy clean
 
-all: templ fmt vet build
+all: templ fmt tidy test vet build
 
 templ:
-	@echo "==> Gerando templates com templ..."
-	@$(TEMPL) generate
+	$(DEV_RUN) go tool templ generate
 
 fmt:
-	@echo "==> Formatando código Go..."
-	@$(GO) fmt ./...
+	$(DEV_RUN) gofmt -w .
 
-vet:
-	@echo "==> Executando go vet..."
-	@$(GO) vet ./...
-
-build: templ
-	@echo "==> Compilando binário vorcarozap..."
-	@mkdir -p bin
-	@$(GO) build -o bin/vorcarozap ./cmd/vorcarozap
-
-run: build
-	@echo "==> Iniciando vorcarozap serve..."
-	@./bin/vorcarozap serve
-
-migrate: build
-	@echo "==> Executando migrations..."
-	@./bin/vorcarozap migrate
+tidy:
+	$(DEV_RUN) go mod tidy
 
 test:
-	@echo "==> Executando testes..."
-	@$(GO) test -v ./...
+	$(DEV_RUN) go test ./...
+
+test-race:
+	$(DEV_RUN) go test -race ./...
+
+vet:
+	$(DEV_RUN) go vet ./...
+
+build:
+	$(DEV_RUN) go build ./...
+
+shell:
+	$(DEV_RUN) sh
+
+run:
+	$(COMPOSE) up --build app
+
+migrate:
+	$(COMPOSE) run --rm app migrate
 
 compose-config:
-	@echo "==> Validando configuração do Docker Compose..."
-	@docker compose config
+	$(COMPOSE) config
 
 compose-build:
-	@echo "==> Construindo imagens do Compose..."
-	@docker compose build
+	$(COMPOSE) build
 
 compose-up:
-	@echo "==> Subindo serviço app via Compose..."
-	@docker compose up -d app
+	$(COMPOSE) up -d app
 
 compose-proxy:
-	@echo "==> Subindo app + proxy Caddy via Compose..."
-	@docker compose --profile proxy up -d
+	$(COMPOSE) --profile proxy up -d
 
 clean:
-	@echo "==> Limpando artefatos..."
-	@rm -rf bin/ data/
+	rm -rf bin/ data/

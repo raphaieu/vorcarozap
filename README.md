@@ -6,9 +6,9 @@ Aplicação pública, investigativa e documental para organizar informações pu
 
 ## Estado
 
-**Fase 1 — Fundação Executável concluída.** Módulo Go, CLI, configuração com defaults seguros, SQLite em modo WAL com validação efetiva de pragmas e driver Pure Go `modernc.org/sqlite` ([ADR-010](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-010-escolha-do-driver-sqlite.md)), migrations com Goose, servidor HTTP Chi, renderização SSR com Templ, página base mobile-first, Dockerfile enxuto não-root e Compose com proxy Caddy opcional.
+**Fase 1 — Fundação Executável concluída.** Módulo Go, CLI, configuração com defaults seguros, SQLite em modo WAL com validação efetiva de pragmas e driver Pure Go `modernc.org/sqlite` ([ADR-010](docs/adr/ADR-010-escolha-do-driver-sqlite.md)), migrations com Goose, servidor HTTP Chi, renderização SSR com Templ, página base mobile-first, Dockerfile enxuto não-root e Compose com proxy Caddy opcional.
 
-A política de acessibilidade de fontes para o status `not_checked` está registrada canonicamente no [ADR-006](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preservação do `initial_state` do mapeamento para `curated_seed`), com variáveis de ambiente documentadas em `.env.example` para futura incorporação no módulo `sourcecheck` (VZ-020).
+A política de acessibilidade de fontes para o status `not_checked` está registrada canonicamente no [ADR-006](docs/adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preservação do `initial_state` do mapeamento para `curated_seed`), com variáveis de ambiente documentadas em `.env.example` para futura incorporação no módulo `sourcecheck` (VZ-020).
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
@@ -46,17 +46,59 @@ flowchart TB
   P --> OUT[Página + métricas + XLSX]
 ```
 
-## Comandos executáveis (Fase 1)
+## Ambiente e Toolchain
+
+Docker e Docker Compose são os únicos requisitos no host. Não é necessário instalar Go, Templ ou outras ferramentas no ambiente local/WSL. O toolchain completo, compiladores e versões de dependências ficam fixados e isolados pelo projeto via Docker Compose e Makefile.
+
+### Configuração de portas
+
+O projeto separa explicitamente a porta da aplicação da porta do host:
+- `APP_PORT=8080`: porta interna em que a aplicação escuta no container;
+- `HOST_PORT=8090`: porta mapeada no host pelo Docker Compose (`8090:8080`).
+
+No proxy Caddy local, o cabeçalho `Strict-Transport-Security` (HSTS) fica desativado por atender apenas `:80` HTTP, devendo retornar na configuração de produção com HTTPS real.
+
+## Comandos de desenvolvimento (Makefile)
+
+Todos os comandos de desenvolvimento executam dentro do container `dev`:
 
 ```bash
-# Iniciar servidor HTTP (aplica migrations pendentes antes de iniciar)
-vorcarozap serve
+# Gerar templates Templ
+make templ
 
-# Executar migrations pendentes explicitamente
-vorcarozap migrate
+# Formatar código Go
+make fmt
 
-# Ajuda contextual
-vorcarozap help
+# Sincronizar dependências Go
+make tidy
+
+# Executar testes unitários
+make test
+
+# Executar testes com race detector
+make test-race
+
+# Análise estática com go vet
+make vet
+
+# Compilar aplicação
+make build
+
+# Validação completa do ciclo
+make all
+```
+
+## Comandos operacionais (Compose)
+
+```bash
+# Iniciar a aplicação (compila e sobe container 'app' na porta 8090)
+make run
+
+# Executar migrations pendentes explicitamente no container
+make migrate
+
+# Subir com proxy Caddy reverso opcional (porta 8000)
+make compose-proxy
 ```
 
 ### Comandos planejados para fases posteriores
@@ -76,9 +118,7 @@ vorcarozap monitor
 Sem meta de cobertura no MVP. Gate inicial:
 
 ```bash
-go fmt ./...
-go vet ./...
-go build ./...
+make all
 ```
 
 Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Três grupos têm testes unitários table-driven desde o MVP: decisão `published`/`quarantined`, fingerprint rejeitado impedindo republicação e métricas excluindo estados não públicos ou claims não elegíveis.

@@ -38,31 +38,19 @@ func Load() (*Config, error) {
 		dbPath = "./data/vorcarozap.db"
 	}
 
-	readTimeout := 5 * time.Second
-	if rtStr := os.Getenv("APP_READ_TIMEOUT"); rtStr != "" {
-		d, err := time.ParseDuration(rtStr)
-		if err != nil {
-			return nil, fmt.Errorf("config: APP_READ_TIMEOUT inválido %q: %w", rtStr, err)
-		}
-		readTimeout = d
+	readTimeout, err := parseTimeout("APP_READ_TIMEOUT", os.Getenv("APP_READ_TIMEOUT"), 5*time.Second)
+	if err != nil {
+		return nil, err
 	}
 
-	writeTimeout := 10 * time.Second
-	if wtStr := os.Getenv("APP_WRITE_TIMEOUT"); wtStr != "" {
-		d, err := time.ParseDuration(wtStr)
-		if err != nil {
-			return nil, fmt.Errorf("config: APP_WRITE_TIMEOUT inválido %q: %w", wtStr, err)
-		}
-		writeTimeout = d
+	writeTimeout, err := parseTimeout("APP_WRITE_TIMEOUT", os.Getenv("APP_WRITE_TIMEOUT"), 10*time.Second)
+	if err != nil {
+		return nil, err
 	}
 
-	idleTimeout := 60 * time.Second
-	if itStr := os.Getenv("APP_IDLE_TIMEOUT"); itStr != "" {
-		d, err := time.ParseDuration(itStr)
-		if err != nil {
-			return nil, fmt.Errorf("config: APP_IDLE_TIMEOUT inválido %q: %w", itStr, err)
-		}
-		idleTimeout = d
+	idleTimeout, err := parseTimeout("APP_IDLE_TIMEOUT", os.Getenv("APP_IDLE_TIMEOUT"), 60*time.Second)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Config{
@@ -73,4 +61,18 @@ func Load() (*Config, error) {
 		WriteTimeout: writeTimeout,
 		IdleTimeout:  idleTimeout,
 	}, nil
+}
+
+func parseTimeout(envKey, val string, defaultVal time.Duration) (time.Duration, error) {
+	if val == "" {
+		return defaultVal, nil
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s inválido %q: %w", envKey, val, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("config: %s deve ser maior que zero, obtido %q", envKey, val)
+	}
+	return d, nil
 }

@@ -5,7 +5,7 @@
 
 ## Contexto
 
-O VorcaroZAP utiliza SQLite em modo WAL como banco de dados principal ([ADR-002](file:///home/raphael/personal/vorcarozap/docs/adr/ADR-002-sqlite-com-wal.md)), operando como monólito Go em instância única. A aplicação requer integridade referencial (`foreign_keys=ON`), tolerância a contenção transitória (`busy_timeout=5000`), durabilidade balanceada (`synchronous=NORMAL`) e execução eficiente de migrations (`pressly/goose/v3`).
+O VorcaroZAP utiliza SQLite em modo WAL como banco de dados principal ([ADR-002](ADR-002-sqlite-com-wal.md)), operando como monólito Go em instância única. A aplicação requer integridade referencial (`foreign_keys=ON`), tolerância a contenção transitória (`busy_timeout=5000`), durabilidade balanceada (`synchronous=NORMAL`) e execução eficiente de migrations (`pressly/goose/v3`).
 
 Além disso, o deploy ocorre em contêineres Docker enxutos e o ambiente de desenvolvimento deve ser reproduzível e portátil sem dependência de toolchain C (gcc/musl).
 

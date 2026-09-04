@@ -6,11 +6,11 @@ services:
     container_name: vorcarozap_app
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8090}:8080"
+      - "${HOST_PORT:-8090}:8080"
     environment:
-      - APP_PORT=8080
-      - APP_ENV=${APP_ENV:-development}
-      - DB_PATH=/data/vorcarozap.db
+      APP_PORT: "8080"
+      APP_ENV: ${APP_ENV:-development}
+      DB_PATH: /data/vorcarozap.db
     volumes:
       - vorcarozap_data:/data
     healthcheck:
@@ -19,6 +19,19 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    working_dir: /src
+    volumes:
+      - .:/src
+      - go_modules:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    profiles:
+      - dev
 
   caddy:
     image: caddy:2-alpine
@@ -41,3 +54,5 @@ volumes:
   vorcarozap_data:
   caddy_data:
   caddy_config:
+  go_modules:
+  go_build_cache:

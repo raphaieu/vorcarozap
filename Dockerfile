@@ -1,20 +1,19 @@
 # Stage 1: Build da aplicação Go
 FROM golang:1.27-alpine AS builder
 
+RUN apk add --no-cache gcc musl-dev
+
 WORKDIR /src
 
 # Dependências do Go
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Instalação do compilador templ
-RUN go install github.com/a-h/templ/cmd/templ@latest
-
 # Código fonte
 COPY . .
 
 # Geração de templates templ
-RUN templ generate
+RUN go tool templ generate
 
 # Compilação do binário estático (sem CGO)
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /bin/vorcarozap ./cmd/vorcarozap
