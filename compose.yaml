@@ -11,6 +11,7 @@ services:
       APP_PORT: "8080"
       APP_ENV: ${APP_ENV:-development}
       DB_PATH: /data/vorcarozap.db
+      PUBLIC_DATA_CUTOFF: ${PUBLIC_DATA_CUTOFF:-2026-09-03}
     volumes:
       - vorcarozap_data:/data
     healthcheck:

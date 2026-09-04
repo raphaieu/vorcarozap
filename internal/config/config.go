@@ -9,12 +9,13 @@ import (
 
 // Config contém os parâmetros operacionais da aplicação.
 type Config struct {
-	Port         int
-	Env          string
-	DBPath       string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	IdleTimeout  time.Duration
+	Port             int
+	Env              string
+	DBPath           string
+	PublicDataCutoff string
+	ReadTimeout      time.Duration
+	WriteTimeout     time.Duration
+	IdleTimeout      time.Duration
 }
 
 // Load carrega a configuração a partir de variáveis de ambiente com defaults seguros.
@@ -38,6 +39,15 @@ func Load() (*Config, error) {
 		dbPath = "./data/vorcarozap.db"
 	}
 
+	cutoff := os.Getenv("PUBLIC_DATA_CUTOFF")
+	if cutoff == "" {
+		cutoff = "2026-09-03"
+	} else {
+		if _, err := time.Parse("2006-01-02", cutoff); err != nil {
+			return nil, fmt.Errorf("config: PUBLIC_DATA_CUTOFF inválida %q: deve estar no formato YYYY-MM-DD", cutoff)
+		}
+	}
+
 	readTimeout, err := parseTimeout("APP_READ_TIMEOUT", os.Getenv("APP_READ_TIMEOUT"), 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -54,12 +64,13 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Port:         port,
-		Env:          env,
-		DBPath:       dbPath,
-		ReadTimeout:  readTimeout,
-		WriteTimeout: writeTimeout,
-		IdleTimeout:  idleTimeout,
+		Port:             port,
+		Env:              env,
+		DBPath:           dbPath,
+		PublicDataCutoff: cutoff,
+		ReadTimeout:      readTimeout,
+		WriteTimeout:     writeTimeout,
+		IdleTimeout:      idleTimeout,
 	}, nil
 }
 

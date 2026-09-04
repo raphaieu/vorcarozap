@@ -31,6 +31,9 @@ func TestConfigLoadDefaults(t *testing.T) {
 	if cfg.DBPath != "./data/vorcarozap.db" {
 		t.Errorf("DBPath: esperado './data/vorcarozap.db', obtido %q", cfg.DBPath)
 	}
+	if cfg.PublicDataCutoff != "2026-09-03" {
+		t.Errorf("PublicDataCutoff: esperado '2026-09-03', obtido %q", cfg.PublicDataCutoff)
+	}
 	if cfg.ReadTimeout != 5*time.Second {
 		t.Errorf("ReadTimeout: esperado 5s, obtido %v", cfg.ReadTimeout)
 	}
@@ -40,6 +43,35 @@ func TestConfigLoadDefaults(t *testing.T) {
 	if cfg.IdleTimeout != 60*time.Second {
 		t.Errorf("IdleTimeout: esperado 60s, obtido %v", cfg.IdleTimeout)
 	}
+}
+
+func TestConfigPublicDataCutoff(t *testing.T) {
+	t.Run("Cutoff customizado válido", func(t *testing.T) {
+		t.Setenv("PUBLIC_DATA_CUTOFF", "2026-12-31")
+		cfg, err := config.Load()
+		if err != nil {
+			t.Fatalf("esperava sucesso, erro: %v", err)
+		}
+		if cfg.PublicDataCutoff != "2026-12-31" {
+			t.Errorf("esperado '2026-12-31', obtido %q", cfg.PublicDataCutoff)
+		}
+	})
+
+	t.Run("Cutoff inválido formato brasileiro", func(t *testing.T) {
+		t.Setenv("PUBLIC_DATA_CUTOFF", "31/12/2026")
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro para formato brasileiro DD/MM/YYYY")
+		}
+	})
+
+	t.Run("Cutoff inválido texto", func(t *testing.T) {
+		t.Setenv("PUBLIC_DATA_CUTOFF", "nao-eh-data")
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro para texto não data")
+		}
+	})
 }
 
 func TestConfigCustomEnv(t *testing.T) {
