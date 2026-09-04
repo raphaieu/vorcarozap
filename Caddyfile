@@ -1,0 +1,13 @@
+:80 {
+	encode zstd gzip
+
+	header {
+		# Proteções HTTP adicionais no proxy
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	reverse_proxy app:8080
+}
