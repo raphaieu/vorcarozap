@@ -81,7 +81,7 @@ templ Methodology() {
 								<div class="grade-text">
 									<strong>Associação documentada com significado incompleto</strong>
 									<p>Relação formal, societária, contratual ou protocolar confirmada em documento, mas cujo significado factual quanto ao caso investigado é incompleto ou exige cautela interpretativa. Exige explicitação textual clara dos limites contextuais.</p>
-									<span class="policy-note">Exige linguagem e limites contextuais obrigatórios.</span>
+									<span class="policy-note">Exige linguagem e limites contextuais explícitos.</span>
 								</div>
 							</div>
 
@@ -90,7 +90,7 @@ templ Methodology() {
 								<div class="grade-text">
 									<strong>Alegação atribuída sem confirmação independente</strong>
 									<p>Declaração atribuída a terceiros, delações ou depoimentos unilaterais não corroborados por documentos ou investigações concluídas.</p>
-									<span class="policy-note quarantine-note">Quarentena obrigatória por padrão; requer curadoria humana prévia.</span>
+									<span class="policy-note quarantine-note">Quarentena obrigatória por padrão na automação OpenRouter. No seed curado inicial, itens D puderam ser publicados após aprovação humana explícita.</span>
 								</div>
 							</div>
 
@@ -99,7 +99,7 @@ templ Methodology() {
 								<div class="grade-text">
 									<strong>Pista ou menção indireta</strong>
 									<p>Menção de passagem, homônimo a esclarecer, citação periférica ou material sem evidência robusta de relevância causal para o tema.</p>
-									<span class="policy-note quarantine-note">Quarentena obrigatória por padrão; requer curadoria humana prévia.</span>
+									<span class="policy-note quarantine-note">Quarentena obrigatória por padrão na automação OpenRouter. No seed curado inicial, itens E contextuais puderam ser publicados com chancela editorial humana.</span>
 								</div>
 							</div>
 						</div>
@@ -144,11 +144,11 @@ templ Methodology() {
 						</ul>
 
 						<div class="callout-box">
-							<h4>Regra Estrita de Métricas da Rede</h4>
+							<h4>Regra Estrita de Métricas da Rede (VZ-008)</h4>
 							<p>
 								Apenas alegações com status <code>published</code> e <code>metric_eligible = true</code> são computadas
-								nos totais da rede e indicadores quantitativos. Relações de mero contexto ou correções permanecem públicas
-								para leitura humana sem inflar artificialmente o número de conexões da entidade.
+								nos totais da rede e indicadores quantitativos consolidados. Relações de mero contexto (como histórico empresarial)
+								ou correções permanecem públicas para leitura e auditoria humana sem inflar artificialmente o número de conexões da entidade.
 							</p>
 						</div>
 					</section>
@@ -169,14 +169,14 @@ templ Methodology() {
 							</thead>
 							<tbody>
 								<tr>
-									<td><strong>Proposição / Resumo Editorial</strong></td>
+									<td><strong>Proposição / Síntese Editorial</strong></td>
 									<td>Redação da equipe de curadoria / modelo auditado</td>
 									<td>Descrever a relação de forma concisa e factual.</td>
 								</tr>
 								<tr>
 									<td><strong>Citação Literal (Trecho / Excerpt)</strong></td>
 									<td>Extração <em>ipsis litteris</em> da fonte original</td>
-									<td>Fornecer ao leitor a evidência exata sem interpretação intermediária. Quando ausente, a citação é omitida sem blocos vazios.</td>
+									<td>Fornecer ao leitor a evidência exata sem interpretação intermediária. O trecho literal é complementar e opcional; sua ausência não implica que a matéria original seja inexistente.</td>
 								</tr>
 							</tbody>
 						</table>
@@ -186,13 +186,13 @@ templ Methodology() {
 					<section class="methodology-section" id="checagem-fontes">
 						<h2>6. Checagem de Acessibilidade das Fontes</h2>
 						<p>
-							A base monitora periodicamente a saúde dos links de fontes públicas:
+							A base acompanha a integridade dos links de fontes públicas:
 						</p>
 						<ul>
-							<li><strong>Não checado (not_checked):</strong> Estado inicial de fontes inseridas pelo seed curado até que passem pelo verificador.</li>
-							<li><strong>Acessível (reachable):</strong> Link testado com sucesso por requisição HTTP GET segura, respeitando limites e sem indexação invasiva.</li>
-							<li><strong>Inacessível (unreachable):</strong> Link que retornou erro 404, bloqueio ou falha de DNS.</li>
-							<li><strong>Citado pelo provedor (cited_by_provider):</strong> Fonte identificada por agregador ou parceiro documental ainda sem verificação direta pelo robô local.</li>
+							<li><strong>Não checado (not_checked):</strong> Estado inicial de todas as fontes inseridas pelo seed curado inicial. A marcação <em>não checado</em> indica apenas que o endereço ainda não passou pelo robô de verificação, não significando que a fonte seja falsa ou inexistente.</li>
+							<li><strong>Verificação futura (VZ-020):</strong> A checagem automatizada periódica por meio de requisições HTTP GET seguras (com limites de taxa e sem rastreador invasivo) está planejada para a etapa VZ-020. No estágio atual do projeto, ainda não há robô de checagem contínua em execução.</li>
+							<li><strong>Inacessível (unreachable):</strong> Classificação atribuída quando uma fonte testada retornar erros definitivos como HTTP 404 (página não encontrada), 410 (conteúdo removido) ou falha crítica de resolução de domínio.</li>
+							<li><strong>Citado pelo provedor (cited_by_provider):</strong> Fonte identificada por provedores externos ou agregadores de dados ainda pendente de validação direta.</li>
 						</ul>
 					</section>
 
@@ -203,9 +203,9 @@ templ Methodology() {
 							O VorcaroZAP adota política transparente e célere de atualização editorial:
 						</p>
 						<ul>
-							<li><strong>Direito de Resposta e Manifestação:</strong> Qualquer pessoa ou representante citado pode enviar posicionamento formal, manifestação ou novos documentos para inclusão imediata na seção de defesa.</li>
-							<li><strong>Segregação visual:</strong> As fontes de contestação ou notas de assessoria são apresentadas com destaque e sem supressão de termos.</li>
-							<li><strong>Retificação de status:</strong> Caso uma decisão judicial ou documento novo desqualifique a sustentação de um vínculo, a alegação é atualizada ou quarentenada, alterando instantaneamente a visualização pública e os cálculos métricos.</li>
+							<li><strong>Direito de Resposta e Defesa Ativa:</strong> Qualquer pessoa, empresa ou representante citado pode enviar notas de esclarecimento, manifestações de defesa ou documentos adicionais. Esses conteúdos são cadastrados como fontes de papel <code>defense</code> ou alegações com disposição <code>contradicts_link</code> ou <code>correction</code>.</li>
+							<li><strong>Segregação visual:</strong> As manifestações de defesa e contestação são agrupadas em bloco próprio com destaque visual nos detalhes do perfil, garantindo ao leitor o contraditório imediato ao lado dos fatos apontados.</li>
+							<li><strong>Retificação de status:</strong> Caso uma decisão judicial ou documento novo desqualifique a sustentação de um vínculo, a alegação correspondente é atualizada ou enviada para quarentena, alterando instantaneamente a visualização pública e recalculando os indicadores da rede.</li>
 						</ul>
 					</section>
 				</article>
