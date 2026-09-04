@@ -12,14 +12,15 @@ O produto não decide culpa. Ele responde por que um nome aparece relacionado, q
 - fontes e evidências acessíveis;
 - planilha inicial importada;
 - novas fontes encontradas automaticamente via OpenRouter;
-- conteúdo válido publicado automaticamente;
+- conteúdo A/B válido publicado automaticamente e C publicado apenas com linguagem e limites explícitos;
+- conteúdo D/E colocado em quarentena por padrão;
 - conteúdo duvidoso colocado em quarentena;
 - painel simples para localizar, desaprovar, restaurar e revisar;
 - métricas recalculadas após ingestão ou moderação.
 
 ## Modelo operacional
 
-O MVP usa pós-moderação. O pipeline automático não depende de aprovação item a item quando cumpre os gates mínimos. O administrador acompanha os registros e pode removê-los da área pública. Casos ambíguos não são publicados automaticamente.
+O MVP usa pós-moderação. Primeiro, Go aplica um gate estrutural mecânico. Depois, uma segunda avaliação da LLM verifica identidade, suporte, atribuição, grau, extrapolação e inferência ilícita. A LLM recomenda; a política Go decide. A/B podem seguir automaticamente, C exige limites explícitos e D/E vão para quarentena por padrão. O administrador pode remover, restaurar ou aprovar itens.
 
 ## Fora do MVP
 
@@ -48,4 +49,3 @@ Confiança técnica da IA não é exibida como probabilidade de verdade ou culpa
 ## Riscos registrados
 
 Erro de identidade, fontes circulares, perda de contexto, links indisponíveis, prompt injection, custo de LLM, contestação e dados pessoais. São tratados inicialmente por gates, quarentena, fonte visível, pós-moderação e canal de correção; controles avançados evoluem com uso real.
-

@@ -10,7 +10,7 @@ CLI, config, SSR, SQLite/WAL, migrations, Compose/Caddy, layout e smoke page.
 
 ## Fase 2 — núcleo editorial e importação
 
-Entidades, relações, claims, evidências/fontes, estados, importador XLSX, deduplicação e exportação.
+Entidades, relações, claims, evidências/fontes, estados, importador XLSX com `origin = curated_seed`, mapeamento legado versionado, deduplicação e exportação.
 
 ## Fase 3 — página pública e métricas
 
@@ -18,7 +18,7 @@ Home, cards, busca, filtros, detalhes, fontes, metodologia, métricas correntes 
 
 ## Fase 4 — monitoramento OpenRouter
 
-ResearchProvider, web search, schema, normalização, gates, publicação/quarentena, idempotência e custo.
+ResearchProvider, web search, schema, gate estrutural, segunda avaliação semântica, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e custo.
 
 ## Fase 5 — painel simples
 
@@ -33,4 +33,3 @@ Oracle VPS, HTTPS, cron do monitor, volume SQLite, backup operacional, domínio,
 Testes direcionados, histórico/snapshots, múltiplos usuários, MFA/RBAC, observabilidade, backup externo e PostgreSQL conforme gatilhos.
 
 O go-live não depende de cobertura, E2E, workflow multiusuário ou parecer formal completo; depende do baseline técnico/editorial e do smoke test.
-

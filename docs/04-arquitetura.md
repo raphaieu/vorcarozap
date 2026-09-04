@@ -10,9 +10,17 @@ flowchart TB
   A[Admin] --> C
   C --> H[Go HTTP]
   H --> APP[Casos de uso]
-  MON[CLI/cron monitor] --> RP[ResearchProvider]
-  RP --> OR[OpenRouter]
-  MON --> APP
+  MON[CLI/cron monitor] --> RP[Descoberta OpenRouter]
+  RP --> GE[Gate estrutural em Go]
+  GE -->|passou| GS[Gate semântico por segunda avaliação]
+  GE -->|falha| Q[Quarentena]
+  GS --> POL[Política Go por grau]
+  POL -->|A/B válido ou C limitado| PUB[Publicado]
+  POL -->|D/E ou ambíguo| Q
+  Q --> A
+  A -->|aprovar| PUB
+  A -->|desaprovar| REJ[Rejeitado]
+  PUB --> APP
   APP --> DB[(SQLite + WAL)]
   APP --> MET[Métricas públicas]
   APP --> EXP[XLSX]
@@ -24,6 +32,7 @@ flowchart TB
 cmd/vorcarozap/
 internal/{config,domain,store,editorial,research,monitoring,metrics,importer,exporter,web,admin}
 migrations/ queries/ web/{components,pages,static}/
+config/import-mapping-v1.yaml
 ```
 
 Domínio não conhece chi, templ, SQLite, Excelize ou OpenRouter. `ResearchProvider` isola a API externa.
@@ -31,6 +40,8 @@ Domínio não conhece chi, templ, SQLite, Excelize ou OpenRouter. `ResearchProvi
 ## Concorrência
 
 O servidor atende leitura e raras mutações administrativas. `monitor` é chamado por cron/scheduler com lock persistente e idempotency key. Chamadas externas não mantêm transações abertas. WAL e `busy_timeout` absorvem a rara concorrência entre moderação e monitor.
+
+`monitoring_runs` usa ciclo operacional próprio (`pending`, `running`, `partial`, `completed`, `failed`), separado dos estados editoriais. Descoberta e avaliação semântica podem usar modelos distintos por configuração.
 
 ## Métricas
 
@@ -43,4 +54,3 @@ SSR/HTMX, uma credencial administrativa e ações pequenas: listar, detalhar, re
 ## Evolução
 
 FTS5, fila, múltiplos usuários, auditoria avançada e PostgreSQL dependem de medição/gatilhos.
-

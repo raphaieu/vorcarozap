@@ -1,0 +1,32 @@
+version: import-mapping-v1
+origin: curated_seed
+
+source:
+  sheet: "Pessoas A-Z"
+  header_row: 6
+  legacy_grade_column: "Grau de confirmação"
+
+legacy_grade_mapping:
+  "A — direto confirmado": "A"
+  "B — direto documentado/controvertido": "B"
+  "C — agenda apenas": "C"
+  "D — indireto/potencial": "D"
+  "E — fraco/ambíguo": "E"
+  "E — fraco/corrigido": "E"
+
+unmapped_grade_action: quarantined
+
+initial_state:
+  publish_requires:
+    - identifiable_name
+    - role_or_context
+    - relationship_explanation
+    - primary_source
+    - recognized_legacy_grade
+    - claim_does_not_overstate_source
+  quarantine_on:
+    - missing_source
+    - ambiguous_identity
+    - unmappable_legacy_grade
+    - claim_overstates_source
+    - missing_essential_data

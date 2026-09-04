@@ -10,14 +10,16 @@ Aplicação pública, investigativa e documental para organizar informações pu
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
+A carga inicial usa `origin = curated_seed` e o mapeamento editorial versionado em `config/import-mapping-v1.yaml`. Linhas que não satisfazem os requisitos da carga curada entram em quarentena.
+
 ## MVP
 
 - Go, SSR com `templ`/HTMX, SQLite e Caddy;
 - importação da planilha inicial;
 - monitoramento via OpenRouter/web search;
-- validação determinística e estruturação por schema;
-- publicação automática do conteúdo que cumprir os gates mínimos;
-- quarentena automática do conteúdo ambíguo/incompleto;
+- gate estrutural em Go e gate semântico por segunda avaliação da LLM;
+- política Go publicando automaticamente A/B válidos e C com linguagem/limites explícitos;
+- quarentena por padrão para D/E e para qualquer conteúdo ambíguo/incompleto;
 - painel simples protegido para fontes, evidências e moderação;
 - listagem, busca, filtros, detalhes e fontes;
 - métricas públicas derivadas apenas dos registros ativos;
@@ -29,15 +31,17 @@ Não integram o MVP: RBAC multiusuário, MFA, workflow de dupla revisão, snapsh
 ## Fluxo
 
 ```mermaid
-flowchart LR
-  OR[OpenRouter + web search] --> V[Normalização e validação]
-  V -->|válido| P[(Publicado)]
-  V -->|ambíguo| Q[(Quarentena)]
-  A[Painel simples] --> P
-  A --> Q
-  P --> W[Página pública]
-  P --> M[Métricas]
-  P --> X[XLSX]
+flowchart TB
+  OR[Descoberta OpenRouter] --> GE[Gate estrutural em Go]
+  GE -->|falha| Q[Quarentena]
+  GE -->|passou| GS[Gate semântico por segunda avaliação]
+  GS -->|ambíguo ou D/E| Q
+  GS -->|A/B válido| P[Publicado]
+  GS -->|C limitado| P
+  Q --> A[Painel simples]
+  A -->|desaprovar| R[Rejeitado]
+  A -->|aprovar| P
+  P --> OUT[Página + métricas + XLSX]
 ```
 
 ## Comandos planejados
@@ -61,7 +65,7 @@ go vet ./...
 go build ./...
 ```
 
-Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Testes automatizados entram primeiro nas regras críticas que apresentarem regressão.
+Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Três grupos têm testes unitários table-driven desde o MVP: decisão `published`/`quarantined`, fingerprint rejeitado impedindo republicação e métricas excluindo estados não públicos.
 
 ## Documentação
 
@@ -77,4 +81,3 @@ Migrations, importação, monitoramento, moderação e jornadas públicas passam
 - [Backlog](docs/09-backlog-inicial.md)
 - [Critérios de aceite](docs/10-criterios-de-aceite.md)
 - [ADRs](docs/adr/)
-

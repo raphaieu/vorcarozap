@@ -7,7 +7,7 @@
 
 O MVP inclui o motor que diferencia o produto: página/métricas, OpenRouter, publicação automática controlada e pós-moderação simples. Segurança avançada, workflow multiusuário e suíte abrangente são adiados.
 
-O gate inicial usa formatação, vet, build e smoke manual. Testes automatizados entram primeiro em gates, dedupe e métricas após estabilização/regressão.
+O gate inicial usa formatação, vet, build e smoke manual. Três testes unitários table-driven são obrigatórios desde o MVP: decisão de publicação/quarentena, bloqueio por fingerprint rejeitado e métricas excluindo estados não públicos. Não há meta de cobertura, Playwright ou suíte extensa.
 
 ## Consequências
 
@@ -16,4 +16,3 @@ Lançamento rápido sem reduzir o produto a uma página estática. Há maior dep
 ## Gatilhos
 
 Tráfego, equipe, incidentes, regressões, contestação, custo de LLM ou frequência de releases.
-

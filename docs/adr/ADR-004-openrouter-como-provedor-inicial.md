@@ -5,9 +5,9 @@
 
 ## Decisão
 
-OpenRouter integra o MVP por meio de `ResearchProvider`. Modelos/engine são configuração. Structured outputs e `openrouter:web_search` alimentam candidatos normalizados. Revalidar a API antes de codificar.
+OpenRouter integra o MVP por meio de `ResearchProvider`. Modelos/engine são configuração. Structured outputs e `openrouter:web_search` alimentam candidatos normalizados. Uma segunda avaliação semântica estruturada verifica identidade, suporte, extrapolação, atribuição, grau, inferência ilícita e ambiguidades. Revalidar a API antes de codificar.
 
-O pipeline publica automaticamente candidatos que passam nos gates locais e coloca os demais em quarentena. A confiança do modelo não substitui os gates.
+O pipeline aplica primeiro o gate estrutural em Go. A recomendação semântica da LLM é registrada, mas a política Go decide publicação ou quarentena. A confiança do modelo não substitui os gates.
 
 ## Consequências
 
@@ -16,4 +16,3 @@ Monitoramento é o motor de atualização, com custo/instabilidade externos. Lim
 ## Gatilhos
 
 Mudança da API, custo/qualidade inadequados, política de dados incompatível ou provedor superior.
-

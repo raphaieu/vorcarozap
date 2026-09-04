@@ -10,7 +10,7 @@ O MVP possui painel e OpenRouter, portanto aplica controles pequenos e proporcio
 - queries parametrizadas e templates escapados;
 - API key do OpenRouter somente no ambiente;
 - limites de tempo, resultados, tokens e custo por monitoramento;
-- saída da LLM validada por schema e regras locais;
+- saída da descoberta validada estruturalmente e submetida a segunda avaliação semântica estruturada; a política final é aplicada em Go;
 - conteúdo web tratado como dado, não instrução;
 - nenhum HTML da LLM renderizado diretamente;
 - telefones, documentos e endereços desnecessários removidos;
@@ -23,9 +23,10 @@ Não haverá upload público nem fetch genérico arbitrário no MVP. A pesquisa 
 
 Fontes datadas e atribuição reduzem risco, mas não transformam alegação em fato. C/D/E exigem linguagem explícita. O administrador pode remover rapidamente um item e registrar motivo. Conteúdo sem gates suficientes vai para quarentena.
 
+D/E nunca são publicados automaticamente. Qualquer grau também vai para quarentena quando envolver homônimo, fonte inacessível, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou fingerprint semelhante previamente rejeitado.
+
 ## Futuro
 
 MFA/RBAC, dupla revisão, trilha imutável, snapshots, retenção formal, incident response, backup criptografado externo, SSRF hardening para crawler próprio, testes negativos abrangentes e validação jurídica aprofundada tornam-se prioritários com equipe, tráfego, crawler, uploads ou contestação relevante.
 
 Esses itens ficam rastreados e não bloqueiam o MVP.
-

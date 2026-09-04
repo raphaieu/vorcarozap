@@ -25,7 +25,7 @@ go build ./...
 
 Smoke test manual cobre banco, importação, monitoramento simulado/real limitado, publicação/quarentena, desaprovação/restauração, métricas, páginas e exportação.
 
-Testes automatizados serão adicionados primeiro às regras de gate/publicação, deduplicação e métricas quando houver regressão ou estabilização do contrato. E2E não é requisito inicial.
+Sem meta de cobertura, Playwright ou suíte extensa. O MVP exige testes unitários table-driven para: matriz `published` versus `quarantined`; fingerprint rejeitado bloqueando republicação; e métricas ignorando `rejected`, `quarantined` e `archived`. E2E não é requisito inicial.
 
 ## Futuro por gatilho
 
@@ -35,4 +35,3 @@ Testes automatizados serão adicionados primeiro às regras de gate/publicação
 - incidentes/regressões: cobertura direcionada;
 - múltiplas instâncias/escritores: PostgreSQL;
 - maior relevância pública: políticas formais de retenção, snapshots, correção e revisão.
-
