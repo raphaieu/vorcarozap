@@ -10,6 +10,107 @@ import (
 	"database/sql"
 )
 
+const countPublicEntities = `-- name: CountPublicEntities :one
+WITH public_claims AS (
+    SELECT
+        r.subject_entity_id AS entity_id,
+        c.id AS claim_id,
+        c.grade AS grade,
+        c.updated_at AS updated_at
+    FROM relationships r
+    JOIN claims c ON c.relationship_id = r.id
+    WHERE c.status = 'published'
+      AND EXISTS (
+          SELECT 1 FROM evidence ev
+          JOIN evidence_sources es ON es.evidence_id = ev.id
+          WHERE ev.claim_id = c.id
+            AND es.status = 'active'
+            AND es.role = 'supports'
+      )
+),
+entity_public_stats AS (
+    SELECT
+        entity_id,
+        COUNT(DISTINCT claim_id) AS public_claims_count,
+        CAST(MIN(grade) AS TEXT) AS highest_grade,
+        CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
+    FROM public_claims
+    GROUP BY entity_id
+)
+SELECT COUNT(*)
+FROM entities e
+JOIN entity_public_stats stats ON stats.entity_id = e.id
+WHERE
+    (?1 = '' OR e.category = ?1)
+    AND (?2 = '' OR EXISTS (
+        SELECT 1 FROM public_claims pc
+        WHERE pc.entity_id = e.id AND pc.grade = ?2
+    ))
+    AND (?3 = 0 OR e.relevance = ?3)
+    AND (?4 = '' OR stats.last_public_updated_at >= ?4)
+    AND (
+        ?5 = '' OR
+        e.name LIKE ?5 OR
+        e.normalized_name LIKE ?5 OR
+        e.role_or_context LIKE ?5 OR
+        e.category LIKE ?5 OR
+        EXISTS (
+            SELECT 1 FROM entity_aliases ea
+            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE ?5
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            WHERE r.subject_entity_id = e.id AND (
+                r.relationship_type LIKE ?5 OR
+                r.summary LIKE ?5
+            )
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND c.proposition LIKE ?5
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            JOIN evidence ev ON ev.claim_id = c.id
+            JOIN evidence_sources es ON es.evidence_id = ev.id
+            JOIN sources s ON s.id = es.source_id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND es.status = 'active'
+              AND (
+                  s.publisher_or_author LIKE ?5 OR
+                  s.original_url LIKE ?5 OR
+                  s.canonical_url LIKE ?5
+              )
+        )
+    )
+`
+
+type CountPublicEntitiesParams struct {
+	FilterCategory    interface{} `json:"filter_category"`
+	FilterGrade       interface{} `json:"filter_grade"`
+	FilterRelevance   interface{} `json:"filter_relevance"`
+	FilterPeriodSince interface{} `json:"filter_period_since"`
+	SearchQuery       interface{} `json:"search_query"`
+}
+
+func (q *Queries) CountPublicEntities(ctx context.Context, arg CountPublicEntitiesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPublicEntities,
+		arg.FilterCategory,
+		arg.FilterGrade,
+		arg.FilterRelevance,
+		arg.FilterPeriodSince,
+		arg.SearchQuery,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCase = `-- name: CreateCase :one
 INSERT INTO cases (
     id, name, slug, description, created_at, updated_at
@@ -670,6 +771,76 @@ func (q *Queries) GetImportRunByHashAndVersion(ctx context.Context, arg GetImpor
 	return i, err
 }
 
+const getPublicEntityBySlug = `-- name: GetPublicEntityBySlug :one
+SELECT
+    e.id,
+    e.type,
+    e.name,
+    e.normalized_name,
+    e.slug,
+    e.category,
+    e.role_or_context,
+    e.reach,
+    e.summary,
+    e.relevance,
+    e.relevance_rationale,
+    e.created_at,
+    e.updated_at
+FROM entities e
+WHERE e.slug = ?
+  AND EXISTS (
+      SELECT 1 FROM relationships r
+      JOIN claims c ON c.relationship_id = r.id
+      WHERE r.subject_entity_id = e.id
+        AND c.status = 'published'
+        AND EXISTS (
+            SELECT 1 FROM evidence ev
+            JOIN evidence_sources es ON es.evidence_id = ev.id
+            WHERE ev.claim_id = c.id
+              AND es.status = 'active'
+              AND es.role = 'supports'
+        )
+  )
+LIMIT 1
+`
+
+type GetPublicEntityBySlugRow struct {
+	ID                 string `json:"id"`
+	Type               string `json:"type"`
+	Name               string `json:"name"`
+	NormalizedName     string `json:"normalized_name"`
+	Slug               string `json:"slug"`
+	Category           string `json:"category"`
+	RoleOrContext      string `json:"role_or_context"`
+	Reach              string `json:"reach"`
+	Summary            string `json:"summary"`
+	Relevance          int64  `json:"relevance"`
+	RelevanceRationale string `json:"relevance_rationale"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
+}
+
+func (q *Queries) GetPublicEntityBySlug(ctx context.Context, slug string) (GetPublicEntityBySlugRow, error) {
+	row := q.db.QueryRowContext(ctx, getPublicEntityBySlug, slug)
+	var i GetPublicEntityBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Name,
+		&i.NormalizedName,
+		&i.Slug,
+		&i.Category,
+		&i.RoleOrContext,
+		&i.Reach,
+		&i.Summary,
+		&i.Relevance,
+		&i.RelevanceRationale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRelationshipByID = `-- name: GetRelationshipByID :one
 SELECT id, subject_entity_id, target_entity_id, case_id, relationship_type, summary, context_limits, created_at, updated_at FROM relationships
 WHERE id = ? LIMIT 1
@@ -857,6 +1028,444 @@ func (q *Queries) ListAliasesByEntityID(ctx context.Context, entityID string) ([
 			&i.Alias,
 			&i.NormalizedAlias,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicCategories = `-- name: ListPublicCategories :many
+SELECT DISTINCT e.category
+FROM entities e
+JOIN (
+    SELECT DISTINCT r.subject_entity_id AS entity_id
+    FROM relationships r
+    JOIN claims c ON c.relationship_id = r.id
+    WHERE c.status = 'published'
+      AND EXISTS (
+          SELECT 1 FROM evidence ev
+          JOIN evidence_sources es ON es.evidence_id = ev.id
+          WHERE ev.claim_id = c.id
+            AND es.status = 'active'
+            AND es.role = 'supports'
+      )
+) active_ents ON active_ents.entity_id = e.id
+WHERE length(trim(e.category)) > 0
+ORDER BY e.category ASC
+`
+
+func (q *Queries) ListPublicCategories(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var category string
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		items = append(items, category)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicClaimsByEntityID = `-- name: ListPublicClaimsByEntityID :many
+SELECT
+    c.id AS claim_id,
+    c.relationship_id,
+    r.relationship_type,
+    r.summary AS relationship_summary,
+    r.context_limits,
+    r.target_entity_id,
+    te.name AS target_entity_name,
+    te.slug AS target_entity_slug,
+    r.case_id,
+    cs.name AS case_name,
+    cs.slug AS case_slug,
+    c.proposition,
+    c.attribution,
+    c.origin,
+    c.grade,
+    c.disposition,
+    c.metric_eligible,
+    c.status,
+    c.context_status,
+    c.created_at,
+    c.updated_at
+FROM claims c
+JOIN relationships r ON r.id = c.relationship_id
+LEFT JOIN entities te ON te.id = r.target_entity_id
+LEFT JOIN cases cs ON cs.id = r.case_id
+WHERE r.subject_entity_id = ?
+  AND c.status = 'published'
+  AND EXISTS (
+      SELECT 1 FROM evidence ev
+      JOIN evidence_sources es ON es.evidence_id = ev.id
+      WHERE ev.claim_id = c.id
+        AND es.status = 'active'
+        AND es.role = 'supports'
+  )
+ORDER BY
+    c.grade ASC,
+    c.updated_at DESC
+`
+
+type ListPublicClaimsByEntityIDRow struct {
+	ClaimID             string         `json:"claim_id"`
+	RelationshipID      string         `json:"relationship_id"`
+	RelationshipType    string         `json:"relationship_type"`
+	RelationshipSummary string         `json:"relationship_summary"`
+	ContextLimits       string         `json:"context_limits"`
+	TargetEntityID      sql.NullString `json:"target_entity_id"`
+	TargetEntityName    sql.NullString `json:"target_entity_name"`
+	TargetEntitySlug    sql.NullString `json:"target_entity_slug"`
+	CaseID              sql.NullString `json:"case_id"`
+	CaseName            sql.NullString `json:"case_name"`
+	CaseSlug            sql.NullString `json:"case_slug"`
+	Proposition         string         `json:"proposition"`
+	Attribution         string         `json:"attribution"`
+	Origin              string         `json:"origin"`
+	Grade               string         `json:"grade"`
+	Disposition         string         `json:"disposition"`
+	MetricEligible      int64          `json:"metric_eligible"`
+	Status              string         `json:"status"`
+	ContextStatus       string         `json:"context_status"`
+	CreatedAt           string         `json:"created_at"`
+	UpdatedAt           string         `json:"updated_at"`
+}
+
+func (q *Queries) ListPublicClaimsByEntityID(ctx context.Context, subjectEntityID string) ([]ListPublicClaimsByEntityIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicClaimsByEntityID, subjectEntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicClaimsByEntityIDRow
+	for rows.Next() {
+		var i ListPublicClaimsByEntityIDRow
+		if err := rows.Scan(
+			&i.ClaimID,
+			&i.RelationshipID,
+			&i.RelationshipType,
+			&i.RelationshipSummary,
+			&i.ContextLimits,
+			&i.TargetEntityID,
+			&i.TargetEntityName,
+			&i.TargetEntitySlug,
+			&i.CaseID,
+			&i.CaseName,
+			&i.CaseSlug,
+			&i.Proposition,
+			&i.Attribution,
+			&i.Origin,
+			&i.Grade,
+			&i.Disposition,
+			&i.MetricEligible,
+			&i.Status,
+			&i.ContextStatus,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicEntities = `-- name: ListPublicEntities :many
+WITH public_claims AS (
+    SELECT
+        r.subject_entity_id AS entity_id,
+        c.id AS claim_id,
+        c.grade AS grade,
+        c.updated_at AS updated_at
+    FROM relationships r
+    JOIN claims c ON c.relationship_id = r.id
+    WHERE c.status = 'published'
+      AND EXISTS (
+          SELECT 1 FROM evidence ev
+          JOIN evidence_sources es ON es.evidence_id = ev.id
+          WHERE ev.claim_id = c.id
+            AND es.status = 'active'
+            AND es.role = 'supports'
+      )
+),
+entity_public_stats AS (
+    SELECT
+        entity_id,
+        COUNT(DISTINCT claim_id) AS public_claims_count,
+        CAST(MIN(grade) AS TEXT) AS highest_grade,
+        CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
+    FROM public_claims
+    GROUP BY entity_id
+)
+SELECT
+    e.id,
+    e.slug,
+    e.name,
+    e.category,
+    e.role_or_context,
+    e.reach,
+    e.relevance,
+    e.relevance_rationale,
+    stats.public_claims_count,
+    stats.highest_grade,
+    stats.last_public_updated_at,
+    COALESCE(
+        (
+            SELECT r.summary
+            FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND length(trim(r.summary)) > 0
+            LIMIT 1
+        ),
+        e.role_or_context
+    ) AS short_synthesis
+FROM entities e
+JOIN entity_public_stats stats ON stats.entity_id = e.id
+WHERE
+    (?1 = '' OR ?1 != '')
+    AND (?2 = '' OR ?2 != '')
+    AND (?3 = '' OR e.category = ?3)
+    AND (?4 = '' OR EXISTS (
+        SELECT 1 FROM public_claims pc
+        WHERE pc.entity_id = e.id AND pc.grade = ?4
+    ))
+    AND (?5 = 0 OR e.relevance = ?5)
+    AND (?6 = '' OR stats.last_public_updated_at >= ?6)
+    AND (
+        ?7 = '' OR
+        e.name LIKE ?7 OR
+        e.normalized_name LIKE ?7 OR
+        e.role_or_context LIKE ?7 OR
+        e.category LIKE ?7 OR
+        EXISTS (
+            SELECT 1 FROM entity_aliases ea
+            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE ?7
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            WHERE r.subject_entity_id = e.id AND (
+                r.relationship_type LIKE ?7 OR
+                r.summary LIKE ?7
+            )
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND c.proposition LIKE ?7
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            JOIN evidence ev ON ev.claim_id = c.id
+            JOIN evidence_sources es ON es.evidence_id = ev.id
+            JOIN sources s ON s.id = es.source_id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND es.status = 'active'
+              AND (
+                  s.publisher_or_author LIKE ?7 OR
+                  s.original_url LIKE ?7 OR
+                  s.canonical_url LIKE ?7
+              )
+        )
+    )
+ORDER BY
+    CASE WHEN ?1 = 'name' AND ?2 = 'asc' THEN e.name END ASC,
+    CASE WHEN ?1 = 'name' AND ?2 = 'desc' THEN e.name END DESC,
+    CASE WHEN ?1 = 'relevance' AND ?2 = 'asc' THEN e.relevance END ASC,
+    CASE WHEN ?1 = 'relevance' AND ?2 = 'desc' THEN e.relevance END DESC,
+    CASE WHEN ?1 = 'updated' AND ?2 = 'asc' THEN stats.last_public_updated_at END ASC,
+    CASE WHEN ?1 = 'updated' AND ?2 = 'desc' THEN stats.last_public_updated_at END DESC,
+    e.name ASC
+LIMIT ?9 OFFSET ?8
+`
+
+type ListPublicEntitiesParams struct {
+	OrderBy           interface{} `json:"order_by"`
+	OrderDir          interface{} `json:"order_dir"`
+	FilterCategory    interface{} `json:"filter_category"`
+	FilterGrade       interface{} `json:"filter_grade"`
+	FilterRelevance   interface{} `json:"filter_relevance"`
+	FilterPeriodSince interface{} `json:"filter_period_since"`
+	SearchQuery       interface{} `json:"search_query"`
+	PageOffset        int64       `json:"page_offset"`
+	PageLimit         int64       `json:"page_limit"`
+}
+
+type ListPublicEntitiesRow struct {
+	ID                  string `json:"id"`
+	Slug                string `json:"slug"`
+	Name                string `json:"name"`
+	Category            string `json:"category"`
+	RoleOrContext       string `json:"role_or_context"`
+	Reach               string `json:"reach"`
+	Relevance           int64  `json:"relevance"`
+	RelevanceRationale  string `json:"relevance_rationale"`
+	PublicClaimsCount   int64  `json:"public_claims_count"`
+	HighestGrade        string `json:"highest_grade"`
+	LastPublicUpdatedAt string `json:"last_public_updated_at"`
+	ShortSynthesis      string `json:"short_synthesis"`
+}
+
+func (q *Queries) ListPublicEntities(ctx context.Context, arg ListPublicEntitiesParams) ([]ListPublicEntitiesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicEntities,
+		arg.OrderBy,
+		arg.OrderDir,
+		arg.FilterCategory,
+		arg.FilterGrade,
+		arg.FilterRelevance,
+		arg.FilterPeriodSince,
+		arg.SearchQuery,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicEntitiesRow
+	for rows.Next() {
+		var i ListPublicEntitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Category,
+			&i.RoleOrContext,
+			&i.Reach,
+			&i.Relevance,
+			&i.RelevanceRationale,
+			&i.PublicClaimsCount,
+			&i.HighestGrade,
+			&i.LastPublicUpdatedAt,
+			&i.ShortSynthesis,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicEvidenceSourcesByClaimID = `-- name: ListPublicEvidenceSourcesByClaimID :many
+SELECT
+    ev.id AS evidence_id,
+    ev.claim_id,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    es.id AS evidence_source_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    s.id AS source_id,
+    s.title,
+    s.publisher_or_author,
+    s.original_url,
+    s.canonical_url,
+    s.published_at,
+    s.accessed_at,
+    s.source_type,
+    s.source_access_status
+FROM evidence ev
+JOIN evidence_sources es ON es.evidence_id = ev.id
+JOIN sources s ON s.id = es.source_id
+WHERE ev.claim_id = ?
+  AND es.status = 'active'
+ORDER BY
+    CASE es.role
+        WHEN 'supports' THEN 1
+        WHEN 'contradicts' THEN 2
+        WHEN 'contextualizes' THEN 3
+        ELSE 4
+    END ASC,
+    es.created_at ASC
+`
+
+type ListPublicEvidenceSourcesByClaimIDRow struct {
+	EvidenceID           string         `json:"evidence_id"`
+	ClaimID              string         `json:"claim_id"`
+	EvidenceSummary      string         `json:"evidence_summary"`
+	EvidenceType         string         `json:"evidence_type"`
+	EvidenceSourceID     string         `json:"evidence_source_id"`
+	Excerpt              string         `json:"excerpt"`
+	Locator              string         `json:"locator"`
+	Role                 string         `json:"role"`
+	EvidenceSourceStatus string         `json:"evidence_source_status"`
+	SourceID             string         `json:"source_id"`
+	Title                string         `json:"title"`
+	PublisherOrAuthor    string         `json:"publisher_or_author"`
+	OriginalUrl          string         `json:"original_url"`
+	CanonicalUrl         string         `json:"canonical_url"`
+	PublishedAt          sql.NullString `json:"published_at"`
+	AccessedAt           sql.NullString `json:"accessed_at"`
+	SourceType           string         `json:"source_type"`
+	SourceAccessStatus   string         `json:"source_access_status"`
+}
+
+func (q *Queries) ListPublicEvidenceSourcesByClaimID(ctx context.Context, claimID string) ([]ListPublicEvidenceSourcesByClaimIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicEvidenceSourcesByClaimID, claimID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicEvidenceSourcesByClaimIDRow
+	for rows.Next() {
+		var i ListPublicEvidenceSourcesByClaimIDRow
+		if err := rows.Scan(
+			&i.EvidenceID,
+			&i.ClaimID,
+			&i.EvidenceSummary,
+			&i.EvidenceType,
+			&i.EvidenceSourceID,
+			&i.Excerpt,
+			&i.Locator,
+			&i.Role,
+			&i.EvidenceSourceStatus,
+			&i.SourceID,
+			&i.Title,
+			&i.PublisherOrAuthor,
+			&i.OriginalUrl,
+			&i.CanonicalUrl,
+			&i.PublishedAt,
+			&i.AccessedAt,
+			&i.SourceType,
+			&i.SourceAccessStatus,
 		); err != nil {
 			return nil, err
 		}

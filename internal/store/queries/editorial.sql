@@ -156,3 +156,320 @@ WHERE c.id = ?
   AND es.role = 'supports'
   AND es.status = 'active'
 ORDER BY es.created_at ASC;
+
+-- name: ListPublicEntities :many
+WITH public_claims AS (
+    SELECT
+        r.subject_entity_id AS entity_id,
+        c.id AS claim_id,
+        c.grade AS grade,
+        c.updated_at AS updated_at
+    FROM relationships r
+    JOIN claims c ON c.relationship_id = r.id
+    WHERE c.status = 'published'
+      AND EXISTS (
+          SELECT 1 FROM evidence ev
+          JOIN evidence_sources es ON es.evidence_id = ev.id
+          WHERE ev.claim_id = c.id
+            AND es.status = 'active'
+            AND es.role = 'supports'
+      )
+),
+entity_public_stats AS (
+    SELECT
+        entity_id,
+        COUNT(DISTINCT claim_id) AS public_claims_count,
+        CAST(MIN(grade) AS TEXT) AS highest_grade,
+        CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
+    FROM public_claims
+    GROUP BY entity_id
+)
+SELECT
+    e.id,
+    e.slug,
+    e.name,
+    e.category,
+    e.role_or_context,
+    e.reach,
+    e.relevance,
+    e.relevance_rationale,
+    stats.public_claims_count,
+    stats.highest_grade,
+    stats.last_public_updated_at,
+    COALESCE(
+        (
+            SELECT r.summary
+            FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND length(trim(r.summary)) > 0
+            LIMIT 1
+        ),
+        e.role_or_context
+    ) AS short_synthesis
+FROM entities e
+JOIN entity_public_stats stats ON stats.entity_id = e.id
+WHERE
+    (@order_by = '' OR @order_by != '')
+    AND (@order_dir = '' OR @order_dir != '')
+    AND (@filter_category = '' OR e.category = @filter_category)
+    AND (@filter_grade = '' OR EXISTS (
+        SELECT 1 FROM public_claims pc
+        WHERE pc.entity_id = e.id AND pc.grade = @filter_grade
+    ))
+    AND (@filter_relevance = 0 OR e.relevance = @filter_relevance)
+    AND (@filter_period_since = '' OR stats.last_public_updated_at >= @filter_period_since)
+    AND (
+        @search_query = '' OR
+        e.name LIKE @search_query OR
+        e.normalized_name LIKE @search_query OR
+        e.role_or_context LIKE @search_query OR
+        e.category LIKE @search_query OR
+        EXISTS (
+            SELECT 1 FROM entity_aliases ea
+            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE @search_query
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            WHERE r.subject_entity_id = e.id AND (
+                r.relationship_type LIKE @search_query OR
+                r.summary LIKE @search_query
+            )
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND c.proposition LIKE @search_query
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            JOIN evidence ev ON ev.claim_id = c.id
+            JOIN evidence_sources es ON es.evidence_id = ev.id
+            JOIN sources s ON s.id = es.source_id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND es.status = 'active'
+              AND (
+                  s.publisher_or_author LIKE @search_query OR
+                  s.original_url LIKE @search_query OR
+                  s.canonical_url LIKE @search_query
+              )
+        )
+    )
+ORDER BY
+    CASE WHEN ?1 = 'name' AND ?2 = 'asc' THEN e.name END ASC,
+    CASE WHEN ?1 = 'name' AND ?2 = 'desc' THEN e.name END DESC,
+    CASE WHEN ?1 = 'relevance' AND ?2 = 'asc' THEN e.relevance END ASC,
+    CASE WHEN ?1 = 'relevance' AND ?2 = 'desc' THEN e.relevance END DESC,
+    CASE WHEN ?1 = 'updated' AND ?2 = 'asc' THEN stats.last_public_updated_at END ASC,
+    CASE WHEN ?1 = 'updated' AND ?2 = 'desc' THEN stats.last_public_updated_at END DESC,
+    e.name ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPublicEntities :one
+WITH public_claims AS (
+    SELECT
+        r.subject_entity_id AS entity_id,
+        c.id AS claim_id,
+        c.grade AS grade,
+        c.updated_at AS updated_at
+    FROM relationships r
+    JOIN claims c ON c.relationship_id = r.id
+    WHERE c.status = 'published'
+      AND EXISTS (
+          SELECT 1 FROM evidence ev
+          JOIN evidence_sources es ON es.evidence_id = ev.id
+          WHERE ev.claim_id = c.id
+            AND es.status = 'active'
+            AND es.role = 'supports'
+      )
+),
+entity_public_stats AS (
+    SELECT
+        entity_id,
+        COUNT(DISTINCT claim_id) AS public_claims_count,
+        CAST(MIN(grade) AS TEXT) AS highest_grade,
+        CAST(MAX(updated_at) AS TEXT) AS last_public_updated_at
+    FROM public_claims
+    GROUP BY entity_id
+)
+SELECT COUNT(*)
+FROM entities e
+JOIN entity_public_stats stats ON stats.entity_id = e.id
+WHERE
+    (@filter_category = '' OR e.category = @filter_category)
+    AND (@filter_grade = '' OR EXISTS (
+        SELECT 1 FROM public_claims pc
+        WHERE pc.entity_id = e.id AND pc.grade = @filter_grade
+    ))
+    AND (@filter_relevance = 0 OR e.relevance = @filter_relevance)
+    AND (@filter_period_since = '' OR stats.last_public_updated_at >= @filter_period_since)
+    AND (
+        @search_query = '' OR
+        e.name LIKE @search_query OR
+        e.normalized_name LIKE @search_query OR
+        e.role_or_context LIKE @search_query OR
+        e.category LIKE @search_query OR
+        EXISTS (
+            SELECT 1 FROM entity_aliases ea
+            WHERE ea.entity_id = e.id AND ea.normalized_alias LIKE @search_query
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            WHERE r.subject_entity_id = e.id AND (
+                r.relationship_type LIKE @search_query OR
+                r.summary LIKE @search_query
+            )
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND c.proposition LIKE @search_query
+        ) OR
+        EXISTS (
+            SELECT 1 FROM relationships r
+            JOIN claims c ON c.relationship_id = r.id
+            JOIN evidence ev ON ev.claim_id = c.id
+            JOIN evidence_sources es ON es.evidence_id = ev.id
+            JOIN sources s ON s.id = es.source_id
+            WHERE r.subject_entity_id = e.id
+              AND c.status = 'published'
+              AND es.status = 'active'
+              AND (
+                  s.publisher_or_author LIKE @search_query OR
+                  s.original_url LIKE @search_query OR
+                  s.canonical_url LIKE @search_query
+              )
+        )
+    );
+
+-- name: ListPublicCategories :many
+SELECT DISTINCT e.category
+FROM entities e
+JOIN (
+    SELECT DISTINCT r.subject_entity_id AS entity_id
+    FROM relationships r
+    JOIN claims c ON c.relationship_id = r.id
+    WHERE c.status = 'published'
+      AND EXISTS (
+          SELECT 1 FROM evidence ev
+          JOIN evidence_sources es ON es.evidence_id = ev.id
+          WHERE ev.claim_id = c.id
+            AND es.status = 'active'
+            AND es.role = 'supports'
+      )
+) active_ents ON active_ents.entity_id = e.id
+WHERE length(trim(e.category)) > 0
+ORDER BY e.category ASC;
+
+-- name: GetPublicEntityBySlug :one
+SELECT
+    e.id,
+    e.type,
+    e.name,
+    e.normalized_name,
+    e.slug,
+    e.category,
+    e.role_or_context,
+    e.reach,
+    e.summary,
+    e.relevance,
+    e.relevance_rationale,
+    e.created_at,
+    e.updated_at
+FROM entities e
+WHERE e.slug = ?
+  AND EXISTS (
+      SELECT 1 FROM relationships r
+      JOIN claims c ON c.relationship_id = r.id
+      WHERE r.subject_entity_id = e.id
+        AND c.status = 'published'
+        AND EXISTS (
+            SELECT 1 FROM evidence ev
+            JOIN evidence_sources es ON es.evidence_id = ev.id
+            WHERE ev.claim_id = c.id
+              AND es.status = 'active'
+              AND es.role = 'supports'
+        )
+  )
+LIMIT 1;
+
+-- name: ListPublicClaimsByEntityID :many
+SELECT
+    c.id AS claim_id,
+    c.relationship_id,
+    r.relationship_type,
+    r.summary AS relationship_summary,
+    r.context_limits,
+    r.target_entity_id,
+    te.name AS target_entity_name,
+    te.slug AS target_entity_slug,
+    r.case_id,
+    cs.name AS case_name,
+    cs.slug AS case_slug,
+    c.proposition,
+    c.attribution,
+    c.origin,
+    c.grade,
+    c.disposition,
+    c.metric_eligible,
+    c.status,
+    c.context_status,
+    c.created_at,
+    c.updated_at
+FROM claims c
+JOIN relationships r ON r.id = c.relationship_id
+LEFT JOIN entities te ON te.id = r.target_entity_id
+LEFT JOIN cases cs ON cs.id = r.case_id
+WHERE r.subject_entity_id = ?
+  AND c.status = 'published'
+  AND EXISTS (
+      SELECT 1 FROM evidence ev
+      JOIN evidence_sources es ON es.evidence_id = ev.id
+      WHERE ev.claim_id = c.id
+        AND es.status = 'active'
+        AND es.role = 'supports'
+  )
+ORDER BY
+    c.grade ASC,
+    c.updated_at DESC;
+
+-- name: ListPublicEvidenceSourcesByClaimID :many
+SELECT
+    ev.id AS evidence_id,
+    ev.claim_id,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    es.id AS evidence_source_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    s.id AS source_id,
+    s.title,
+    s.publisher_or_author,
+    s.original_url,
+    s.canonical_url,
+    s.published_at,
+    s.accessed_at,
+    s.source_type,
+    s.source_access_status
+FROM evidence ev
+JOIN evidence_sources es ON es.evidence_id = ev.id
+JOIN sources s ON s.id = es.source_id
+WHERE ev.claim_id = ?
+  AND es.status = 'active'
+ORDER BY
+    CASE es.role
+        WHEN 'supports' THEN 1
+        WHEN 'contradicts' THEN 2
+        WHEN 'contextualizes' THEN 3
+        ELSE 4
+    END ASC,
+    es.created_at ASC;
