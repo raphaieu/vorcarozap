@@ -51,26 +51,28 @@ func (q *Queries) CreateCase(ctx context.Context, arg CreateCaseParams) (Case, e
 
 const createClaim = `-- name: CreateClaim :one
 INSERT INTO claims (
-    id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, import_run_id, created_at, updated_at
+    id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons, import_run_id, created_at, updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, import_run_id, created_at, updated_at
+RETURNING id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, import_run_id, created_at, updated_at, context_status, quarantine_reasons
 `
 
 type CreateClaimParams struct {
-	ID             string         `json:"id"`
-	RelationshipID string         `json:"relationship_id"`
-	Proposition    string         `json:"proposition"`
-	Attribution    string         `json:"attribution"`
-	Origin         string         `json:"origin"`
-	Grade          string         `json:"grade"`
-	Disposition    string         `json:"disposition"`
-	MetricEligible int64          `json:"metric_eligible"`
-	Status         string         `json:"status"`
-	ImportRunID    sql.NullString `json:"import_run_id"`
-	CreatedAt      string         `json:"created_at"`
-	UpdatedAt      string         `json:"updated_at"`
+	ID                string         `json:"id"`
+	RelationshipID    string         `json:"relationship_id"`
+	Proposition       string         `json:"proposition"`
+	Attribution       string         `json:"attribution"`
+	Origin            string         `json:"origin"`
+	Grade             string         `json:"grade"`
+	Disposition       string         `json:"disposition"`
+	MetricEligible    int64          `json:"metric_eligible"`
+	Status            string         `json:"status"`
+	ContextStatus     string         `json:"context_status"`
+	QuarantineReasons string         `json:"quarantine_reasons"`
+	ImportRunID       sql.NullString `json:"import_run_id"`
+	CreatedAt         string         `json:"created_at"`
+	UpdatedAt         string         `json:"updated_at"`
 }
 
 func (q *Queries) CreateClaim(ctx context.Context, arg CreateClaimParams) (Claim, error) {
@@ -84,6 +86,8 @@ func (q *Queries) CreateClaim(ctx context.Context, arg CreateClaimParams) (Claim
 		arg.Disposition,
 		arg.MetricEligible,
 		arg.Status,
+		arg.ContextStatus,
+		arg.QuarantineReasons,
 		arg.ImportRunID,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -102,17 +106,19 @@ func (q *Queries) CreateClaim(ctx context.Context, arg CreateClaimParams) (Claim
 		&i.ImportRunID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContextStatus,
+		&i.QuarantineReasons,
 	)
 	return i, err
 }
 
 const createEntity = `-- name: CreateEntity :one
 INSERT INTO entities (
-    id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at
+    id, type, name, normalized_name, slug, category, role_or_context, reach, summary, relevance, relevance_rationale, created_at, updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at
+RETURNING id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at, category, reach
 `
 
 type CreateEntityParams struct {
@@ -121,7 +127,9 @@ type CreateEntityParams struct {
 	Name               string `json:"name"`
 	NormalizedName     string `json:"normalized_name"`
 	Slug               string `json:"slug"`
+	Category           string `json:"category"`
 	RoleOrContext      string `json:"role_or_context"`
+	Reach              string `json:"reach"`
 	Summary            string `json:"summary"`
 	Relevance          int64  `json:"relevance"`
 	RelevanceRationale string `json:"relevance_rationale"`
@@ -136,7 +144,9 @@ func (q *Queries) CreateEntity(ctx context.Context, arg CreateEntityParams) (Ent
 		arg.Name,
 		arg.NormalizedName,
 		arg.Slug,
+		arg.Category,
 		arg.RoleOrContext,
+		arg.Reach,
 		arg.Summary,
 		arg.Relevance,
 		arg.RelevanceRationale,
@@ -156,6 +166,8 @@ func (q *Queries) CreateEntity(ctx context.Context, arg CreateEntityParams) (Ent
 		&i.RelevanceRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Category,
+		&i.Reach,
 	)
 	return i, err
 }
@@ -503,7 +515,7 @@ func (q *Queries) GetCaseBySlug(ctx context.Context, slug string) (Case, error) 
 }
 
 const getClaimByID = `-- name: GetClaimByID :one
-SELECT id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, import_run_id, created_at, updated_at FROM claims
+SELECT id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, import_run_id, created_at, updated_at, context_status, quarantine_reasons FROM claims
 WHERE id = ? LIMIT 1
 `
 
@@ -523,12 +535,14 @@ func (q *Queries) GetClaimByID(ctx context.Context, id string) (Claim, error) {
 		&i.ImportRunID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContextStatus,
+		&i.QuarantineReasons,
 	)
 	return i, err
 }
 
 const getEntityByID = `-- name: GetEntityByID :one
-SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at FROM entities
+SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at, category, reach FROM entities
 WHERE id = ? LIMIT 1
 `
 
@@ -547,12 +561,14 @@ func (q *Queries) GetEntityByID(ctx context.Context, id string) (Entity, error) 
 		&i.RelevanceRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Category,
+		&i.Reach,
 	)
 	return i, err
 }
 
 const getEntityByNormalizedName = `-- name: GetEntityByNormalizedName :one
-SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at FROM entities
+SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at, category, reach FROM entities
 WHERE normalized_name = ? LIMIT 1
 `
 
@@ -571,12 +587,14 @@ func (q *Queries) GetEntityByNormalizedName(ctx context.Context, normalizedName 
 		&i.RelevanceRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Category,
+		&i.Reach,
 	)
 	return i, err
 }
 
 const getEntityBySlug = `-- name: GetEntityBySlug :one
-SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at FROM entities
+SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at, category, reach FROM entities
 WHERE slug = ? LIMIT 1
 `
 
@@ -595,6 +613,8 @@ func (q *Queries) GetEntityBySlug(ctx context.Context, slug string) (Entity, err
 		&i.RelevanceRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Category,
+		&i.Reach,
 	)
 	return i, err
 }

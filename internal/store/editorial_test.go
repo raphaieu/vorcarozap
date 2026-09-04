@@ -41,6 +41,11 @@ func TestMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao consultar entities após migrate: %v", err)
 	}
 
+	// Executa rollback da migration 00004
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00004: %v", err)
+	}
+
 	// Executa rollback da migration 00003
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00003: %v", err)
@@ -691,5 +696,138 @@ func TestMigration00003_Hardening(t *testing.T) {
 	}
 	if es.Excerpt != "" {
 		t.Errorf("esperava excerpt vazio, obteve %q", es.Excerpt)
+	}
+}
+
+func TestMigration00004_SeedFidelity(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_mig_00004.db")
+	ctx := context.Background()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	defer db.Close()
+
+	// 1. Aplica todas as migrations
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao aplicar migrations: %v", err)
+	}
+
+	// 2. Reverte a 00004 para simular estado do VZ-005 antes da 00004
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00004: %v", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Insere registros no formato do VZ-005 (onde summary continha alcance e attribution continha situação)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO entities (id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at)
+		VALUES ('ent-legacy', 'person', 'Nome Legado', 'nome legado', 'nome-legado', 'Cargo', 'Nacional', 3, 'Justificativa', ?, ?);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir entidade legada: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO cases (id, name, slug, description, created_at, updated_at)
+		VALUES ('case-legacy', 'Caso', 'caso-leg', 'Desc', ?, ?);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir caso: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary, context_limits, created_at, updated_at)
+		VALUES ('rel-legacy', 'ent-legacy', 'case-legacy', 'tipo', 'sum', 'lim', ?, ?);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir relacionamento: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, created_at, updated_at)
+		VALUES ('cl-legacy', 'rel-legacy', 'Proposição', 'Investigado', 'curated_seed', 'A', 'supports_link', 1, 'published', ?, ?);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir claim legado: %v", err)
+	}
+
+	// 3. Aplica a migration 00004 sobre o banco com dados preexistentes
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao aplicar migration 00004 sobre dados legados: %v", err)
+	}
+
+	// 4. Valida que reach recebeu 'Nacional' e summary foi limpo
+	var reach, summary string
+	err = db.QueryRowContext(ctx, "SELECT reach, summary FROM entities WHERE id = 'ent-legacy'").Scan(&reach, &summary)
+	if err != nil {
+		t.Fatalf("falha ao consultar entidade pós-migração: %v", err)
+	}
+	if reach != "Nacional" {
+		t.Errorf("esperava reach='Nacional', obteve %q", reach)
+	}
+	if summary != "" {
+		t.Errorf("esperava summary='', obteve %q", summary)
+	}
+
+	// 5. Valida que context_status recebeu 'Investigado' e attribution foi limpa
+	var contextStatus, attribution string
+	err = db.QueryRowContext(ctx, "SELECT context_status, attribution FROM claims WHERE id = 'cl-legacy'").Scan(&contextStatus, &attribution)
+	if err != nil {
+		t.Fatalf("falha ao consultar claim pós-migração: %v", err)
+	}
+	if contextStatus != "Investigado" {
+		t.Errorf("esperava context_status='Investigado', obteve %q", contextStatus)
+	}
+	if attribution != "" {
+		t.Errorf("esperava attribution='', obteve %q", attribution)
+	}
+}
+
+func TestMigration00003_DownFailsOnIncompatibleData(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_mig_00003_down.db")
+	ctx := context.Background()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	defer db.Close()
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao aplicar migrations: %v", err)
+	}
+
+	// Reverte 00004 para ficar exatamente na 00003
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00004: %v", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Insere uma source com título vazio (válida em 00003, incompatível com 00002)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status, created_at, updated_at)
+		VALUES ('src-empty-title', '', '', 'https://example.com/item', 'https://example.com/item', 'article', 'not_checked', ?, ?);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir source compatível com 00003: %v", err)
+	}
+
+	// O rollback da 00003 DEVE falhar explicitamente e não apagar registros silenciosamente
+	err = store.Rollback(ctx, db)
+	if err == nil {
+		t.Fatal("esperava erro ao tentar reverter migration 00003 contendo dados incompatíveis, mas rollback teve sucesso")
+	}
+
+	// Confirma que a tabela sources e o registro incompatível continuam intactos
+	var count int
+	err = db.QueryRowContext(ctx, "SELECT count(*) FROM sources WHERE id = 'src-empty-title'").Scan(&count)
+	if err != nil || count != 1 {
+		t.Fatalf("dados não devem ser perdidos na tentativa de rollback falha: count=%d, err=%v", count, err)
 	}
 }

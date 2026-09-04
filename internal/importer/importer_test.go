@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -254,6 +255,44 @@ func TestImporter_DryRunAndAppliedImport(t *testing.T) {
 		t.Errorf("Pessoa E corrigida: esperado published/context_only/0; obteve %s/%s/%d", claimECorrStatus, claimECorrDisp, claimECorrMetric)
 	}
 
+	// Valida fidelidade dos campos (Área -> category, Alcance -> reach, Situação -> context_status, attribution vazia)
+	var entCategory, entReach, entSummary string
+	err = db.QueryRowContext(ctx, "SELECT category, reach, summary FROM entities WHERE name = 'Pessoa A Confirmada'").Scan(&entCategory, &entReach, &entSummary)
+	if err != nil {
+		t.Fatalf("falha ao consultar campos de entidade: %v", err)
+	}
+	if entCategory != "Empresas" {
+		t.Errorf("esperava category='Empresas', obteve %q", entCategory)
+	}
+	if entReach != "Nacional" {
+		t.Errorf("esperava reach='Nacional', obteve %q", entReach)
+	}
+	if entSummary != "" {
+		t.Errorf("esperava summary='', obteve %q", entSummary)
+	}
+
+	var claimAttribution, claimContextStatus, claimQuarantineReasons string
+	err = db.QueryRowContext(ctx, "SELECT c.attribution, c.context_status, c.quarantine_reasons FROM claims c JOIN entities e ON e.id = (SELECT subject_entity_id FROM relationships WHERE id = c.relationship_id) WHERE e.name = 'Pessoa A Confirmada'").Scan(&claimAttribution, &claimContextStatus, &claimQuarantineReasons)
+	if err != nil {
+		t.Fatalf("falha ao consultar campos de claim: %v", err)
+	}
+	if claimAttribution != "" {
+		t.Errorf("attribution não deve receber 'Situação', esperado '', obteve %q", claimAttribution)
+	}
+	if claimContextStatus != "Investigado" {
+		t.Errorf("esperava context_status='Investigado', obteve %q", claimContextStatus)
+	}
+	if claimQuarantineReasons != "[]" {
+		t.Errorf("esperava quarantine_reasons='[]', obteve %q", claimQuarantineReasons)
+	}
+
+	// Valida persistência de motivos de quarentena como JSON estável em Pessoa E Ambigua
+	var claimEQuarantineReasons string
+	err = db.QueryRowContext(ctx, "SELECT c.quarantine_reasons FROM claims c JOIN entities e ON e.id = (SELECT subject_entity_id FROM relationships WHERE id = c.relationship_id) WHERE e.name = 'Pessoa E Ambigua'").Scan(&claimEQuarantineReasons)
+	if err != nil || !strings.Contains(claimEQuarantineReasons, QuarantineCodeMappedInitialState) {
+		t.Errorf("esperava código %s em quarantine_reasons, obteve %q", QuarantineCodeMappedInitialState, claimEQuarantineReasons)
+	}
+
 	// 4. SEGUNDA EXECUÇÃO: IDEMPOTÊNCIA COMPROVADA
 	secondRes, err := imp.ImportFromFile(ctx, ImportOptions{
 		FilePath: xlsxPath,
@@ -445,4 +484,85 @@ func TestImporter_SpreadsheetRejections(t *testing.T) {
 			t.Fatal("esperava erro para arquivo inexistente")
 		}
 	})
+}
+
+func TestImporter_InvalidAdditionalSourceURL(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	mappingPath := getOfficialMappingPath()
+	imp := NewImporter(db, mappingPath)
+
+	rows := [][]string{
+		{
+			"Pessoa URL Extra Invalida", "Tecnologia", "Analista", "A — direto confirmado",
+			"Contato", "Documento comprova contato", "Nenhum", "Ativo",
+			"3", "Local", "Relevante no setor", "https://noticias.example.com/artigo-valido", "url-adicional-invalida",
+		},
+	}
+
+	xlsxPath := createTestExcelFile(t, rows)
+	res, err := imp.ImportFromFile(ctx, ImportOptions{FilePath: xlsxPath, DryRun: false})
+	if err != nil {
+		t.Fatalf("importação não deveria falhar por URL adicional inválida: %v", err)
+	}
+
+	if res.SummaryCounts.ValidRows != 1 {
+		t.Errorf("esperava 1 linha válida, obteve %d", res.SummaryCounts.ValidRows)
+	}
+	if res.SummaryCounts.PublishedRows != 1 {
+		t.Errorf("linha com fonte principal válida deve ser publicada: %d", res.SummaryCounts.PublishedRows)
+	}
+	if len(res.Warnings) == 0 {
+		t.Error("esperava warning para URL adicional inválida")
+	}
+
+	// Verifica se a URL inválida gerou warning com o código estável
+	foundWarning := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, WarningCodeInvalidAdditionalSourceURL) {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Errorf("esperava warning contendo o código %s, avisos obtidos: %v", WarningCodeInvalidAdditionalSourceURL, res.Warnings)
+	}
+
+	// Não deve criar source para a URL adicional inválida
+	var sourceCount int
+	_ = db.QueryRowContext(ctx, "SELECT count(*) FROM sources WHERE original_url = 'url-adicional-invalida'").Scan(&sourceCount)
+	if sourceCount != 0 {
+		t.Errorf("não deveria criar source para URL adicional inválida, criou: %d", sourceCount)
+	}
+}
+
+func TestImporter_CountInvariants(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	mappingPath := getOfficialMappingPath()
+	imp := NewImporter(db, mappingPath)
+
+	rows := [][]string{
+		{"Pessoa Válida 1", "Área", "Cargo", "A — direto confirmado", "Vínculo", "Doc", "Lim", "Sit", "3", "Alc", "Just", "https://noticias.example.com/1", ""},
+		{"Pessoa Válida 2", "Área", "Cargo", "E — fraco/ambíguo", "Vínculo", "Doc", "Lim", "Sit", "3", "Alc", "Just", "https://noticias.example.com/2", ""},
+		{"", "Área", "Cargo", "A — direto confirmado", "Vínculo", "Doc", "Lim", "Sit", "3", "Alc", "Just", "https://noticias.example.com/3", ""}, // Erro estrutural
+	}
+
+	xlsxPath := createTestExcelFile(t, rows)
+	res, err := imp.ImportFromFile(ctx, ImportOptions{FilePath: xlsxPath, DryRun: true})
+	if err != nil {
+		t.Fatalf("falha no dry-run: %v", err)
+	}
+
+	// Invariante 1: TotalRows = IgnoredRows + ValidRows + ErrorRows
+	expectedTotal := res.SummaryCounts.IgnoredRows + res.SummaryCounts.ValidRows + res.SummaryCounts.ErrorRows
+	if res.SummaryCounts.TotalRows != expectedTotal {
+		t.Errorf("invariante violado: TotalRows (%d) != Ignored (%d) + Valid (%d) + Error (%d)",
+			res.SummaryCounts.TotalRows, res.SummaryCounts.IgnoredRows, res.SummaryCounts.ValidRows, res.SummaryCounts.ErrorRows)
+	}
+
+	// Invariante 2: ValidRows = PublishedRows + QuarantinedRows
+	expectedValid := res.SummaryCounts.PublishedRows + res.SummaryCounts.QuarantinedRows
+	if res.SummaryCounts.ValidRows != expectedValid {
+		t.Errorf("invariante violado: ValidRows (%d) != Published (%d) + Quarantined (%d)",
+			res.SummaryCounts.ValidRows, res.SummaryCounts.PublishedRows, res.SummaryCounts.QuarantinedRows)
+	}
 }

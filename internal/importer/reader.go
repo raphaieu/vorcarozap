@@ -26,26 +26,26 @@ var RequiredColumns = []string{
 }
 
 // ReadSpreadsheet abre um arquivo Excel a partir de um io.Reader ou caminho e extrai as linhas funcionais.
-func ReadSpreadsheet(r io.Reader, sheetName string, headerRow int) ([]RawRow, []string, error) {
+func ReadSpreadsheet(r io.Reader, sheetName string, headerRow int) ([]RawRow, int, []string, error) {
 	f, err := excelize.OpenReader(r)
 	if err != nil {
-		return nil, nil, fmt.Errorf("importer: falha ao abrir planilha excel: %w", err)
+		return nil, 0, nil, fmt.Errorf("importer: falha ao abrir planilha excel: %w", err)
 	}
 	defer f.Close()
 
 	// 1. Validação de aba
 	sheetIndex, err := f.GetSheetIndex(sheetName)
 	if err != nil || sheetIndex < 0 {
-		return nil, nil, fmt.Errorf("importer: aba obrigatória %q não encontrada na planilha", sheetName)
+		return nil, 0, nil, fmt.Errorf("importer: aba obrigatória %q não encontrada na planilha", sheetName)
 	}
 
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("importer: falha ao ler linhas da aba %q: %w", sheetName, err)
+		return nil, 0, nil, fmt.Errorf("importer: falha ao ler linhas da aba %q: %w", sheetName, err)
 	}
 
 	if len(rows) < headerRow {
-		return nil, nil, fmt.Errorf("importer: planilha possui %d linhas, insuficiente para conter cabeçalho na linha %d", len(rows), headerRow)
+		return nil, 0, nil, fmt.Errorf("importer: planilha possui %d linhas, insuficiente para conter cabeçalho na linha %d", len(rows), headerRow)
 	}
 
 	// 2. Leitura e validação do cabeçalho
@@ -60,7 +60,7 @@ func ReadSpreadsheet(r io.Reader, sheetName string, headerRow int) ([]RawRow, []
 		}
 
 		if _, exists := colMap[normCol]; exists {
-			return nil, nil, fmt.Errorf("importer: coluna duplicada no cabeçalho: %q", cell)
+			return nil, 0, nil, fmt.Errorf("importer: coluna duplicada no cabeçalho: %q", cell)
 		}
 		colMap[normCol] = colIdx
 	}
@@ -69,7 +69,7 @@ func ReadSpreadsheet(r io.Reader, sheetName string, headerRow int) ([]RawRow, []
 	for _, reqCol := range RequiredColumns {
 		normReq := NormalizeUnicode(NormalizeString(reqCol))
 		if _, exists := colMap[normReq]; !exists {
-			return nil, nil, fmt.Errorf("importer: coluna obrigatória ausente no cabeçalho: %q", reqCol)
+			return nil, 0, nil, fmt.Errorf("importer: coluna obrigatória ausente no cabeçalho: %q", reqCol)
 		}
 	}
 
@@ -94,6 +94,7 @@ func ReadSpreadsheet(r io.Reader, sheetName string, headerRow int) ([]RawRow, []
 	}
 
 	var rawRows []RawRow
+	var ignoredRows int
 	for i := headerRow; i < len(rows); i++ {
 		rowNum := i + 1
 		rowCells := rows[i]
@@ -116,11 +117,12 @@ func ReadSpreadsheet(r io.Reader, sheetName string, headerRow int) ([]RawRow, []
 		}
 
 		if raw.IsEmpty() {
+			ignoredRows++
 			continue
 		}
 
 		rawRows = append(rawRows, raw)
 	}
 
-	return rawRows, warnings, nil
+	return rawRows, ignoredRows, warnings, nil
 }

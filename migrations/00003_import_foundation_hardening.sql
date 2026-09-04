@@ -77,6 +77,13 @@ PRAGMA foreign_key_check;
 PRAGMA foreign_keys = ON;
 
 -- +goose Down
+-- Reversão falha explicitamente se existirem registros incompatíveis (trecho, título ou autor vazios)
+-- para impedir descarte silencioso de dados.
+CREATE TEMP TABLE _abort_on_incompatible_data (check_val INTEGER CHECK (check_val = 0));
+INSERT INTO _abort_on_incompatible_data SELECT COUNT(*) FROM evidence_sources WHERE length(trim(excerpt)) = 0;
+INSERT INTO _abort_on_incompatible_data SELECT COUNT(*) FROM sources WHERE length(trim(title)) = 0 OR length(trim(publisher_or_author)) = 0;
+DROP TABLE _abort_on_incompatible_data;
+
 PRAGMA foreign_keys = OFF;
 
 DROP INDEX IF EXISTS uq_import_runs_applied;
@@ -93,7 +100,7 @@ CREATE TABLE evidence_sources_old (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-INSERT INTO evidence_sources_old SELECT * FROM evidence_sources WHERE length(trim(excerpt)) > 0;
+INSERT INTO evidence_sources_old SELECT * FROM evidence_sources;
 DROP TABLE evidence_sources;
 ALTER TABLE evidence_sources_old RENAME TO evidence_sources;
 
@@ -119,7 +126,7 @@ CREATE TABLE sources_old (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-INSERT INTO sources_old SELECT * FROM sources WHERE length(trim(title)) > 0 AND length(trim(publisher_or_author)) > 0;
+INSERT INTO sources_old SELECT * FROM sources;
 DROP TABLE sources;
 ALTER TABLE sources_old RENAME TO sources;
 

@@ -83,36 +83,42 @@ func (imp *Importer) ImportFromFile(ctx context.Context, opts ImportOptions) (*I
 	}
 
 	// 5. Leitura da planilha XLSX via Excelize
-	rawRows, warnings, err := ReadSpreadsheet(bytes.NewReader(fileBytes), mapping.Source.Sheet, mapping.Source.HeaderRow)
+	rawRows, ignoredCount, readWarnings, err := ReadSpreadsheet(bytes.NewReader(fileBytes), mapping.Source.Sheet, mapping.Source.HeaderRow)
 	if err != nil {
 		return nil, fmt.Errorf("importer: erro ao ler planilha: %w", err)
 	}
 
 	// 6. Processamento e validação das linhas em memória
-	parsedRows, rowErrors := imp.parseAndValidateRows(rawRows, mapping)
+	parsedRows, rowErrors, validationWarnings := imp.parseAndValidateRows(rawRows, mapping)
+	allWarnings := append(readWarnings, validationWarnings...)
 
 	result := &ImportResult{
 		FileHash:       fileHash,
 		MappingVersion: mapping.Version,
 		DryRun:         opts.DryRun,
-		Warnings:       warnings,
+		Warnings:       allWarnings,
 		RowErrors:      rowErrors,
 		SummaryCounts: SummaryCounts{
-			TotalRows:   len(rawRows) + len(rowErrors), // linhas funcionais identificadas
-			IgnoredRows: 0,
-			ValidRows:   len(parsedRows),
-			ErrorRows:   len(rowErrors),
+			TotalRows:       ignoredCount + len(parsedRows) + len(rowErrors),
+			IgnoredRows:     ignoredCount,
+			ValidRows:       len(parsedRows),
+			ErrorRows:       len(rowErrors),
+			PublishedRows:   0,
+			QuarantinedRows: 0,
 		},
 	}
 
-	// 7. Contabilização preliminar de publicação vs quarentena
+	// 7. Contabilização preliminar de publicação vs quarentena e registro de detalhes
+	var quarantinedDetails []string
 	for _, pr := range parsedRows {
 		if pr.ShouldQuarantine() {
 			result.SummaryCounts.QuarantinedRows++
+			quarantinedDetails = append(quarantinedDetails, fmt.Sprintf("Linha %d (%s): quarentena %v", pr.Raw.RowNumber, pr.Raw.Nome, pr.QuarantineReasons))
 		} else {
 			result.SummaryCounts.PublishedRows++
 		}
 	}
+	result.QuarantinedDetails = quarantinedDetails
 
 	// 8. Se for Dry-Run, simula contagens de criação vs reuso sem gravar nada
 	if opts.DryRun {
@@ -205,18 +211,20 @@ func (imp *Importer) ImportFromFile(ctx context.Context, opts ImportOptions) (*I
 
 			claimID := uuid.NewString()
 			_, err = q.CreateClaim(ctx, sqlc.CreateClaimParams{
-				ID:             claimID,
-				RelationshipID: relID,
-				Proposition:    row.Raw.OQueEstaDocumentado,
-				Attribution:    row.Raw.Situacao,
-				Origin:         mapping.Origin,
-				Grade:          string(row.Grade),
-				Disposition:    string(row.Disposition),
-				MetricEligible: metricEligible,
-				Status:         string(claimStatus),
-				ImportRunID:    sql.NullString{String: runID, Valid: true},
-				CreatedAt:      now,
-				UpdatedAt:      now,
+				ID:                claimID,
+				RelationshipID:    relID,
+				Proposition:       row.Raw.OQueEstaDocumentado,
+				Attribution:       "", // Atribuição própria vazia no seed; não recebe "Situação"
+				Origin:            mapping.Origin,
+				Grade:             string(row.Grade),
+				Disposition:       string(row.Disposition),
+				MetricEligible:    metricEligible,
+				Status:            string(claimStatus),
+				ContextStatus:     NormalizeString(row.Raw.Situacao),
+				QuarantineReasons: row.QuarantineReasonsJSON(),
+				ImportRunID:       sql.NullString{String: runID, Valid: true},
+				CreatedAt:         now,
+				UpdatedAt:         now,
 			})
 			if err != nil {
 				return fmt.Errorf("linha %d: falha ao criar claim: %w", row.Raw.RowNumber, err)
@@ -312,9 +320,10 @@ func (imp *Importer) ImportFromFile(ctx context.Context, opts ImportOptions) (*I
 }
 
 // parseAndValidateRows analisa os campos das linhas brutas, aplicando as regras de quarentena e erros estruturais.
-func (imp *Importer) parseAndValidateRows(rawRows []RawRow, mapping *MappingConfig) ([]ParsedRow, []RowError) {
+func (imp *Importer) parseAndValidateRows(rawRows []RawRow, mapping *MappingConfig) ([]ParsedRow, []RowError, []string) {
 	var parsed []ParsedRow
 	var rowErrors []RowError
+	var warnings []string
 
 	for _, raw := range rawRows {
 		nome := NormalizeString(raw.Nome)
@@ -373,57 +382,68 @@ func (imp *Importer) parseAndValidateRows(rawRows []RawRow, mapping *MappingConf
 			continue
 		}
 
-		// URL da Fonte adicional (opcional)
+		// URL da Fonte adicional (opcional): url inválida gera aviso estável sem descartar a linha
 		addURL := NormalizeString(raw.FonteAdicional)
 		var addCanon string
 		if addURL != "" {
 			c, err := CanonicalURL(addURL)
-			if err == nil {
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("Linha %d [%s]: url da fonte adicional inválida ignorada (%q): %v", raw.RowNumber, WarningCodeInvalidAdditionalSourceURL, addURL, err))
+			} else {
 				addCanon = c
 			}
 		}
 
+		var quarantineReasons []string
 		var quarantineNotes []string
 
 		// Grau legado
 		rule, found := mapping.LookupGrade(raw.GrauConfirmacao)
 		if !found {
+			quarantineReasons = append(quarantineReasons, QuarantineCodeUnknownLegacyGrade)
 			quarantineNotes = append(quarantineNotes, fmt.Sprintf("grau legado desconhecido %q", raw.GrauConfirmacao))
+		} else if rule.InitialState == string(domain.ClaimStatusQuarantined) {
+			quarantineReasons = append(quarantineReasons, QuarantineCodeMappedInitialState)
+			quarantineNotes = append(quarantineNotes, fmt.Sprintf("estado inicial em quarentena definido pelo mapeamento (%s)", raw.GrauConfirmacao))
 		}
 
 		// Relevância
 		rel, err := ParseRelevance(raw.Relevancia)
 		if err != nil {
+			quarantineReasons = append(quarantineReasons, QuarantineCodeInvalidRelevance)
 			quarantineNotes = append(quarantineNotes, fmt.Sprintf("relevância inválida %q", raw.Relevancia))
 			rel = domain.Relevance(1) // fallback defensivo para quarentena
 		}
 
 		// Validações essenciais para permitir publicação (B.9)
 		if NormalizeString(raw.CargoPapel) == "" {
+			quarantineReasons = append(quarantineReasons, QuarantineCodeMissingRoleOrContext)
 			quarantineNotes = append(quarantineNotes, "cargo ou contexto ausente")
 		}
 		if NormalizeString(raw.TipoDeVinculo) == "" {
+			quarantineReasons = append(quarantineReasons, QuarantineCodeMissingRelationshipExplanation)
 			quarantineNotes = append(quarantineNotes, "explicação do vínculo ausente")
 		}
 
 		parsed = append(parsed, ParsedRow{
-			Raw:             raw,
-			NormalizedName:  NormalizeName(nome),
-			Slug:            GenerateSlug(nome),
-			Relevance:       rel,
-			Grade:           domain.EvidenceGrade(rule.Grade),
-			InitialState:    domain.ClaimStatus(rule.InitialState),
-			Disposition:     domain.ClaimDisposition(rule.Disposition),
-			MetricEligible:  rule.MetricEligible,
-			PrimaryURL:      primaryURL,
-			PrimaryCanonURL: primaryCanon,
-			AddURL:          addURL,
-			AddCanonURL:     addCanon,
-			QuarantineNotes: quarantineNotes,
+			Raw:               raw,
+			NormalizedName:    NormalizeName(nome),
+			Slug:              GenerateSlug(nome),
+			Relevance:         rel,
+			Grade:             domain.EvidenceGrade(rule.Grade),
+			InitialState:      domain.ClaimStatus(rule.InitialState),
+			Disposition:       domain.ClaimDisposition(rule.Disposition),
+			MetricEligible:    rule.MetricEligible,
+			PrimaryURL:        primaryURL,
+			PrimaryCanonURL:   primaryCanon,
+			AddURL:            addURL,
+			AddCanonURL:       addCanon,
+			QuarantineReasons: quarantineReasons,
+			QuarantineNotes:   quarantineNotes,
 		})
 	}
 
-	return parsed, rowErrors
+	return parsed, rowErrors, warnings
 }
 
 // simulateDryRunCounts consulta o banco em modo leitura para computar com precisão reuso vs criação no dry-run.
@@ -546,10 +566,12 @@ func (imp *Importer) persistOrReuseEntity(
 		Name:               NormalizeString(row.Raw.Nome),
 		NormalizedName:     row.NormalizedName,
 		Slug:               targetSlug,
-		RoleOrContext:      row.Raw.CargoPapel,
-		Summary:            row.Raw.Alcance,
+		Category:           NormalizeString(row.Raw.Area),
+		RoleOrContext:      NormalizeString(row.Raw.CargoPapel),
+		Reach:              NormalizeString(row.Raw.Alcance),
+		Summary:            "",
 		Relevance:          int64(row.Relevance),
-		RelevanceRationale: row.Raw.PorQueImporta,
+		RelevanceRationale: NormalizeString(row.Raw.PorQueImporta),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	})

@@ -1,8 +1,8 @@
 -- name: CreateEntity :one
 INSERT INTO entities (
-    id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at
+    id, type, name, normalized_name, slug, category, role_or_context, reach, summary, relevance, relevance_rationale, created_at, updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
 
@@ -99,9 +99,9 @@ WHERE id = ? LIMIT 1;
 
 -- name: CreateClaim :one
 INSERT INTO claims (
-    id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, import_run_id, created_at, updated_at
+    id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons, import_run_id, created_at, updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
 

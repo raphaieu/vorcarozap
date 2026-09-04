@@ -18,18 +18,20 @@ type Case struct {
 }
 
 type Claim struct {
-	ID             string         `json:"id"`
-	RelationshipID string         `json:"relationship_id"`
-	Proposition    string         `json:"proposition"`
-	Attribution    string         `json:"attribution"`
-	Origin         string         `json:"origin"`
-	Grade          string         `json:"grade"`
-	Disposition    string         `json:"disposition"`
-	MetricEligible int64          `json:"metric_eligible"`
-	Status         string         `json:"status"`
-	ImportRunID    sql.NullString `json:"import_run_id"`
-	CreatedAt      string         `json:"created_at"`
-	UpdatedAt      string         `json:"updated_at"`
+	ID                string         `json:"id"`
+	RelationshipID    string         `json:"relationship_id"`
+	Proposition       string         `json:"proposition"`
+	Attribution       string         `json:"attribution"`
+	Origin            string         `json:"origin"`
+	Grade             string         `json:"grade"`
+	Disposition       string         `json:"disposition"`
+	MetricEligible    int64          `json:"metric_eligible"`
+	Status            string         `json:"status"`
+	ImportRunID       sql.NullString `json:"import_run_id"`
+	CreatedAt         string         `json:"created_at"`
+	UpdatedAt         string         `json:"updated_at"`
+	ContextStatus     string         `json:"context_status"`
+	QuarantineReasons string         `json:"quarantine_reasons"`
 }
 
 type Entity struct {
@@ -44,6 +46,8 @@ type Entity struct {
 	RelevanceRationale string `json:"relevance_rationale"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
+	Category           string `json:"category"`
+	Reach              string `json:"reach"`
 }
 
 type EntityAlias struct {

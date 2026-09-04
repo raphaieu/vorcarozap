@@ -50,15 +50,30 @@ func (s SummaryCounts) JSON() string {
 	return string(b)
 }
 
+// Códigos estáveis para motivos de quarentena
+const (
+	QuarantineCodeUnknownLegacyGrade             = "UNKNOWN_LEGACY_GRADE"
+	QuarantineCodeInvalidRelevance               = "INVALID_RELEVANCE"
+	QuarantineCodeMissingRoleOrContext           = "MISSING_ROLE_OR_CONTEXT"
+	QuarantineCodeMissingRelationshipExplanation = "MISSING_RELATIONSHIP_EXPLANATION"
+	QuarantineCodeMappedInitialState             = "MAPPED_INITIAL_STATE_QUARANTINED"
+)
+
+// Códigos estáveis para avisos da importação
+const (
+	WarningCodeInvalidAdditionalSourceURL = "INVALID_ADDITIONAL_SOURCE_URL"
+)
+
 // ImportResult representa o resultado auditável completo de uma importação (dry-run ou aplicada).
 type ImportResult struct {
-	FileHash        string        `json:"file_hash"`
-	MappingVersion  string        `json:"mapping_version"`
-	DryRun          bool          `json:"dry_run"`
-	AlreadyImported bool          `json:"already_imported"`
-	SummaryCounts   SummaryCounts `json:"summary_counts"`
-	Warnings        []string      `json:"warnings,omitempty"`
-	RowErrors       []RowError    `json:"row_errors,omitempty"`
+	FileHash           string        `json:"file_hash"`
+	MappingVersion     string        `json:"mapping_version"`
+	DryRun             bool          `json:"dry_run"`
+	AlreadyImported    bool          `json:"already_imported"`
+	SummaryCounts      SummaryCounts `json:"summary_counts"`
+	Warnings           []string      `json:"warnings,omitempty"`
+	QuarantinedDetails []string      `json:"quarantined_details,omitempty"`
+	RowErrors          []RowError    `json:"row_errors,omitempty"`
 }
 
 // SummaryReport gera o relatório textual humano do resultado.
@@ -94,6 +109,13 @@ func (r *ImportResult) SummaryReport() string {
 		sb.WriteString("\nAvisos:\n")
 		for _, w := range r.Warnings {
 			sb.WriteString(fmt.Sprintf("  - %s\n", w))
+		}
+	}
+
+	if len(r.QuarantinedDetails) > 0 {
+		sb.WriteString(fmt.Sprintf("\nLinhas em quarentena (%d):\n", len(r.QuarantinedDetails)))
+		for _, qd := range r.QuarantinedDetails {
+			sb.WriteString(fmt.Sprintf("  - %s\n", qd))
 		}
 	}
 
@@ -144,22 +166,35 @@ func (r *RawRow) IsEmpty() bool {
 
 // ParsedRow contém os dados validados e normalizados prontos para persistência/dry-run.
 type ParsedRow struct {
-	Raw             RawRow
-	NormalizedName  string
-	Slug            string
-	Relevance       domain.Relevance
-	Grade           domain.EvidenceGrade
-	InitialState    domain.ClaimStatus
-	Disposition     domain.ClaimDisposition
-	MetricEligible  bool
-	PrimaryURL      string
-	PrimaryCanonURL string
-	AddURL          string
-	AddCanonURL     string
-	QuarantineNotes []string
+	Raw               RawRow
+	NormalizedName    string
+	Slug              string
+	Relevance         domain.Relevance
+	Grade             domain.EvidenceGrade
+	InitialState      domain.ClaimStatus
+	Disposition       domain.ClaimDisposition
+	MetricEligible    bool
+	PrimaryURL        string
+	PrimaryCanonURL   string
+	AddURL            string
+	AddCanonURL       string
+	QuarantineReasons []string
+	QuarantineNotes   []string
+}
+
+// QuarantineReasonsJSON converte os códigos estáveis de quarentena para JSON string.
+func (p *ParsedRow) QuarantineReasonsJSON() string {
+	if len(p.QuarantineReasons) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(p.QuarantineReasons)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // ShouldQuarantine indica se a linha possui inconsistências que forçam status quarantined.
 func (p *ParsedRow) ShouldQuarantine() bool {
-	return p.InitialState == domain.ClaimStatusQuarantined || len(p.QuarantineNotes) > 0
+	return p.InitialState == domain.ClaimStatusQuarantined || len(p.QuarantineReasons) > 0 || len(p.QuarantineNotes) > 0
 }
