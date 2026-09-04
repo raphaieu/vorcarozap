@@ -12,16 +12,24 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/raphaieu/vorcarozap/internal/metrics"
 	"github.com/raphaieu/vorcarozap/internal/store"
+	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 	"github.com/raphaieu/vorcarozap/web/pages"
 )
 
 type Handlers struct {
-	db *sql.DB
+	db               *sql.DB
+	queries          *sqlc.Queries
+	publicDataCutoff string
 }
 
-func NewHandlers(db *sql.DB) *Handlers {
-	return &Handlers{db: db}
+func NewHandlers(db *sql.DB, cutoff string) *Handlers {
+	return &Handlers{
+		db:               db,
+		queries:          sqlc.New(db),
+		publicDataCutoff: cutoff,
+	}
 }
 
 // HandleHealthLive comprova que o processo HTTP está ativo e aceitando requisições.
@@ -50,10 +58,21 @@ func (h *Handlers) HandleHealthReady(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ready"}`))
 }
 
-// HandleHome renderiza a página pública inicial SSR via templ.
+// HandleHome renderiza a página pública inicial SSR via templ com as métricas calculadas.
 func (h *Handlers) HandleHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	component := pages.Home()
+
+	pubMetrics, err := metrics.GetPublicMetrics(r.Context(), h.queries, h.publicDataCutoff, 5)
+	if err != nil {
+		slog.Error("failed to get public metrics for home", "error", err)
+		// Fallback gracioso com valores zerados
+		pubMetrics = &metrics.PublicMetrics{
+			CutoffDate: h.publicDataCutoff,
+		}
+	}
+
+	vm := pages.ToHomeVM(pubMetrics)
+	component := pages.Home(vm)
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render home template", "error", err)
 		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)

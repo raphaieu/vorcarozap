@@ -33,7 +33,7 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Use(middleware.Recoverer)
 	r.Use(SecurityHeadersMiddleware)
 
-	handlers := NewHandlers(db)
+	handlers := NewHandlers(db, cfg.PublicDataCutoff)
 
 	// Endpoints de saúde
 	r.Get("/health/live", handlers.HandleHealthLive)

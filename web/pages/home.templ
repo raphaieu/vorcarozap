@@ -1,14 +1,17 @@
 package pages
 
-import "github.com/raphaieu/vorcarozap/web/components"
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
 
-templ Home() {
+templ Home(vm HomeVM) {
 	<!DOCTYPE html>
 	<html lang="pt-BR">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<meta name="description" content="VorcaroZAP — Plataforma investigativa e documental para organizar informações públicas sobre Daniel Vorcaro, Banco Master e pessoas relacionadas."/>
+			<meta name="description" content="VorcaroZAP — Plataforma investigativa e documental com fontes auditáveis, classificação editorial e métricas públicas por estado ativo."/>
 			<title>VorcaroZAP — Base Documental e Investigativa</title>
 			<link rel="stylesheet" href="/static/css/app.css"/>
 		</head>
@@ -23,34 +26,178 @@ templ Home() {
 					</p>
 				</section>
 
-				<!-- Espaço Visual: Indicadores de Rede (Fase 1 - Estrutura Inicial) -->
-				<section class="card" aria-label="Indicadores da Rede">
+				<!-- Aviso de Monitoramento Automático Neutro -->
+				<section class="monitoring-inactive-banner" aria-label="Status do Monitoramento">
+					<strong>Monitoramento automático ainda não ativado</strong>
+					<span>
+						A plataforma opera atualmente com a base documental consolidada até <strong>{ vm.CutoffDateHuman }</strong>, resultante da importação e curadoria inicial com auditoria de fontes públicas. A esteira de monitoramento autônomo periódico com OpenRouter será habilitada em etapa posterior.
+					</span>
+				</section>
+
+				<!-- Seção: Visão Geral do Acervo e Rede Elegível -->
+				<section class="card" aria-label="Indicadores Documentais e Métricas da Rede">
 					<h2 class="card-title">
-						<span>Métricas da Rede</span>
-						<span class="status-tag">Estrutura Inicial (Fase 1)</span>
+						<span>Métricas da Rede Documental</span>
+						<span class="status-tag" style="background: var(--color-brand); color: #fff;">Estado Ativo</span>
 					</h2>
 					<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;">
-						Os indicadores consolidados serão calculados e exibidos a partir das Fases 2 e 3, considerando exclusivamente alegações públicas ativas com elegibilidade métrica confirmada.
+						Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações com status <code>published</code> e <code>metric_eligible = true</code>, diferenciando relações comprovadas de menções contextuais.
 					</p>
 					<div class="metrics-grid">
-						<div class="metric-box">
-							<div class="metric-label">Pessoas / Org.</div>
-							<div class="metric-value-placeholder">—</div>
+						<div class="metric-box metric-box-featured">
+							<div class="metric-label">Pessoas na Rede</div>
+							<div class="metric-value">{ fmt.Sprintf("%d", vm.EligibleEntities) }</div>
+							<div class="metric-subtitle">Elegíveis para métricas</div>
+						</div>
+						<div class="metric-box metric-box-featured">
+							<div class="metric-label">Vínculos Qualificados</div>
+							<div class="metric-value">{ fmt.Sprintf("%d", vm.EligibleClaims) }</div>
+							<div class="metric-subtitle">metric_eligible = true</div>
 						</div>
 						<div class="metric-box">
-							<div class="metric-label">Fontes Públicas</div>
-							<div class="metric-value-placeholder">—</div>
+							<div class="metric-label">Total de Entidades</div>
+							<div class="metric-value">{ fmt.Sprintf("%d", vm.TotalEntities) }</div>
+							<div class="metric-subtitle">Acervo público total</div>
 						</div>
 						<div class="metric-box">
-							<div class="metric-label">Graus A–E</div>
-							<div class="metric-value-placeholder">—</div>
+							<div class="metric-label">Total de Alegações</div>
+							<div class="metric-value">{ fmt.Sprintf("%d", vm.TotalClaims) }</div>
+							<div class="metric-subtitle">Inclui contexto e correções</div>
 						</div>
 						<div class="metric-box">
-							<div class="metric-label">Último Monitoramento</div>
-							<div class="metric-value-placeholder">—</div>
+							<div class="metric-label">Fontes Auditadas</div>
+							<div class="metric-value">{ fmt.Sprintf("%d", vm.TotalSources) }</div>
+							<div class="metric-subtitle">Fontes ativas distintas</div>
+						</div>
+						<div class="metric-box">
+							<div class="metric-label">Última Atualização</div>
+							<div class="metric-value" style="font-size: 1.15rem; margin-top: 0.25rem;">{ vm.LatestUpdateHuman }</div>
+							<div class="metric-subtitle">Data de corte: { vm.CutoffDateHuman }</div>
 						</div>
 					</div>
 				</section>
+
+				<!-- Seção: Distribuições Estatísticas -->
+				<div class="distributions-grid">
+					<!-- Distribuição por Grau Documental -->
+					<section class="card dist-card" aria-label="Distribuição por Grau">
+						<h3 class="dist-card-title">Alegações por Grau Probatório (A–E)</h3>
+						<p style="font-size: 0.8rem; color: var(--color-text-muted);">
+							Proporção documental das alegações elegíveis na rede.
+						</p>
+						<ul class="dist-list">
+							for _, g := range vm.GradeDistribution {
+								<li class="dist-item">
+									<div class="dist-header-row">
+										<span class="dist-item-label">
+											<span class={ "grade-badge", "grade-" + g.Grade } style="margin-right: 0.35rem;">Grau { g.Grade }</span>
+											{ g.GradeHuman }
+										</span>
+										<span class="dist-item-count">
+											<strong>{ fmt.Sprintf("%d", g.Count) }</strong> ({ g.FormattedPercentage })
+										</span>
+									</div>
+									<div class="metric-bar-track">
+										<div class={ "metric-bar-fill", "grade-fill-" + g.Grade } style={ "width: " + g.CSSWidth + ";" }></div>
+									</div>
+									<a href={ templ.SafeURL(g.FilterURL) } class="dist-filter-link">
+										Ver pessoas com alegações Grau { g.Grade } &rarr;
+									</a>
+								</li>
+							}
+						</ul>
+					</section>
+
+					<!-- Distribuição por Relevância Pública -->
+					<section class="card dist-card" aria-label="Distribuição por Relevância">
+						<h3 class="dist-card-title">Entidades por Relevância Pública (1–5)</h3>
+						<p style="font-size: 0.8rem; color: var(--color-text-muted);">
+							Alcance institucional das entidades qualificadas na rede.
+						</p>
+						<ul class="dist-list">
+							for _, r := range vm.RelevanceDistribution {
+								<li class="dist-item">
+									<div class="dist-header-row">
+										<span class="dist-item-label">{ r.RelevanceHuman }</span>
+										<span class="dist-item-count">
+											<strong>{ fmt.Sprintf("%d", r.Count) }</strong> ({ r.FormattedPercentage })
+										</span>
+									</div>
+									<div class="metric-bar-track">
+										<div class="metric-bar-fill" style={ "width: " + r.CSSWidth + ";" }></div>
+									</div>
+									<a href={ templ.SafeURL(r.FilterURL) } class="dist-filter-link">
+										Ver pessoas de nível { fmt.Sprintf("%d", r.Relevance) } &rarr;
+									</a>
+								</li>
+							}
+						</ul>
+					</section>
+
+					<!-- Distribuição por Categoria -->
+					if len(vm.CategoryDistribution) > 0 {
+						<section class="card dist-card" aria-label="Distribuição por Categoria">
+							<h3 class="dist-card-title">Entidades por Categoria</h3>
+							<p style="font-size: 0.8rem; color: var(--color-text-muted);">
+								Divisão temática das entidades da rede elegível.
+							</p>
+							<ul class="dist-list">
+								for _, c := range vm.CategoryDistribution {
+									<li class="dist-item">
+										<div class="dist-header-row">
+											<span class="dist-item-label">{ c.Category }</span>
+											<span class="dist-item-count">
+												<strong>{ fmt.Sprintf("%d", c.Count) }</strong> ({ c.FormattedPercentage })
+											</span>
+										</div>
+										<div class="metric-bar-track">
+											<div class="metric-bar-fill" style={ "width: " + c.CSSWidth + ";" }></div>
+										</div>
+										<a href={ templ.SafeURL(c.FilterURL) } class="dist-filter-link">
+											Filtrar por { c.Category } &rarr;
+										</a>
+									</li>
+								}
+							</ul>
+						</section>
+					}
+				</div>
+
+				<!-- Seção: Alegações Documentais Recentes -->
+				if len(vm.RecentClaims) > 0 {
+					<section class="card" aria-label="Alegações Recentes">
+						<h2 class="card-title">
+							<span>Alegações Recentes na Rede</span>
+							<span class="status-tag">Corte { vm.CutoffDateHuman }</span>
+						</h2>
+						<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;">
+							Últimas proposições registradas na base curada inicial com comprovação documental.
+						</p>
+						<div class="recent-claims-list">
+							for _, rc := range vm.RecentClaims {
+								<article class="recent-claim-item">
+									<div class="recent-claim-top">
+										<a href={ templ.SafeURL(rc.DetailURL) } class="recent-claim-entity">
+											{ rc.EntityName }
+										</a>
+										<div class="badge-cluster">
+											<span class={ "grade-badge", "grade-" + rc.Grade }>{ rc.GradeShort }</span>
+											if rc.EntityCategory != "" {
+												<span class="category-badge">{ rc.EntityCategory }</span>
+											}
+										</div>
+									</div>
+									if rc.ShortSynthesis != "" {
+										<p class="recent-claim-synthesis">{ rc.ShortSynthesis }</p>
+									}
+									<div class="recent-claim-meta">
+										<span>Atualizado em { rc.UpdatedAtHuman }</span>
+									</div>
+								</article>
+							}
+						</div>
+					</section>
+				}
 
 				<!-- Espaço Visual: Consulta e Filtros -->
 				<section class="card" aria-label="Busca e Consulta">

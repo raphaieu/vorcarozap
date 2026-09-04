@@ -48,10 +48,10 @@ WHERE
             )
         ) OR
         EXISTS (
-            SELECT 1 FROM public_claims_view pcv
-            JOIN evidence ev ON ev.claim_id = pcv.claim_id
-            JOIN evidence_sources es ON es.evidence_id = ev.id
-            JOIN sources s ON s.id = es.source_id
+            SELECT 1 FROM sources s
+            JOIN evidence_sources es ON es.source_id = s.id
+            JOIN evidence ev ON ev.id = es.evidence_id
+            JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
             WHERE pcv.entity_id = e.id
               AND es.status = 'active'
               AND (
@@ -1209,10 +1209,10 @@ WHERE
             )
         ) OR
         EXISTS (
-            SELECT 1 FROM public_claims_view pcv
-            JOIN evidence ev ON ev.claim_id = pcv.claim_id
-            JOIN evidence_sources es ON es.evidence_id = ev.id
-            JOIN sources s ON s.id = es.source_id
+            SELECT 1 FROM sources s
+            JOIN evidence_sources es ON es.source_id = s.id
+            JOIN evidence ev ON ev.id = es.evidence_id
+            JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
             WHERE pcv.entity_id = e.id
               AND es.status = 'active'
               AND (

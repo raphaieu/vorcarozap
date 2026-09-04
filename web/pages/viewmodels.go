@@ -3,9 +3,11 @@ package pages
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/raphaieu/vorcarozap/internal/metrics"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
@@ -326,4 +328,176 @@ func ToEntityDetailVM(detail *store.PublicEntityDetail) EntityDetailVM {
 		UpdatedAtHuman:     FormatDate(lastUpdated),
 		Claims:             claimsVM,
 	}
+}
+
+// Modelos de visualização para Métricas Públicas da Home
+type GradeDistVM struct {
+	Grade               string
+	GradeHuman          string
+	Count               int64
+	Percentage          float64
+	FormattedPercentage string
+	CSSWidth            string
+	FilterURL           string
+}
+
+type RelevanceDistVM struct {
+	Relevance           int64
+	RelevanceHuman      string
+	Count               int64
+	Percentage          float64
+	FormattedPercentage string
+	CSSWidth            string
+	FilterURL           string
+}
+
+type CategoryDistVM struct {
+	Category            string
+	Count               int64
+	Percentage          float64
+	FormattedPercentage string
+	CSSWidth            string
+	FilterURL           string
+}
+
+type RecentClaimVM struct {
+	ClaimID        string
+	EntityName     string
+	EntitySlug     string
+	EntityCategory string
+	Grade          string
+	GradeShort     string
+	ShortSynthesis string
+	UpdatedAtHuman string
+	DetailURL      string
+}
+
+type HomeVM struct {
+	TotalEntities         int64
+	TotalClaims           int64
+	TotalSources          int64
+	EligibleEntities      int64
+	EligibleClaims        int64
+	LatestUpdateHuman     string
+	CutoffDateHuman       string
+	GradeDistribution     []GradeDistVM
+	RelevanceDistribution []RelevanceDistVM
+	CategoryDistribution  []CategoryDistVM
+	RecentClaims          []RecentClaimVM
+}
+
+// Helpers de URL seguros para filtros
+func BuildGradeFilterURL(grade string) string {
+	v := url.Values{}
+	v.Set("grade", grade)
+	return "/pessoas?" + v.Encode()
+}
+
+func BuildRelevanceFilterURL(rel int64) string {
+	v := url.Values{}
+	v.Set("relevance", strconv.FormatInt(rel, 10))
+	return "/pessoas?" + v.Encode()
+}
+
+func BuildCategoryFilterURL(cat string) string {
+	v := url.Values{}
+	v.Set("category", cat)
+	return "/pessoas?" + v.Encode()
+}
+
+// ToHomeVM converte as métricas de domínio no ViewModel da Home com valores formatados e percentuais limitados.
+func ToHomeVM(m *metrics.PublicMetrics) HomeVM {
+	if m == nil {
+		return HomeVM{}
+	}
+
+	gradeVMs := make([]GradeDistVM, len(m.GradeDist))
+	for i, g := range m.GradeDist {
+		pctClamped := clampPercent(g.Percentage)
+		gradeVMs[i] = GradeDistVM{
+			Grade:               g.Grade,
+			GradeHuman:          FormatGradeShort(g.Grade),
+			Count:               g.Count,
+			Percentage:          g.Percentage,
+			FormattedPercentage: fmt.Sprintf("%.1f%%", g.Percentage),
+			CSSWidth:            fmt.Sprintf("%.1f%%", pctClamped),
+			FilterURL:           BuildGradeFilterURL(g.Grade),
+		}
+	}
+
+	relVMs := make([]RelevanceDistVM, len(m.RelevanceDist))
+	for i, r := range m.RelevanceDist {
+		pctClamped := clampPercent(r.Percentage)
+		relVMs[i] = RelevanceDistVM{
+			Relevance:           r.Relevance,
+			RelevanceHuman:      FormatRelevance(r.Relevance),
+			Count:               r.Count,
+			Percentage:          r.Percentage,
+			FormattedPercentage: fmt.Sprintf("%.1f%%", r.Percentage),
+			CSSWidth:            fmt.Sprintf("%.1f%%", pctClamped),
+			FilterURL:           BuildRelevanceFilterURL(r.Relevance),
+		}
+	}
+
+	catVMs := make([]CategoryDistVM, len(m.CategoryDist))
+	for i, c := range m.CategoryDist {
+		pctClamped := clampPercent(c.Percentage)
+		catVMs[i] = CategoryDistVM{
+			Category:            c.Category,
+			Count:               c.Count,
+			Percentage:          c.Percentage,
+			FormattedPercentage: fmt.Sprintf("%.1f%%", c.Percentage),
+			CSSWidth:            fmt.Sprintf("%.1f%%", pctClamped),
+			FilterURL:           BuildCategoryFilterURL(c.Category),
+		}
+	}
+
+	recentVMs := make([]RecentClaimVM, len(m.RecentClaims))
+	for i, rc := range m.RecentClaims {
+		recentVMs[i] = RecentClaimVM{
+			ClaimID:        rc.ClaimID,
+			EntityName:     rc.EntityName,
+			EntitySlug:     rc.EntitySlug,
+			EntityCategory: rc.EntityCategory,
+			Grade:          rc.Grade,
+			GradeShort:     FormatGradeShort(rc.Grade),
+			ShortSynthesis: rc.ShortSynthesis,
+			UpdatedAtHuman: FormatDate(rc.UpdatedAt),
+			DetailURL:      "/pessoas/" + url.PathEscape(rc.EntitySlug),
+		}
+	}
+
+	latestHuman := FormatDate(m.Overview.LatestUpdate)
+	if latestHuman == "" {
+		latestHuman = "—"
+	}
+
+	cutoffHuman := FormatDate(m.CutoffDate)
+	if cutoffHuman == "" {
+		cutoffHuman = m.CutoffDate
+	}
+
+	return HomeVM{
+		TotalEntities:         m.Overview.TotalEntities,
+		TotalClaims:           m.Overview.TotalClaims,
+		TotalSources:          m.Overview.TotalSources,
+		EligibleEntities:      m.Network.EligibleEntities,
+		EligibleClaims:        m.Network.EligibleClaims,
+		LatestUpdateHuman:     latestHuman,
+		CutoffDateHuman:       cutoffHuman,
+		GradeDistribution:     gradeVMs,
+		RelevanceDistribution: relVMs,
+		CategoryDistribution:  catVMs,
+		RecentClaims:          recentVMs,
+	}
+}
+
+func clampPercent(p float64) float64 {
+	if p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
 }
