@@ -6,7 +6,7 @@
 | VZ-002 | P0 | SQLite/WAL, migrations e volume | Concluído (Fase 1) |
 | VZ-003 | P0 | Compose/Caddy e página base mobile | Concluído (Fase 1) |
 | VZ-004 | P0 | schema de entidades, claims com disposição/métrica, evidence_sources moderáveis e sources com acesso | Concluído |
-| VZ-005 | P0 | importador XLSX `curated_seed` com dry-run, mapeamento versionado enriquecido e idempotência | |
+| VZ-005 | P0 | importador XLSX `curated_seed` com dry-run, mapeamento versionado enriquecido e idempotência | Concluído |
 | VZ-006 | P0 | listagem, busca, filtros e detalhe |
 | VZ-007 | P0 | fontes, metodologia e linguagem A–E |
 | VZ-008 | P0 | engine de métricas públicas por estado ativo |

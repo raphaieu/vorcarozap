@@ -74,9 +74,14 @@ Claims possuem estado `quarantined`, `published`, `rejected` ou `archived`. `evi
 
 Views/queries de rede agregam `claims.status = published AND claims.metric_eligible = true`. Contexto/correção público permanece na consulta e XLSX, mas não conta como contato/vínculo. `public_metric_snapshots` fica opcional para histórico P1; o MVP calcula o estado corrente.
 
-## Importação inicial
+## Importação inicial e hardening (VZ-005)
 
 O mapeamento legado para o modelo A–E não fica codificado em condicionais do importador. `config/import-mapping-v1.yaml` enumera rótulos e define `grade`, `initial_state`, `disposition` e `metric_eligible`. Cada execução persiste `mapping_version`; rótulo ausente ou não mapeável leva a quarentena.
+
+A migration `00003_import_foundation_hardening.sql` introduziu refinamentos estruturais para garantir fidelidade editorial e idempotência real:
+- **Idempotência estrita:** índice único parcial `uq_import_runs_applied` em `import_runs(file_hash, mapping_version)` para execuções onde `is_dry_run = 0 AND status IN ('running', 'completed', 'partial')`. Isso impede concorrência e duplicidade a nível de banco, permitindo repetição de execuções `failed` e simulações com `--dry-run`.
+- **Fontes sem metadados inventados:** a planilha inicial contém apenas URLs, sem fornecer título de artigo, autor ou veículo em colunas segregadas. O schema de `sources` foi ajustado para permitir `title` e `publisher_or_author` como strings vazias/desconhecidas para a origem `curated_seed`, com status `not_checked`, evitando invenções artificiais de metadados. A coluna `canonical_url` possui índice único para deduplicação determinística.
+- **Resumo editorial não é citação literal:** a coluna "O que está documentado" é uma síntese editorial e alimenta exclusivamente `evidence.summary`. A tabela `evidence_sources` aceita `excerpt` vazio no seed legado, preservando a distinção pública futura entre resumo editorial da equipe e trecho literal extraído da fonte.
 
 ## Defesa e contestação
 

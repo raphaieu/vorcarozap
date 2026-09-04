@@ -8,7 +8,8 @@ Aplicação pública, investigativa e documental para organizar informações pu
 
 - **Fase 1 — Fundação Executável concluída.** Módulo Go, CLI, configuração com defaults seguros, SQLite em modo WAL com validação efetiva de pragmas e driver Pure Go `modernc.org/sqlite` ([ADR-010](docs/adr/ADR-010-escolha-do-driver-sqlite.md)), migrations com Goose, servidor HTTP Chi, renderização SSR com Templ, página base mobile-first, Dockerfile enxuto não-root e Compose com proxy Caddy opcional. Toolchain de desenvolvimento 100% via Docker e Makefile.
 - **Fase 2 (VZ-004) — Núcleo editorial e schema relacional concluído.** Pacote `internal/domain` com enums e tipos puros sem dependências de infraestrutura; migration `00002_editorial_core.sql` com tabelas `entities`, `entity_aliases`, `cases`, `relationships`, `import_runs`, `claims`, `evidence`, `sources` e `evidence_sources`; integridade relacional estrita (XOR, autorrelação, foreign keys com `ON DELETE` explícito); suporte a queries e transações seguras via SQLC (`internal/store/sqlc`).
-- **Próximo item:** VZ-005 — Importador XLSX `curated_seed` com dry-run, mapeamento versionado e idempotência.
+- **Fase 2 (VZ-005) — Importador XLSX `curated_seed` concluído.** Pacote `internal/importer` com leitor Excelize, validação estrita de mapping versionado (`config/import-mapping-v1.yaml`), normalização conservadora de URLs e Unicode, idempotência comprovada no SQLite (`uq_import_runs_applied`), suporte a `--dry-run` e execução transacional segura sem dados inventados.
+- **Próximo item:** VZ-006 — Listagem, busca, filtros e detalhe de entidades e alegações.
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
@@ -97,6 +98,12 @@ make run
 # Executar migrations pendentes explicitamente no container
 make migrate
 
+# Simulação de importação (dry-run, sem persistência)
+make import-dry-run
+
+# Importação aplicada da planilha curated_seed (transacional e idempotente)
+make import
+
 # Subir com proxy Caddy reverso opcional (porta 8000)
 make compose-proxy
 ```
@@ -104,9 +111,7 @@ make compose-proxy
 ### Comandos planejados para fases posteriores
 
 ```bash
-# Fase 2:
-vorcarozap import --file arquivo.xlsx --dry-run
-vorcarozap import --file arquivo.xlsx
+# Fase 3:
 vorcarozap export
 
 # Fase 4:
