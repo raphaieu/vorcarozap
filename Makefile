@@ -8,6 +8,9 @@ all: templ fmt tidy test vet build
 templ:
 	$(DEV_RUN) go tool templ generate
 
+sqlc:
+	$(DEV_RUN) go tool sqlc generate
+
 fmt:
 	$(DEV_RUN) gofmt -w .
 

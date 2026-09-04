@@ -81,11 +81,11 @@ func (g EvidenceGrade) IsValid() bool {
 type ClaimDisposition string
 
 const (
-	DispositionSupportsLink   ClaimDisposition = "supports_link"
-	DispositionPossibleLink   ClaimDisposition = "possible_link"
+	DispositionSupportsLink    ClaimDisposition = "supports_link"
+	DispositionPossibleLink    ClaimDisposition = "possible_link"
 	DispositionContradictsLink ClaimDisposition = "contradicts_link"
-	DispositionContextOnly    ClaimDisposition = "context_only"
-	DispositionCorrection     ClaimDisposition = "correction"
+	DispositionContextOnly     ClaimDisposition = "context_only"
+	DispositionCorrection      ClaimDisposition = "correction"
 )
 
 func (d ClaimDisposition) IsValid() bool {

@@ -35,6 +35,20 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+// Rollback reverte a última migration aplicada no banco de dados.
+func Rollback(ctx context.Context, db *sql.DB) error {
+	p, err := newGooseProvider(db)
+	if err != nil {
+		return err
+	}
+
+	if _, err := p.Down(ctx); err != nil {
+		return fmt.Errorf("store: falha ao reverter migration: %w", err)
+	}
+
+	return nil
+}
+
 // CheckReady valida a conectividade com o banco e garante que a versão do banco
 // é exatamente compatível com a versão esperada pelo binário.
 // Deve falhar quando:
