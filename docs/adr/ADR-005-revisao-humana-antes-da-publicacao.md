@@ -1,35 +1,23 @@
-# ADR-005 — Revisão humana antes da publicação
+# ADR-005 — Revisão humana antes da publicação automatizada
 
-- **Status:** aceito
-- **Data:** 2026-09-03
+- **Status:** aceito com implementação incremental
+- **Data:** 2026-09-03; sequenciamento revisto em 2026-09-04
 
 ## Contexto
 
-O conteúdo envolve pessoas identificáveis, alegações e alto risco reputacional. LLMs e importações podem errar identidade, contexto, fonte e classificação.
+O conteúdo envolve pessoas identificáveis. Ao mesmo tempo, o primeiro lançamento será operado por uma pessoa, sem painel ou ingestão automática.
 
 ## Decisão
 
-Automação e importação terminam no máximo em `pending_review`. Reviewer humano decide com motivo; editor publica uma versão `approved`. Rejeições ficam auditáveis. Alegações graves/ambíguas poderão exigir dupla revisão configurável antes do go-live.
+No MVP, a revisão ocorre manualmente antes da importação/publicação e não exige workflow, RBAC ou dupla aprovação no software. Quando painel ou monitoramento forem introduzidos, automação terminará em `pending_review` e publicação continuará sendo uma ação humana.
 
-## Alternativas consideradas
+Dupla revisão, MFA, papéis separados e trilha avançada permanecem futuras, acionadas por equipe maior, alegações sensíveis, tráfego ou risco real.
 
-- Publicação automática acima de confiança: rápida, mas confiança técnica não mede verdade e o dano é alto.
-- Sem IA: reduz risco de automação, perde capacidade de triagem; revisão ainda pode falhar.
-- Revisão posterior: reduz atraso, mas permite dano antes da correção.
+## Consequências
 
-## Consequências positivas
+O MVP evita construir um sistema editorial multiusuário antes de precisar dele. Em contrapartida, a disciplina inicial depende do responsável e de checkpoints no Git/arquivo de importação.
 
-Responsabilidade clara, contraditório/contexto avaliados e menor chance de publicação indevida.
+## Gatilhos
 
-## Consequências negativas
-
-Fila e custo humano, latência, necessidade de papéis e risco de inconsistência entre revisores.
-
-## Riscos
-
-Rubber-stamping, conflito de interesse, conta comprometida e backlog. Checklist, RBAC/MFA, métricas, versionamento e amostragem mitigam.
-
-## Gatilhos de revisão
-
-Nunca remover revisão humana para alegações novas sem novo ADR e avaliação editorial/jurídica. Rever quantidade de revisores conforme gravidade, volume, incidentes e equipe.
+Segundo colaborador, volume recorrente de atualizações, ingestão automática, contestação relevante ou necessidade de demonstrar autoria detalhada.
 

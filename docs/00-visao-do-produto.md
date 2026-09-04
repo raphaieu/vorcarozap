@@ -1,50 +1,64 @@
 # Visão do produto
 
-## Problema e proposta
+## Problema
 
-Informações públicas sobre o caso estão fragmentadas entre reportagens, decisões, documentos, entrevistas, mensagens e redes sociais. O VorcaroZAP oferece uma base navegável e auditável para responder quem foi citado, em qual contexto, por quais fontes, com qual força documental, qual contraditório foi localizado e o que mudou.
+Informações públicas sobre o caso Vorcaro/Banco Master estão fragmentadas em reportagens, documentos, decisões, entrevistas, mensagens e redes sociais. O VorcaroZAP organiza esse material numa página navegável, com nomes, contexto, relevância, classificação e links para as fontes.
 
-O produto organiza o registro público; não investiga poderes que não possui, não decide culpa e não transforma proximidade em acusação. A unidade central é a **alegação verificável**, ligada a evidências e fontes, e não uma ficha acusatória sobre uma pessoa.
+O produto não decide culpa. Ele demonstra por que um nome aparece associado ao caso e qual fonte pública sustenta essa associação.
 
-## Públicos e necessidades
+## Objetivo do primeiro lançamento
 
-- Cidadão: leitura rápida, linguagem clara e distinções visíveis.
-- Jornalista/pesquisador: rastreabilidade por afirmação, datas, histórico e exportação.
-- Pessoa mencionada: contexto, atribuição, contraditório, correção e contestação.
-- Curador: fluxo especializado de descoberta, verificação, revisão, publicação e auditoria.
+Publicar rapidamente uma experiência mobile first que permita:
 
-## Resultados esperados
+- visualizar pessoas em ordem alfabética;
+- pesquisar e filtrar registros;
+- compreender cargo, relevância e tipo de relação;
+- abrir as fontes datadas;
+- distinguir confirmação, associação, alegação e pista;
+- baixar a base disponível.
 
-Um leitor consegue localizar uma entidade, entender a natureza da associação, abrir as fontes exatas, diferenciar confirmação de pista, consultar defesa e data de revisão. Um curador consegue demonstrar quem alterou o quê, com qual fundamento e quando.
+## Escopo do MVP rápido
 
-## Escopo do MVP
+- monólito Go;
+- HTML server-side com `templ` e HTMX apenas onde agregar valor;
+- SQLite;
+- importação da planilha por comando local;
+- página pública de leitura;
+- resumo editorial simples;
+- listagem, busca, filtros e detalhes;
+- metodologia e disclaimer;
+- download de XLSX;
+- Docker/Caddy e deploy em uma VPS.
 
-Página pública mobile first; busca, filtros e ordenação; páginas de entidades e fontes; linha do tempo; metodologia; painel protegido; importação da base inicial; monitoramento assistido por IA com aprovação humana; XLSX derivado do banco; correções, auditoria, backup e operação em uma VPS.
+## Fora do primeiro lançamento
 
-Fora do MVP: rede social, comentários públicos, denúncias anônimas automatizadas, aplicativo nativo, SPA, análise de culpabilidade, publicação autônoma por IA, microsserviços, alta disponibilidade e ingestão irrestrita da web.
+- painel administrativo;
+- autenticação, MFA e RBAC;
+- monitoramento automático e OpenRouter;
+- uploads públicos;
+- captura ou armazenamento integral de páginas;
+- workflows editoriais multiusuário;
+- auditoria imutável avançada;
+- observabilidade e alertas sofisticados;
+- suíte unitária, integração ou E2E abrangente;
+- alta disponibilidade e múltiplas instâncias.
 
-## Métricas de produto e salvaguardas
-
-- 100% das alegações publicadas com ao menos uma evidência e uma fonte acessível ou snapshot autorizado.
-- 100% das mudanças publicadas com revisão e histórico.
-- Tempo mediano para encontrar fontes de uma pessoa e taxa de buscas sem resultado.
-- Percentual de registros com contraditório procurado, localizado e exibido.
-- Correções: tempo de resposta, causa e reincidência.
-- Acessibilidade WCAG 2.2 AA nas jornadas principais e orçamento operacional acompanhado.
-
-Métricas de volume, relevância ou evidência jamais serão apresentadas como ranking de culpa.
+Esses itens permanecem documentados para evolução e não bloqueiam o início do desenvolvimento.
 
 ## Premissas
 
-- Uma única equipe editorial e uma instância escrevem no MVP.
-- Conteúdo público pode ser lido sem conta; administração exige autenticação.
-- Português do Brasil é o idioma inicial e UTC é armazenado, com exibição em `America/Fortaleza`.
-- A planilha de 03/09/2026 é insumo a revisar, não fonte de verdade nem autorização de publicação.
-- O caso deve ser uma entidade própria para permitir futuros recortes sem redesenhar o domínio.
+- poucos acessos e uma única instância no início;
+- atualização manual por uma pessoa responsável;
+- conteúdo baseado em material já publicado e com URLs registradas;
+- nenhum endpoint público de escrita no MVP;
+- português do Brasil, datas persistidas em UTC e exibidas em `America/Fortaleza`;
+- a planilha atual é insumo de pesquisa e precisa de conferência editorial antes de virar página pública.
 
-## Riscos e decisões pendentes
+## Medida de sucesso inicial
 
-Riscos centrais: dano reputacional, erro de identidade, perda de contexto, indisponibilidade/licença de fontes, dados pessoais, custo/instabilidade de LLM, SSRF e comprometimento do painel. Mitigações detalhadas constam nos documentos 03, 06 e 07.
+O MVP está validado quando pode ser publicado na VPS, carrega a base, funciona bem no celular e permite chegar de um nome à fonte correspondente. Métricas avançadas serão adicionadas após existir tráfego real.
 
-Antes da publicação real, precisam de validação humana: responsável editorial e jurídico; política de correções/contato; base legal e períodos de retenção; licença para snapshots; identidade nominal do controlador; modelos e teto mensal do OpenRouter; provedor de e-mail/autenticação; domínio, RPO/RTO e retenção de backups.
+## Riscos registrados, não bloqueantes
+
+Erro de identidade, perda de contexto, link indisponível, privacidade, direito de resposta, segurança do painel futuro, custo de LLM e escala. No MVP, a mitigação principal é conteúdo revisado manualmente, fonte visível, linguagem neutra, página somente de leitura e canal de correção.
 

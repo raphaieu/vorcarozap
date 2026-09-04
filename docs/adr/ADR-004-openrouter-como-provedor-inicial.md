@@ -1,38 +1,23 @@
-# ADR-004 — OpenRouter como provedor inicial de pesquisa/LLM
+# ADR-004 — OpenRouter como provedor futuro de pesquisa/LLM
 
-- **Status:** aceito com validação antes da implementação
-- **Data:** 2026-09-03 (documentação oficial consultada nesta data)
+- **Status:** aceito para fase futura
+- **Data:** 2026-09-03; sequenciamento revisto em 2026-09-04
 
 ## Contexto
 
-O monitor precisa descobrir e estruturar conteúdo atual, trocar modelos conforme custo/capacidade e preservar rastreabilidade. API externa e modelos mudam; o domínio não pode depender deles.
+O produto poderá monitorar novas publicações, mas o primeiro lançamento pode ser alimentado manualmente. Antecipar LLM, scheduler, fila, revisão e observabilidade aumentaria custo antes da validação do site.
 
 ## Decisão
 
-Definir `ResearchProvider` no consumidor e implementar `OpenRouterProvider`. Modelos/base URL/engine ficam no ambiente. Structured outputs usarão JSON Schema estrito somente em modelos compatíveis. Pesquisa usará a server tool beta `openrouter:web_search`; plugin `web` e `:online` estão depreciados. Respostas e citações são validadas/registradas e nunca publicadas automaticamente.
+OpenRouter continua escolhido como primeiro candidato, isolado por `ResearchProvider`, porém não integra o MVP público. A documentação da API será revalidada quando a fase de monitoramento começar.
 
-Fontes oficiais: [Web Search Server Tool](https://openrouter.ai/docs/guides/features/server-tools/web-search), [Structured Outputs](https://openrouter.ai/docs/guides/features/structured-outputs), [Quickstart](https://openrouter.ai/docs/quickstart).
+Quando implementado, usará modelo configurável, structured outputs e ferramenta vigente de web search. Saídas produzirão candidatos e não publicação direta.
 
-## Alternativas consideradas
+## Consequências
 
-- API direta de um modelo: menos camada, maior lock-in e menos flexibilidade.
-- Motor de busca + LLM separados: mais controle, mais contratos/custos; permanece alternativa se server tool beta for instável.
-- Pesquisa humana apenas: maior controle, baixa escala; continuará necessária na revisão.
-- Plugin web legado: rejeitado por depreciação.
+O lançamento fica mais rápido e barato. Atualizações serão manuais no início. A automação posterior exigirá mecanismos próprios de custo, validação, idempotência e revisão.
 
-## Consequências positivas
+## Gatilhos
 
-Seleção flexível, API unificada, grounding/citações e schemas estruturados com adaptador substituível.
-
-## Consequências negativas
-
-Fornecedor adicional, preços/roteamento variáveis, server tool beta e combinações modelo+tool+schema que exigem teste.
-
-## Riscos
-
-Hallucinação/citação falsa, prompt injection, vazamento, mudança de API, indisponibilidade e custo. Schemas, proveniência, limites, mock/contract tests, human-in-loop e fail closed mitigam.
-
-## Gatilhos de revisão
-
-Mudança/saída do beta, incompatibilidade de structured output + search, política de dados inadequada, custo/qualidade/SLA insuficiente ou provedor alternativo superior. Revalidar docs imediatamente antes de codificar e em upgrades.
+Frequência de atualização manual se tornar alta, audiência justificar conteúdo mais recente ou fluxo editorial já suportar revisão de candidatos.
 

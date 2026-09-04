@@ -1,108 +1,85 @@
 # VorcaroZAP
 
-Base pública, investigativa e documental para organizar informações publicadas sobre Daniel Vorcaro, Banco Master e entidades, relações e acontecimentos associados ao caso. O produto separa fatos, alegações atribuídas, evidências, contraditórios e pistas; presença na base não significa culpa ou irregularidade.
+Aplicação pública e documental para organizar informações publicadas sobre Daniel Vorcaro, Banco Master e pessoas, organizações e acontecimentos relacionados. O produto separa relação, alegação, fonte, relevância e força da evidência; presença na base não significa culpa ou irregularidade.
 
-> Projeto independente, sem vínculo, autorização ou parceria com WhatsApp, Meta, Banco Master ou qualquer pessoa ou instituição citada. “WhatsApp” é marca de seu titular. O projeto não usa seu logotipo nem reproduz sua interface.
+> Projeto independente, sem vínculo com WhatsApp, Meta, Banco Master ou pessoas e instituições citadas. “WhatsApp” é marca de seu titular. A identidade visual usa apenas referência cromática e não reproduz marca ou interface oficial.
 
 ## Estado
 
-**Fase 0 — fundação documental.** Não há aplicação implementada. O único insumo existente na auditoria de 03/09/2026 foi `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx`, tratado como referência editorial não publicada. A próxima etapa recomendada é a fundação técnica, depois da validação das decisões pendentes.
+**Fase 0 concluída — escopo do MVP rápido definido.** A próxima etapa é construir a primeira versão pública de leitura. O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa com fontes, mas não equivale a conteúdo editorial automaticamente aprovado.
 
-## Arquitetura resumida
+## Primeira versão
 
-Monólito modular em Go, uma instância, páginas server-side com `templ` e HTMX, SQLite em volume local, Caddy/HTTPS e tarefas operacionais no mesmo binário. Regras editoriais ficam no domínio; HTTP, SQLite, XLSX e OpenRouter são adaptadores. A IA somente produz candidatos sujeitos a revisão humana.
+O primeiro lançamento terá:
+
+- aplicação Go server-side, mobile first;
+- SQLite em volume local;
+- importação da planilha por CLI;
+- listagem alfabética, busca e filtros essenciais;
+- páginas de detalhes com fontes e classificação;
+- resumo e metodologia;
+- download da base;
+- deploy em uma Oracle VPS com Docker e Caddy.
+
+Ficam para as próximas versões: painel administrativo, usuários/RBAC/MFA, monitoramento por OpenRouter, ingestão automática, snapshots, auditoria avançada, observabilidade, backup externo sofisticado e suíte automatizada de testes.
+
+## Arquitetura inicial
 
 ```mermaid
 flowchart LR
   U[Leitor] --> C[Caddy/HTTPS]
-  A[Curador] --> C
-  C --> W[Go: web/admin]
-  W --> D[Domínio editorial]
-  D --> S[(SQLite + WAL)]
-  D --> X[Exportador XLSX]
-  M[Monitor exclusivo] --> R[ResearchProvider]
-  R --> O[OpenRouter]
-  M --> D
-  S --> B[Backup consistente]
-  B -. opcional .-> OBJ[Object Storage]
+  C --> G[Go + SSR]
+  G --> S[(SQLite)]
+  XLSX[Planilha] --> CLI[Importador CLI]
+  CLI --> S
+  S --> EXP[Exportação]
 ```
 
-## Estrutura planejada
+O desenho continua sendo um monólito modular. Capacidades futuras terão fronteiras previstas, mas não serão implementadas antes de serem necessárias.
 
-```text
-cmd/vorcarozap/          entrada e comandos serve/migrate/seed/monitor/export/backup
-internal/                config, domain, store, editorial, research, monitoring,
-                         export, web, auth e observability
-migrations/ e queries/   esquema versionado e SQL para sqlc
-web/                     componentes templ, páginas e arquivos estáticos
-docs/                    especificação, ADRs, roadmap e backlog
-scripts/ e tests/        operação e testes auxiliares
-```
-
-## Pré-requisitos e execução futura
-
-Após a Fase 1: Go estável selecionado e fixado no `go.mod`, Docker com Compose v2, Caddy e ferramentas geradas nas versões fixadas pelo projeto. Os comandos pretendidos são:
+## Comandos previstos no primeiro corte
 
 ```bash
 vorcarozap serve
 vorcarozap migrate
-vorcarozap seed
-vorcarozap monitor
+vorcarozap import --file ./arquivo.xlsx --dry-run
+vorcarozap import --file ./arquivo.xlsx
 vorcarozap export
-vorcarozap backup
 ```
 
-O `Makefile` deverá oferecer configuração local, geração (`templ`/`sqlc`), teste, migrations e Compose. Até esses arquivos existirem, os comandos acima são contrato planejado, não instruções executáveis. Importação será um subcomando explícito com `--dry-run`; monitoramento nunca publicará automaticamente.
+## Validação inicial
 
-## Configuração planejada
+Não haverá meta de cobertura nem suíte E2E no primeiro lançamento. O gate inicial é econômico:
 
-```env
-APP_ENV=development
-HTTP_ADDR=:8080
-DATABASE_PATH=/data/vorcarozap.db
-SESSION_SECRET=
-PUBLIC_BASE_URL=http://localhost:8080
-OPENROUTER_API_KEY=
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL_DISCOVERY=
-OPENROUTER_MODEL_VERIFICATION=
-OPENROUTER_MODEL_SUMMARY=
-OPENROUTER_SEARCH_ENGINE=auto
+```bash
+go fmt ./...
+go vet ./...
+go build ./...
 ```
 
-Segredos nunca serão commitados. `.env.example` terá apenas valores seguros. Modelos serão configuração, validados por capacidade no início da execução.
-
-## Operação planejada
-
-- Docker: `docker compose up --build`; um volume local persistirá `/data`.
-- Testes: `go test ./...`; Playwright somente nas jornadas críticas justificadas.
-- Migrations: `vorcarozap migrate`; avanço versionado e backup antes de mudança destrutiva.
-- Importação: validar XLSX, executar dry-run e relatório; registros entram como `pending_review`.
-- Monitoramento: execução exclusiva, reiniciável e auditável; exige aprovação humana.
-- Exportação: XLSX derivado do banco, com versão/hash e publicação atômica.
-- Backup: API de backup online do SQLite como padrão; integridade e restauração testadas.
+Além disso, migrations, importação e jornadas públicas passam por smoke test manual documentado. Testes automatizados serão introduzidos quando bugs recorrentes, colaboração, painel, monitoramento ou crescimento justificarem o custo.
 
 ## Princípios editoriais
 
-- Relação não é culpa; contato não prova conversa, benefício ou ilícito.
-- Alegações pertencem a registros próprios, não à identidade da pessoa.
-- Evidência (A–E), confiança técnica e relevância pública (1–5) são dimensões independentes.
-- Cada afirmação pública deve indicar o que a fonte sustenta e apresentar contraditório aplicável.
-- IA não publica, ausência de resposta não equivale a admissão e rejeições permanecem auditáveis.
-- Correções preservam histórico; dados pessoais são minimizados e redigidos quando necessário.
+- Relação não é culpa e contato não prova ilícito.
+- Toda associação exibida possui fonte e linguagem compatível com seu grau.
+- Evidência A–E e relevância 1–5 são dimensões independentes.
+- Fontes e datas ficam visíveis ao leitor.
+- Pistas e alegações são identificadas como tais.
+- Atualizações iniciais são revisadas manualmente antes da importação/publicação.
 
 ## Documentação
 
-- [Visão do produto](docs/00-visao-do-produto.md)
+- [Visão](docs/00-visao-do-produto.md)
 - [Requisitos funcionais](docs/01-requisitos-funcionais.md)
 - [Requisitos não funcionais](docs/02-requisitos-nao-funcionais.md)
-- [Modelo editorial e evidências](docs/03-modelo-editorial-e-evidencias.md)
+- [Modelo editorial](docs/03-modelo-editorial-e-evidencias.md)
 - [Arquitetura](docs/04-arquitetura.md)
 - [Modelo de dados](docs/05-modelo-de-dados.md)
 - [Segurança e privacidade](docs/06-seguranca-e-privacidade.md)
 - [Monitoramento e LLM](docs/07-monitoramento-e-llm.md)
 - [Roadmap](docs/08-roadmap.md)
-- [Backlog inicial](docs/09-backlog-inicial.md)
+- [Backlog](docs/09-backlog-inicial.md)
 - [Critérios de aceite](docs/10-criterios-de-aceite.md)
-- [Decisões arquiteturais](docs/adr/)
+- [ADRs](docs/adr/)
 
