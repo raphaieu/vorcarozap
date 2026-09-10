@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/exporter"
 	"github.com/raphaieu/vorcarozap/internal/importer"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
@@ -42,6 +43,11 @@ func main() {
 			slog.Error("erro ao executar comando import", "error", err)
 			os.Exit(1)
 		}
+	case "export":
+		if err := runExport(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando export", "error", err)
+			os.Exit(1)
+		}
 	case "help", "-h", "--help":
 		printUsage(os.Stdout)
 		os.Exit(0)
@@ -62,6 +68,7 @@ Comandos disponíveis nesta fase:
   serve      Aplica migrations pendentes e inicia o servidor HTTP
   migrate    Aplica migrations pendentes no banco SQLite
   import     Importa dados da planilha XLSX curated_seed (--file obrigatório, opcional --dry-run)
+  export     Exporta a base pública ativa em planilha XLSX (--out opcional)
   help       Exibe esta mensagem de ajuda
 
 Configuração via variáveis de ambiente:
@@ -227,5 +234,57 @@ Opções:
 	}
 
 	fmt.Print(result.SummaryReport())
+	return nil
+}
+
+func runExport(args []string) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando export:
+  vorcarozap export [--out <caminho.xlsx>]
+
+Opções:
+  --out string   Caminho do arquivo de destino (padrão: vorcarozap-dados-publicos.xlsx)
+  -h, --help     Exibe esta ajuda
+`)
+	}
+
+	outPath := fs.String("out", "vorcarozap-dados-publicos.xlsx", "Caminho do arquivo XLSX de saída")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("carregamento de configuração: %w", err)
+	}
+
+	ctx := context.Background()
+	db, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("abertura do banco SQLite: %w", err)
+	}
+	defer db.Close()
+
+	slog.Info("iniciando exportação da base pública...", "out", *outPath)
+	exp := exporter.New(db, cfg.PublicDataCutoff)
+
+	outFile, err := os.Create(*outPath)
+	if err != nil {
+		return fmt.Errorf("criação do arquivo de saída %q: %w", *outPath, err)
+	}
+	defer outFile.Close()
+
+	if err := exp.WriteTo(ctx, outFile); err != nil {
+		return fmt.Errorf("geração da planilha XLSX: %w", err)
+	}
+
+	slog.Info("exportação concluída com sucesso", "arquivo", *outPath)
+	fmt.Printf("Base pública exportada com sucesso para %s\n", *outPath)
 	return nil
 }
