@@ -1,33 +1,45 @@
 # Backlog inicial priorizado
 
+O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após o ciclo de review é **VZ-009**.
+
+## P0 — Escopo do MVP
+
 | ID | P | Entrega | Status |
 |---|---|---|---|
-| VZ-001 | P0 | módulo Go, CLI, config e build | Concluído (Fase 1) |
-| VZ-002 | P0 | SQLite/WAL, migrations e volume | Concluído (Fase 1) |
-| VZ-003 | P0 | Compose/Caddy e página base mobile | Concluído (Fase 1) |
-| VZ-004 | P0 | schema de entidades, claims com disposição/métrica, evidence_sources moderáveis e sources com acesso | Concluído |
-| VZ-005 | P0 | importador XLSX `curated_seed` com dry-run, mapeamento versionado enriquecido e idempotência | Concluído |
-| VZ-006 | P0 | listagem, busca, filtros e detalhe | Concluído |
-| VZ-007 | P0 | fontes, metodologia e linguagem A–E | Concluído |
-| VZ-008 | P0 | engine de métricas públicas por estado ativo | Concluído |
-| VZ-009 | P0 | exportação XLSX derivada do banco |
-| VZ-010 | P0 | ResearchProvider/OpenRouter e web search |
-| VZ-011 | P0 | schema estruturado, normalização e dedupe |
-| VZ-012 | P0 | gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E |
-| VZ-013 | P0 | lock, janela incremental e limites de custo |
-| VZ-014 | P0 | proteção simples do `/admin` |
-| VZ-015 | P0 | painel de fontes/evidências/candidatos |
-| VZ-016 | P0 | desaprovar, restaurar e aprovar quarentena |
-| VZ-017 | P0 | invalidação imediata de página/métricas/export |
-| VZ-018 | P0 | deploy VPS, cron, persistência e smoke checklist |
-| VZ-019 | P0 | testes table-driven de publicação/quarentena, fingerprint rejeitado e métricas por estado/elegibilidade |
-| VZ-020 | P0 | verificador GET seguro/limitado e política de `source_access_status` (incorporar `SOURCE_NOT_CHECKED_POLICY_*` ao config) |
-| VZ-021 | P0 | moderação XOR de claim/evidence_source e quarentena ao perder último suporte |
+| VZ-001 | P0 | Módulo Go, CLI, config e build em container | Concluído (Fase 1) |
+| VZ-002 | P0 | SQLite WAL, migrations com Goose e volume persistente | Concluído (Fase 1) |
+| VZ-003 | P0 | Compose/Caddy e página base mobile-first com Templ | Concluído (Fase 1) |
+| VZ-004 | P0 | Schema de entidades, claims com disposição/métrica, evidence_sources moderáveis e sources com acesso | Concluído (Fase 2) |
+| VZ-005 | P0 | Importador XLSX `curated_seed` com dry-run, mapeamento versionado em YAML e idempotência | Concluído (Fase 2) |
+| VZ-006 | P0 | Listagem pública com filtros multifacetados, busca e detalhe de entidades e fontes | Concluído (Fase 3) |
+| VZ-007 | P0 | Metodologia pública, fontes rastreáveis e linguagem humana para Graus A a E | Concluído (Fase 3) |
+| VZ-008 | P0 | Engine de métricas públicas por estado ativo e integração na Home | Concluído (Fase 3) |
+| VZ-009 | P0 | Exportação XLSX derivada do banco e download público | **Próxima implementação funcional** |
+| VZ-020 | P0 | Verificador GET seguro/limitado e política de `source_access_status` (incorporar `SOURCE_NOT_CHECKED_POLICY_*` ao config; **dependência técnica dos gates de publicação automática**) | Planejado no MVP |
+| VZ-010 | P0 | ResearchProvider/OpenRouter e esteira de web search | Planejado no MVP |
+| VZ-011 | P0 | Schema estruturado, normalização de dados e deduplicação | Planejado no MVP |
+| VZ-012 | P0 | Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E | Planejado no MVP |
+| VZ-013 | P0 | Lock de execução, janela incremental e limites de custo de LLM | Planejado no MVP |
+| VZ-014 | P0 | Proteção simples do `/admin` por autenticação HTTP | Planejado no MVP |
+| VZ-015 | P0 | Painel simples para listagem e inspeção de fontes, evidências e candidatos | Planejado no MVP |
+| VZ-016 | P0 | Ações de moderação: desaprovar, restaurar e aprovar quarentena | Planejado no MVP |
+| VZ-021 | P0 | Moderação com integridade transacional XOR (claim ou evidence_source) e quarentena imediata ao perder último suporte ativo (**agrupado à moderação**) | Planejado no MVP |
+| VZ-017 | P0 | Invalidação imediata de visualizações, métricas e exportação após moderação | Planejado no MVP |
+| VZ-018 | P0 | Deploy VPS, cron de monitoramento, persistência SQLite e smoke checklist | Planejado no MVP |
+| VZ-019 | P0 | Testes table-driven de publicação/quarentena, bloqueio por fingerprint rejeitado e métricas por estado/elegibilidade | Planejado no MVP |
 
-## P1
+## P1 — Evolução Proposta (Pós-MVP)
 
-Testes automatizados adicionais, histórico público, snapshots, auditoria, usuários/papéis, MFA, contraditório estruturado, métricas históricas e alertas.
+Itens de enriquecimento e maturidade inspirados nas discussões de navegação documental profunda ([ADR-012](adr/ADR-012-navegacao-documental-e-referencias-a-acervos-externos.md)) e escala operacional. **Não fazem parte do MVP imediato.**
 
-## P2
+| ID | P | Entrega | Status |
+|---|---|---|---|
+| VZ-022 | P1 | Referenciação aprofundada de laudos periciais e peças (locators cirúrgicos de página e figura em `evidence_sources`, mantendo schema do MVP sem criar novas tabelas) | Proposta (Pós-MVP) |
+| VZ-023 | P1 | Viewer SSR de documentos e sequências contextuais (avaliação técnica de viabilidade em Go/Templ, auditoria de integridade e conformidade estrita de licenças/permissões) | Proposta (Pós-MVP) |
+| VZ-024 | P1 | Histórico público de alterações editoriais e trilha de auditoria | Proposta (Pós-MVP) |
+| VZ-025 | P1 | Módulo de contraditório estruturado e submissão pública de manifestações de defesa | Proposta (Pós-MVP) |
+| VZ-026 | P1 | Gestão multiusuário do painel com perfis e autenticação reforçada (MFA/RBAC) | Proposta (Pós-MVP) |
 
-API pública, crawler/fetch próprio, múltiplas instâncias, PostgreSQL, busca avançada/FTS e E2E.
+## P2 — Escala e Distribuição Futura
+
+API pública documentada, crawler e verificador distribuído, suporte a réplicas e migração opcional para PostgreSQL conforme gatilhos de volume.

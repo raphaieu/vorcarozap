@@ -1,35 +1,42 @@
 # Roadmap
 
-## Fase 0 — especificação
+O roadmap do VorcaroZAP organiza a evolução do produto em horizontes objetivos: o que já foi **comprovadamente implementado**, o que está **planejado no escopo do MVP** e o que constitui **evolução proposta** (pós-MVP).
 
-Visão, modelo editorial, arquitetura, schema, ADRs, backlog e escopo econômico alinhados. Segurança/testes avançados ficam rastreados sem bloquear desenvolvimento.
+## Fase 0 — especificação (Concluída)
 
-## Fase 1 — fundação Go
+Visão, modelo editorial, arquitetura, schema, ADRs, backlog e escopo econômico alinhados.
 
-CLI, config, SSR, SQLite/WAL, migrations, Compose/Caddy, layout e smoke page.
+## Fase 1 — fundação Go (Concluída)
 
-## Fase 2 — núcleo editorial e importação
+CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite`), migrations com Goose, Compose/Caddy, layout mobile-first e página base. (VZ-001, VZ-002, VZ-003).
 
-Entidades, relações, claims com disposição/eligibilidade métrica, evidence_sources moderáveis, sources com acessibilidade, estados, importador XLSX com `origin = curated_seed`, mapeamento legado versionado, deduplicação e exportação.
+## Fase 2 — núcleo editorial e importação (Núcleo Concluído)
 
-## Fase 3 — página pública e métricas
+- **Concluído:** Entidades, relações, claims com disposição/elegibilidade métrica, evidence_sources moderáveis, sources com acessibilidade, estados, importador XLSX com `origin = curated_seed`, mapeamento versionado em YAML (`config/import-mapping-v1.yaml`) e idempotência comprovada no SQLite. (VZ-004, VZ-005).
+- **Em transição para Fase 3:** Exportação XLSX derivada do banco (VZ-009 — próximo item prioritário).
 
-Home, cards, busca, filtros, detalhes, fontes, metodologia, métricas correntes e download.
+## Fase 3 — página pública e métricas (Interface Concluída)
 
-## Fase 4 — monitoramento OpenRouter
+- **Concluído:** Listagem com busca e filtros multifacetados (`/pessoas`), detalhes de perfis com segregação de fontes e defesas (`/pessoas/{slug}`), página canônica de metodologia e critérios (`/metodologia`), motor de métricas por estado ativo (`public_claims_view`) e Home pública com indicadores e distribuições integrados (`/`). (VZ-006, VZ-007, VZ-008).
+- **Próximo item:** Download/exportação direta da base de dados em planilha XLSX (VZ-009).
 
-ResearchProvider, web search, schema, verificador GET seguro, gate estrutural, segunda avaliação semântica, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e custo.
+## Fase 4 — monitoramento OpenRouter (Planejado no MVP)
 
-## Fase 5 — painel simples
+ResearchProvider, web search, schema estruturado, normalização, deduplicação, verificador GET seguro de links com política por origem (VZ-020 como dependência técnica), gate estrutural em Go, segunda avaliação semântica via LLM, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e limites de custo. (VZ-010, VZ-011, VZ-012, VZ-013, VZ-020).
 
-Proteção de `/admin`, listagem/filtros, detalhes, moderação de claim ou evidence_source, restauração/aprovação de quarentena e execução manual do monitor.
+## Fase 5 — painel simples e moderação humana (Planejado no MVP)
 
-## Fase 6 — deploy MVP
+Proteção básica do `/admin`, listagem com filtros de moderação, detalhes de candidatos/evidências, moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-014, VZ-015, VZ-016, VZ-017, VZ-021).
 
-Oracle VPS, HTTPS, cron do monitor, volume SQLite, backup operacional, domínio, canal de correção e smoke completo.
+## Fase 6 — deploy MVP e validação econômica (Planejado no MVP)
 
-## Fase 7 — maturidade
+Deploy em Oracle VPS, HTTPS via Caddy, agendamento de cron do monitor, volume persistente SQLite com backup operacional, canal de correção e checklist de smoke test completo com suite table-driven. (VZ-018, VZ-019).
 
-Testes direcionados, histórico/snapshots, múltiplos usuários, MFA/RBAC, observabilidade, backup externo e PostgreSQL conforme gatilhos.
+## Fase 7 — maturidade e evolução proposta (Pós-MVP)
 
-O go-live não depende de cobertura, E2E, workflow multiusuário ou parecer formal completo; depende do baseline técnico/editorial e do smoke test.
+- **Evolução Documental ([ADR-012](adr/ADR-012-navegacao-documental-e-referencias-a-acervos-externos.md)):**
+  - VZ-022: Referenciação aprofundada de laudos e peças (locators cirúrgicos de página e figura sem alterar o schema do MVP);
+  - VZ-023: Viewer SSR de documentos e sequências contextuais (avaliação técnica de viabilidade, auditoria de integridade e conformidade de direitos/licenças).
+- **Maturidade de Plataforma:** Histórico público de alterações, snapshots integrais, múltiplos usuários com autenticação reforçada (MFA/RBAC), contraditório estruturado, observabilidade aprofundada, backup externo e eventual migração para PostgreSQL conforme gatilhos de volume.
+
+O go-live não depende de cobertura percentual, E2E, workflow multiusuário ou parecer formal completo; depende do baseline técnico/editorial e do smoke test.

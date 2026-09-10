@@ -29,6 +29,7 @@ São obrigatórios testes unitários table-driven para decisão `published`/`qua
 
 ## Gates automáticos de publicação
 
+- O verificador HTTP GET seguro (VZ-020) atua como dependência técnica do gate automático: valida a acessibilidade da URL sem transformar o sistema em crawler invasivo, bloqueia destinos privados/redirecionamentos inseguros e classifica status (`reachable`, `unreachable`, `not_checked`).
 - Gate estrutural Go aprova schema, URL, metadados, trecho/localizador, datas, grau, vínculo, PII, tamanho, dedupe, fingerprint e orçamento.
 - Gate semântico estruturado aprova identidade, suporte, não extrapolação, atribuição, grau, ausência de inferência ilícita e ambiguidades vazias.
 - Política Go publica A/B aprovados e C aprovado com linguagem/limites explícitos; D/E ficam em quarentena.
@@ -40,14 +41,22 @@ São obrigatórios testes unitários table-driven para decisão `published`/`qua
 - `E — fraco/ambíguo` importa como `quarantined`, `possible_link` e não elegível a métricas.
 - Métricas de contato/vínculo exigem claim público e `metric_eligible = true`; conteúdo público não elegível continua em página e XLSX.
 
-## Moderação e acessibilidade
+## Moderação e integridade transacional (VZ-021)
 
-- `moderation_decisions` rejeita migrations que preencham nenhum ou ambos os alvos.
-- Uma source usada por dois claims continua válida no segundo quando o primeiro uso é rejeitado.
-- Rejeitar o último `supports` ativo põe o claim em quarentena na mesma transação.
-- O verificador usa GET limitado, bloqueia destino privado em redirects, não persiste corpo e nunca depende apenas de HEAD.
+- Decisão de moderação possui integridade XOR estrita: tem como alvo ou um `claim_id` ou um `evidence_source_id`, nunca ambos ou nenhum.
+- Uma source referenciada por dois claims continua ativa no segundo caso o primeiro uso seja desaprovado.
+- Rejeitar o último `evidence_source` ativo com papel `supports` move o claim correspondente para `quarantined` na mesma transação.
+- O verificador GET limitado não persiste corpo e nunca depende apenas de HEAD.
 - `unreachable` leva a quarentena; timeout/429/5xx vira `not_checked`, sem rejeição, e segue a política do [ADR-006](adr/ADR-006-fontes-e-rastreabilidade.md). As variáveis `SOURCE_NOT_CHECKED_POLICY_*` serão incorporadas ao carregamento de configuração em VZ-020.
+
+## Rastreabilidade e navegação documental ([ADR-012](adr/ADR-012-navegacao-documental-e-referencias-a-acervos-externos.md))
+
+- Rastreabilidade pontual: referências a laudos e peças utilizam `evidence_sources.locator` (ex: número do laudo, página, figura) e `evidence_sources.excerpt` (trecho literal), mantendo o documento oficial primário sempre distinguível de qualquer transcrição secundária.
+- Menção não é conluio nem culpa: a identificação de um nome em anotação ou laudo documental não autoriza inferir contato direto ou ilícito.
+- Proibição de fabricação: nenhum modelo ou operador pode preencher lacunas contextuais ou atribuir identidades por mera semelhança nominal.
+- Não independência probatória: múltiplos trechos derivados do mesmo laudo pericial ou inquérito pertencem à mesma fonte e não constituem confirmação externa independente.
+- Sem violação de licenças: nenhuma importação ou reuso de bases/código de terceiros sem licença expressa identificada.
 
 ## Não bloqueiam o MVP
 
-MFA, RBAC multiusuário, dupla revisão, snapshots, trilha imutável, métricas históricas, cobertura abrangente, E2E, observabilidade completa, HA, PostgreSQL e política jurídica operacional extensa.
+MFA, RBAC multiusuário, dupla revisão, snapshots, trilha imutável, viewer SSR de conversas, métricas históricas, cobertura abrangente, E2E, observabilidade completa, HA, PostgreSQL e política jurídica operacional extensa.
