@@ -17,11 +17,13 @@ CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite
 ## Fase 3 — página pública, métricas e exportação (Concluída)
 
 - **Concluído:** Listagem com busca e filtros multifacetados (`/pessoas`), detalhes de perfis com segregação de fontes e defesas (`/pessoas/{slug}`), página canônica de metodologia e critérios (`/metodologia`), motor de métricas por estado ativo (`public_claims_view`), Home pública com indicadores e distribuições integrados (`/`), e exportação XLSX derivada do banco SQLite com subcomando CLI e download HTTP (`/exportar/base.xlsx`). (VZ-006, VZ-007, VZ-008, VZ-009).
-- **Próximo item:** Verificador GET seguro/limitado e política de `source_access_status` (VZ-020 — dependência técnica dos gates de publicação automática da Fase 4).
 
-## Fase 4 — monitoramento OpenRouter (Planejado no MVP)
+## Fase 4 — monitoramento OpenRouter (Em andamento)
 
-ResearchProvider, web search, schema estruturado, normalização, deduplicação, verificador GET seguro de links com política por origem (VZ-020 como dependência técnica), gate estrutural em Go, segunda avaliação semântica via LLM, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e limites de custo. (VZ-010, VZ-011, VZ-012, VZ-013, VZ-020).
+- **Concluído:** Verificador GET seguro e limitado de integridade e acessibilidade de fontes externas (`internal/sourcecheck`), proteção rigorosa contra SSRF e DNS rebinding, conexão restrita a IP validado, limites conservadores de bytes, tempo e redirecionamentos, tabela de motivos técnicos, persistência isolada no SQLite e política editorial completa por procedência (`SOURCE_NOT_CHECKED_POLICY_*` no config) conforme ADR-006. (VZ-020).
+- **Próximo item:** ResearchProvider/OpenRouter e esteira de web search (VZ-010 — Fase 4).
+
+ResearchProvider, web search, schema estruturado, normalização, deduplicação, gate estrutural em Go, segunda avaliação semântica via LLM, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e limites de custo. (VZ-010, VZ-011, VZ-012, VZ-013).
 
 ## Fase 5 — painel simples e moderação humana (Planejado no MVP)
 

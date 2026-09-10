@@ -47,7 +47,7 @@ São obrigatórios testes unitários table-driven para decisão `published`/`qua
 - Uma source referenciada por dois claims continua ativa no segundo caso o primeiro uso seja desaprovado.
 - Rejeitar o último `evidence_source` ativo com papel `supports` move o claim correspondente para `quarantined` na mesma transação.
 - O verificador GET limitado não persiste corpo e nunca depende apenas de HEAD.
-- `unreachable` leva a quarentena; timeout/429/5xx vira `not_checked`, sem rejeição, e segue a política do [ADR-006](adr/ADR-006-fontes-e-rastreabilidade.md). As variáveis `SOURCE_NOT_CHECKED_POLICY_*` serão incorporadas ao carregamento de configuração em VZ-020.
+- `unreachable` leva a quarentena; timeout/429/5xx vira `not_checked`, sem rejeição, e segue a política do [ADR-006](adr/ADR-006-fontes-e-rastreabilidade.md). As variáveis `SOURCE_NOT_CHECKED_POLICY_*` foram incorporadas ao carregamento de configuração em VZ-020 (com defaults `quarantine` para openrouter e `allow` para curated_seed).
 
 ## Rastreabilidade e navegação documental ([ADR-012](adr/ADR-012-navegacao-documental-e-referencias-a-acervos-externos.md))
 

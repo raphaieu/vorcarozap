@@ -50,6 +50,6 @@ Limites e diretrizes fixados:
 
 ## 5. Próximo Passo Prioritário
 
-A próxima etapa funcional após fechamento de VZ-009 é:
-- **[VZ-020](09-backlog-inicial.md): Verificador GET seguro/limitado e política de `source_access_status`** (incorporação de `SOURCE_NOT_CHECKED_POLICY_*` às configurações e validação de URLs sem atuar como crawler invasivo), servindo como dependência técnica dos gates de publicação automática da Fase 4.
+Com a conclusão de **VZ-020** (verificador GET seguro/limitado, proteção SSRF e política editorial de `source_access_status`), a próxima etapa funcional é:
+- **[VZ-010](09-backlog-inicial.md): ResearchProvider/OpenRouter e esteira de web search** (integração da descoberta automatizada e structured outputs, consumindo o verificador de fontes como gate técnico estrutural prévio à publicação).
 

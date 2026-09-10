@@ -2,7 +2,39 @@
 
 Todas as alterações notáveis deste projeto são registradas neste documento. O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
-## [Não lançado] — VZ-009: Exportação XLSX Derivada da Base Pública
+## [Não lançado] — VZ-020: Verificador GET Seguro e Política de Acessibilidade de Fontes
+
+### Adicionado
+- **Módulo Verificador de Fontes (`internal/sourcecheck`):**
+  - Implementação de adaptador estreito e seguro para execução de HTTP GET real (nunca HEAD) com limites conservadores (timeout de 5s, connect/header de 3s, até 3 redirecionamentos e leitura de corpo limitada a 64 KB).
+  - Proteção robusta contra Server-Side Request Forgery (SSRF) no caminho efetivo da conexão: bloqueio irrestrito de loopback (IPv4/IPv6, incluindo IPv4-mapped IPv6 `::ffff:127.0.0.1`), endereços privados (RFC 1918), link-local, multicast, faixas reservadas e metadados de nuvem (`169.254.169.254`, `metadata.google.internal`).
+  - Prevenção contra DNS Rebinding através de conexão `net.Dialer` direta ao primeiro IP público validado, preservando validação estrita de certificados TLS e SNI/ServerName.
+  - Revalidação de cada redirecionamento contra SSRF, esquema HTTP/HTTPS, portas e ausência de credenciais embutidas.
+  - Isolamento de proxies do ambiente (`Proxy: nil`) e proibição de cookies ou cabeçalhos sensíveis.
+  - Sanitização de URLs para log (`SanitizeURLForLogging`) mascarando parâmetros sensíveis na query string (`token`, `key`, `auth`, `secret`).
+  - Tabela determinística de causas técnicas (`TechnicalReason`) mapeando códigos HTTP, erros de DNS (NXDOMAIN vs transitório), TLS, timeout e cancelamento.
+- **Política Editorial de `source_access_status` conforme ADR-006:**
+  - `EvaluateSourceAccessGate`: deliberação do gate de acessibilidade considerando procedência (`openrouter`, `curated_seed`, `admin`), status técnico e variáveis de configuração:
+    - `reachable`: atende o requisito técnico de acessibilidade (`GateDecisionAllow`), sem autorizar publicação por si só.
+    - `unreachable`: erro definitivo ou bloqueio de segurança leva a quarentena obrigatória (`GateDecisionQuarantine`).
+    - `cited_by_provider`: citação pela LLM não equivale a verificação própria -> quarentena (`GateDecisionQuarantine`).
+    - `not_checked`: diferenciação por origem: `curated_seed` preserva `initial_state` do mapeamento com política `allow`, enquanto `openrouter` vai preventivamente para quarentena com política `quarantine`.
+  - `ResolveStatusUpdate`: transição de estado não destrutiva no banco, impedindo que falhas temporárias (timeout, 429, 5xx) apaguem silenciosamente comprovações prévias de `reachable`.
+- **Configuração Operacional (`internal/config`, `.env.example`):**
+  - Incorporação das variáveis de política `SOURCE_NOT_CHECKED_POLICY_OPENROUTER` (padrão: `quarantine`) e `SOURCE_NOT_CHECKED_POLICY_CURATED_SEED` (padrão: `allow`), além de `SOURCE_CHECK_TIMEOUT` (padrão: `5s`).
+- **Persistência Segura (`internal/store/queries/editorial.sql`, `internal/sourcecheck/updater.go`):**
+  - Novas queries SQLC `UpdateSourceAccessStatus` e `ListSourcesByAccessStatus`.
+  - Persistência desacoplada da rede (`PersistCheckResult` e `CheckAndPersist`), garantindo que chamadas de rede nunca ocorram dentro de transações do SQLite.
+- **Suíte de Testes Automatizados (`internal/sourcecheck/*_test.go`, `internal/config/*_test.go`):**
+  - Testes table-driven para validação do método GET, classificação de status HTTP, detecção de erros conclusivos e inconclusivos.
+  - Testes de bloqueio SSRF (IPv4, IPv6, loopback, redes privadas, metadados de nuvem, credenciais na URL e portas inválidas).
+  - Testes de redirecionamentos (limite de saltos e interceptação de redirecionamento para IP privado).
+  - Testes de resiliência a timeouts, cancelamento de contexto e limitação de leitura de corpos extensos.
+  - Teste de injeção de resolver para validação de erros de DNS e rebinding.
+  - Testes da matriz editorial e regras de transição.
+  - Teste de integração com SQLite em memória descartável.
+
+## [0.4.0] — VZ-009: Exportação XLSX Derivada da Base Pública
 
 ### Adicionado
 - **Motor de Exportação XLSX (`internal/exporter`):**
