@@ -138,16 +138,23 @@ templ Entities(vm EntityListVM) {
 
 				<!-- Barra de Contadores e Resultados -->
 				<section class="results-header" aria-label="Resumo dos Resultados">
-					<span class="results-count">
-						if vm.Filter.TotalCount == 1 {
-							<strong>1</strong> pessoa ou organização encontrada
-						} else {
-							<strong>{ fmt.Sprintf("%d", vm.Filter.TotalCount) }</strong> pessoas ou organizações encontradas
+					<div class="results-info">
+						<span class="results-count">
+							if vm.Filter.TotalCount == 1 {
+								<strong>1</strong> pessoa ou organização encontrada
+							} else {
+								<strong>{ fmt.Sprintf("%d", vm.Filter.TotalCount) }</strong> pessoas ou organizações encontradas
+							}
+						</span>
+						if vm.Filter.TotalPages > 1 {
+							<span class="page-indicator"> &bull; Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }</span>
 						}
-					</span>
-					if vm.Filter.TotalPages > 1 {
-						<span class="page-indicator">Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }</span>
-					}
+					</div>
+					<div class="results-actions">
+						<a href="/exportar/base.xlsx" class="btn btn-subtle" title="Baixar base pública completa em planilha XLSX" download>
+							Baixar Planilha (XLSX)
+						</a>
+					</div>
 				</section>
 
 				<!-- Lista de Cards das Entidades -->

@@ -324,7 +324,7 @@ func Entities(vm EntityListVM) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, ">Decrescente</option></select></div></div><div class=\"form-submit-row\"><button type=\"submit\" class=\"btn btn-secondary\">Aplicar Filtros</button></div></form></section><!-- Barra de Contadores e Resultados --><section class=\"results-header\" aria-label=\"Resumo dos Resultados\"><span class=\"results-count\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, ">Decrescente</option></select></div></div><div class=\"form-submit-row\"><button type=\"submit\" class=\"btn btn-secondary\">Aplicar Filtros</button></div></form></section><!-- Barra de Contadores e Resultados --><section class=\"results-header\" aria-label=\"Resumo dos Resultados\"><div class=\"results-info\"><span class=\"results-count\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -341,7 +341,7 @@ func Entities(vm EntityListVM) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", vm.Filter.TotalCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 145, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 146, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -357,14 +357,14 @@ func Entities(vm EntityListVM) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if vm.Filter.TotalPages > 1 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<span class=\"page-indicator\">Página ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<span class=\"page-indicator\">&bull; Página ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", vm.Filter.Page))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 149, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 150, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -377,7 +377,7 @@ func Entities(vm EntityListVM) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", vm.Filter.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 149, Col: 125}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 150, Col: 134}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -388,7 +388,7 @@ func Entities(vm EntityListVM) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</section><!-- Lista de Cards das Entidades -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div><div class=\"results-actions\"><a href=\"/exportar/base.xlsx\" class=\"btn btn-subtle\" title=\"Baixar base pública completa em planilha XLSX\" download>Baixar Planilha (XLSX)</a></div></section><!-- Lista de Cards das Entidades -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -405,7 +405,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var10 templ.SafeURL
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/pessoas/%s", ent.Slug)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 160, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 167, Col: 71}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -418,7 +418,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(ent.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 161, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 168, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -454,7 +454,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var14 string
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(ent.HighestGradeHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 166, Col: 113}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 173, Col: 113}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 					if templ_7745c5c3_Err != nil {
@@ -467,7 +467,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var15 string
 					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Grau %s", ent.HighestGrade))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 167, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 174, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 					if templ_7745c5c3_Err != nil {
@@ -486,7 +486,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(ent.Category)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 171, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 178, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -509,7 +509,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(ent.RoleOrContext)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 178, Col: 59}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 185, Col: 59}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -528,7 +528,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var18 string
 					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(ent.ShortSynthesis)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 184, Col: 30}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 191, Col: 30}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
@@ -546,7 +546,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(ent.RelevanceRationale)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 189, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 196, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 				if templ_7745c5c3_Err != nil {
@@ -559,7 +559,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(ent.RelevanceHuman)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 190, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 197, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -577,7 +577,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var21 string
 					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(ent.Reach)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 194, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 201, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 					if templ_7745c5c3_Err != nil {
@@ -595,7 +595,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", ent.PublicClaimsCount))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 198, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 205, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -613,7 +613,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var23 string
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(ent.LastUpdatedHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 202, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 209, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -631,7 +631,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var24 templ.SafeURL
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/pessoas/%s", ent.Slug)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 208, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 215, Col: 70}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -659,7 +659,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var25 templ.SafeURL
 					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/pessoas" + vm.Filter.BuildQueryString(vm.Filter.Page-1)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 220, Col: 92}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 227, Col: 92}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 					if templ_7745c5c3_Err != nil {
@@ -682,7 +682,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", vm.Filter.Page))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 228, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 235, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -695,7 +695,7 @@ func Entities(vm EntityListVM) templ.Component {
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", vm.Filter.TotalPages))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 228, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 235, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -713,7 +713,7 @@ func Entities(vm EntityListVM) templ.Component {
 					var templ_7745c5c3_Var28 templ.SafeURL
 					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/pessoas" + vm.Filter.BuildQueryString(vm.Filter.Page+1)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 232, Col: 92}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/entities.templ`, Line: 239, Col: 92}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 					if templ_7745c5c3_Err != nil {

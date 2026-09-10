@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
+	"github.com/xuri/excelize/v2"
 )
 
 func setupTestServer(t *testing.T) *http.Server {
@@ -844,5 +846,78 @@ func TestCanonicalVisibilityRules(t *testing.T) {
 		if wSlug.Code != http.StatusNotFound {
 			t.Errorf("[%s] esperado 404 para entidade sem alegações válidas, obtido %d", nonPublicSlug, wSlug.Code)
 		}
+	}
+}
+
+func TestExportEndpoint(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// 1. Testa download do XLSX em /exportar/base.xlsx
+	req := httptest.NewRequest(http.MethodGet, "/exportar/base.xlsx", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status /exportar/base.xlsx: esperado 200, obtido %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	expectedCT := "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	if contentType != expectedCT {
+		t.Errorf("Content-Type: esperado %q, obtido %q", expectedCT, contentType)
+	}
+
+	contentDisp := w.Header().Get("Content-Disposition")
+	if !strings.Contains(contentDisp, "attachment; filename=\"vorcarozap-dados-publicos-") {
+		t.Errorf("Content-Disposition inesperado: %q", contentDisp)
+	}
+
+	// Valida que o payload retornado é um arquivo XLSX válido
+	f, err := excelize.OpenReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("payload retornado por /exportar/base.xlsx não é um XLSX válido: %v", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) < 4 {
+		t.Errorf("esperava pelo menos 4 abas no XLSX exportado, obteve %d (%v)", len(sheets), sheets)
+	}
+
+	// 2. Testa redirect de /exportar para /exportar/base.xlsx
+	reqRedir := httptest.NewRequest(http.MethodGet, "/exportar", nil)
+	wRedir := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wRedir, reqRedir)
+
+	if wRedir.Code != http.StatusTemporaryRedirect {
+		t.Errorf("status /exportar: esperado 307, obtido %d", wRedir.Code)
+	}
+	loc := wRedir.Header().Get("Location")
+	if loc != "/exportar/base.xlsx" {
+		t.Errorf("Location de redirect: esperado '/exportar/base.xlsx', obtido %q", loc)
+	}
+
+	// 3. Testa presença do link de exportação em /pessoas
+	reqPessoas := httptest.NewRequest(http.MethodGet, "/pessoas", nil)
+	wPessoas := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wPessoas, reqPessoas)
+
+	if wPessoas.Code != http.StatusOK {
+		t.Fatalf("status /pessoas: esperado 200, obtido %d", wPessoas.Code)
+	}
+	if !strings.Contains(wPessoas.Body.String(), "/exportar/base.xlsx") {
+		t.Errorf("link para /exportar/base.xlsx não encontrado no HTML de /pessoas")
+	}
+
+	// 4. Testa presença do link de exportação na Home
+	reqHome := httptest.NewRequest(http.MethodGet, "/", nil)
+	wHome := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wHome, reqHome)
+
+	if wHome.Code != http.StatusOK {
+		t.Fatalf("status /: esperado 200, obtido %d", wHome.Code)
+	}
+	if !strings.Contains(wHome.Body.String(), "/exportar/base.xlsx") {
+		t.Errorf("link para /exportar/base.xlsx não encontrado no HTML da Home")
 	}
 }

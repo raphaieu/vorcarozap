@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/raphaieu/vorcarozap/internal/exporter"
 	"github.com/raphaieu/vorcarozap/internal/metrics"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
@@ -178,5 +179,21 @@ func (h *Handlers) HandleMethodology(w http.ResponseWriter, r *http.Request) {
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render methodology template", "error", err)
 		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleExportXLSX gera dinamicamente e serve o arquivo XLSX derivado exclusivamente da base pública atual.
+func (h *Handlers) HandleExportXLSX(w http.ResponseWriter, r *http.Request) {
+	exp := exporter.New(h.db, h.publicDataCutoff)
+
+	filename := "vorcarozap-dados-publicos-" + time.Now().UTC().Format("2006-01-02") + ".xlsx"
+
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	if err := exp.WriteTo(r.Context(), w); err != nil {
+		slog.Error("failed to generate public xlsx export", "error", err)
+		// Caso headers já tenham sido enviados pelo streaming, o erro é registrado no log.
 	}
 }

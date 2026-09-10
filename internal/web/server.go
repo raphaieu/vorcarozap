@@ -45,6 +45,12 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Get("/pessoas/{slug}", handlers.HandleEntityDetail)
 	r.Get("/metodologia", handlers.HandleMethodology)
 
+	// Exportação pública de dados XLSX (VZ-009)
+	r.Get("/exportar/base.xlsx", handlers.HandleExportXLSX)
+	r.Get("/exportar", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
+	})
+
 	// Arquivos estáticos embutidos (/static/*)
 	staticSubFS, err := fs.Sub(static.FS, ".")
 	if err != nil {

@@ -210,9 +210,14 @@ templ Home(vm HomeVM) {
 						<p>
 							Consulte pessoas físicas e organizações catalogadas com busca por termos, filtros por Graus A–E, relevância pública (1 a 5), categorias e ordenação customizada.
 						</p>
-						<a href="/pessoas" class="btn btn-primary" style="display: inline-block; margin-top: 0.75rem;">
-							Acessar Consulta de Pessoas e Organizações &rarr;
-						</a>
+						<div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem;">
+							<a href="/pessoas" class="btn btn-primary">
+								Acessar Consulta de Pessoas e Organizações &rarr;
+							</a>
+							<a href="/exportar/base.xlsx" class="btn btn-secondary" title="Exportar dados públicos em planilha XLSX">
+								Exportar Base (XLSX)
+							</a>
+						</div>
 					</div>
 				</section>
 
