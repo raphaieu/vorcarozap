@@ -43,6 +43,53 @@ func TestConfigLoadDefaults(t *testing.T) {
 	if cfg.IdleTimeout != 60*time.Second {
 		t.Errorf("IdleTimeout: esperado 60s, obtido %v", cfg.IdleTimeout)
 	}
+	if cfg.SourceNotCheckedPolicyOpenRouter != "quarantine" {
+		t.Errorf("SourceNotCheckedPolicyOpenRouter: esperado 'quarantine', obtido %q", cfg.SourceNotCheckedPolicyOpenRouter)
+	}
+	if cfg.SourceNotCheckedPolicyCuratedSeed != "allow" {
+		t.Errorf("SourceNotCheckedPolicyCuratedSeed: esperado 'allow', obtido %q", cfg.SourceNotCheckedPolicyCuratedSeed)
+	}
+	if cfg.SourceCheckTimeout != 5*time.Second {
+		t.Errorf("SourceCheckTimeout: esperado 5s, obtido %v", cfg.SourceCheckTimeout)
+	}
+}
+
+func TestConfigSourcePolicies(t *testing.T) {
+	t.Run("Políticas válidas customizadas", func(t *testing.T) {
+		t.Setenv("SOURCE_NOT_CHECKED_POLICY_OPENROUTER", "allow")
+		t.Setenv("SOURCE_NOT_CHECKED_POLICY_CURATED_SEED", "quarantine")
+		t.Setenv("SOURCE_CHECK_TIMEOUT", "8s")
+
+		cfg, err := config.Load()
+		if err != nil {
+			t.Fatalf("esperava sucesso, erro: %v", err)
+		}
+		if cfg.SourceNotCheckedPolicyOpenRouter != "allow" {
+			t.Errorf("esperado 'allow', obtido %q", cfg.SourceNotCheckedPolicyOpenRouter)
+		}
+		if cfg.SourceNotCheckedPolicyCuratedSeed != "quarantine" {
+			t.Errorf("esperado 'quarantine', obtido %q", cfg.SourceNotCheckedPolicyCuratedSeed)
+		}
+		if cfg.SourceCheckTimeout != 8*time.Second {
+			t.Errorf("esperado 8s, obtido %v", cfg.SourceCheckTimeout)
+		}
+	})
+
+	t.Run("OpenRouter policy inválida", func(t *testing.T) {
+		t.Setenv("SOURCE_NOT_CHECKED_POLICY_OPENROUTER", "invalid_policy")
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro para SOURCE_NOT_CHECKED_POLICY_OPENROUTER inválida")
+		}
+	})
+
+	t.Run("CuratedSeed policy inválida", func(t *testing.T) {
+		t.Setenv("SOURCE_NOT_CHECKED_POLICY_CURATED_SEED", "invalid_policy")
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro para SOURCE_NOT_CHECKED_POLICY_CURATED_SEED inválida")
+		}
+	})
 }
 
 func TestConfigPublicDataCutoff(t *testing.T) {

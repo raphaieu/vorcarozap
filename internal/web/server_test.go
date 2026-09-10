@@ -966,4 +966,3 @@ func TestExportEndpoint_ErrorHandling(t *testing.T) {
 		t.Errorf("corpo da resposta de erro inesperado: %s", w.Body.String())
 	}
 }
-

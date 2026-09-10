@@ -1405,6 +1405,50 @@ func (q *Queries) ListPublicEvidenceSourcesByClaimID(ctx context.Context, claimI
 	return items, nil
 }
 
+const listSourcesByAccessStatus = `-- name: ListSourcesByAccessStatus :many
+SELECT id, title, publisher_or_author, original_url, canonical_url, published_at, accessed_at, source_type, source_access_status, source_access_checked_at, http_status, normalized_error_code, created_at, updated_at FROM sources
+WHERE source_access_status = ?
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListSourcesByAccessStatus(ctx context.Context, sourceAccessStatus string) ([]Source, error) {
+	rows, err := q.db.QueryContext(ctx, listSourcesByAccessStatus, sourceAccessStatus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Source
+	for rows.Next() {
+		var i Source
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.PublisherOrAuthor,
+			&i.OriginalUrl,
+			&i.CanonicalUrl,
+			&i.PublishedAt,
+			&i.AccessedAt,
+			&i.SourceType,
+			&i.SourceAccessStatus,
+			&i.SourceAccessCheckedAt,
+			&i.HttpStatus,
+			&i.NormalizedErrorCode,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateImportRun = `-- name: UpdateImportRun :one
 UPDATE import_runs
 SET status = ?, summary_counts = ?, summary_report = ?, error_message = ?, completed_at = ?
@@ -1444,6 +1488,55 @@ func (q *Queries) UpdateImportRun(ctx context.Context, arg UpdateImportRunParams
 		&i.ErrorMessage,
 		&i.CreatedAt,
 		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const updateSourceAccessStatus = `-- name: UpdateSourceAccessStatus :one
+UPDATE sources
+SET source_access_status = ?,
+    source_access_checked_at = ?,
+    http_status = ?,
+    normalized_error_code = ?,
+    updated_at = ?
+WHERE id = ?
+RETURNING id, title, publisher_or_author, original_url, canonical_url, published_at, accessed_at, source_type, source_access_status, source_access_checked_at, http_status, normalized_error_code, created_at, updated_at
+`
+
+type UpdateSourceAccessStatusParams struct {
+	SourceAccessStatus    string         `json:"source_access_status"`
+	SourceAccessCheckedAt sql.NullString `json:"source_access_checked_at"`
+	HttpStatus            sql.NullInt64  `json:"http_status"`
+	NormalizedErrorCode   sql.NullString `json:"normalized_error_code"`
+	UpdatedAt             string         `json:"updated_at"`
+	ID                    string         `json:"id"`
+}
+
+func (q *Queries) UpdateSourceAccessStatus(ctx context.Context, arg UpdateSourceAccessStatusParams) (Source, error) {
+	row := q.db.QueryRowContext(ctx, updateSourceAccessStatus,
+		arg.SourceAccessStatus,
+		arg.SourceAccessCheckedAt,
+		arg.HttpStatus,
+		arg.NormalizedErrorCode,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.PublisherOrAuthor,
+		&i.OriginalUrl,
+		&i.CanonicalUrl,
+		&i.PublishedAt,
+		&i.AccessedAt,
+		&i.SourceType,
+		&i.SourceAccessStatus,
+		&i.SourceAccessCheckedAt,
+		&i.HttpStatus,
+		&i.NormalizedErrorCode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

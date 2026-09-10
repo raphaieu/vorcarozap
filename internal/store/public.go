@@ -305,4 +305,3 @@ func GetPublicExportData(ctx context.Context, db *sql.DB) (*PublicExportData, er
 		Sources:  sources,
 	}, nil
 }
-

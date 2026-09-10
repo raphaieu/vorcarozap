@@ -9,13 +9,16 @@ import (
 
 // Config contém os parâmetros operacionais da aplicação.
 type Config struct {
-	Port             int
-	Env              string
-	DBPath           string
-	PublicDataCutoff string
-	ReadTimeout      time.Duration
-	WriteTimeout     time.Duration
-	IdleTimeout      time.Duration
+	Port                              int
+	Env                               string
+	DBPath                            string
+	PublicDataCutoff                  string
+	ReadTimeout                       time.Duration
+	WriteTimeout                      time.Duration
+	IdleTimeout                       time.Duration
+	SourceNotCheckedPolicyOpenRouter  string
+	SourceNotCheckedPolicyCuratedSeed string
+	SourceCheckTimeout                time.Duration
 }
 
 // Load carrega a configuração a partir de variáveis de ambiente com defaults seguros.
@@ -63,14 +66,36 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	sourceCheckTimeout, err := parseTimeout("SOURCE_CHECK_TIMEOUT", os.Getenv("SOURCE_CHECK_TIMEOUT"), 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	openRouterPolicy := os.Getenv("SOURCE_NOT_CHECKED_POLICY_OPENROUTER")
+	if openRouterPolicy == "" {
+		openRouterPolicy = "quarantine"
+	} else if openRouterPolicy != "quarantine" && openRouterPolicy != "allow" {
+		return nil, fmt.Errorf("config: SOURCE_NOT_CHECKED_POLICY_OPENROUTER inválida %q: deve ser 'quarantine' ou 'allow'", openRouterPolicy)
+	}
+
+	curatedSeedPolicy := os.Getenv("SOURCE_NOT_CHECKED_POLICY_CURATED_SEED")
+	if curatedSeedPolicy == "" {
+		curatedSeedPolicy = "allow"
+	} else if curatedSeedPolicy != "quarantine" && curatedSeedPolicy != "allow" {
+		return nil, fmt.Errorf("config: SOURCE_NOT_CHECKED_POLICY_CURATED_SEED inválida %q: deve ser 'quarantine' ou 'allow'", curatedSeedPolicy)
+	}
+
 	return &Config{
-		Port:             port,
-		Env:              env,
-		DBPath:           dbPath,
-		PublicDataCutoff: cutoff,
-		ReadTimeout:      readTimeout,
-		WriteTimeout:     writeTimeout,
-		IdleTimeout:      idleTimeout,
+		Port:                              port,
+		Env:                               env,
+		DBPath:                            dbPath,
+		PublicDataCutoff:                  cutoff,
+		ReadTimeout:                       readTimeout,
+		WriteTimeout:                      writeTimeout,
+		IdleTimeout:                       idleTimeout,
+		SourceNotCheckedPolicyOpenRouter:  openRouterPolicy,
+		SourceNotCheckedPolicyCuratedSeed: curatedSeedPolicy,
+		SourceCheckTimeout:                sourceCheckTimeout,
 	}, nil
 }
 

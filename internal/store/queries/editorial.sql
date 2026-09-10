@@ -97,6 +97,21 @@ WHERE canonical_url = ? LIMIT 1;
 SELECT * FROM sources
 WHERE id = ? LIMIT 1;
 
+-- name: UpdateSourceAccessStatus :one
+UPDATE sources
+SET source_access_status = ?,
+    source_access_checked_at = ?,
+    http_status = ?,
+    normalized_error_code = ?,
+    updated_at = ?
+WHERE id = ?
+RETURNING *;
+
+-- name: ListSourcesByAccessStatus :many
+SELECT * FROM sources
+WHERE source_access_status = ?
+ORDER BY created_at ASC;
+
 -- name: CreateClaim :one
 INSERT INTO claims (
     id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons, import_run_id, created_at, updated_at
