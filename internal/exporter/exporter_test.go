@@ -136,13 +136,13 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 	insertEntity(ent4ID, "Entidade Rejeitada", "entidade-rejeitada", "Outros", 1)
 
 	// Inserir Relacionamentos
-	insertRel := func(id, subj string) {
+	insertRel := func(id, subj, limits string) {
 		caseID := uuid.NewString()
 		_, _ = db.ExecContext(ctx, `INSERT INTO cases (id, name, slug) VALUES (?, 'Caso Teste', ?)`, caseID, "caso-"+id)
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary)
-			VALUES (?, ?, ?, 'investigado', 'Resumo da relação')
-		`, id, subj, caseID)
+			INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary, context_limits)
+			VALUES (?, ?, ?, 'investigado', 'Resumo da relação', ?)
+		`, id, subj, caseID, limits)
 		if err != nil {
 			t.Fatalf("falha ao inserir rel: %v", err)
 		}
@@ -152,17 +152,17 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 	rel2ID := uuid.NewString()
 	rel3ID := uuid.NewString()
 	rel4ID := uuid.NewString()
-	insertRel(rel1ID, ent1ID)
-	insertRel(rel2ID, ent2ID)
-	insertRel(rel3ID, ent3ID)
-	insertRel(rel4ID, ent4ID)
+	insertRel(rel1ID, ent1ID, "Ressalva documental sobre escopo societário")
+	insertRel(rel2ID, ent2ID, "Esclarecimento de homônimo arquivado")
+	insertRel(rel3ID, ent3ID, "")
+	insertRel(rel4ID, ent4ID, "")
 
 	// Inserir Claims
-	insertClaim := func(id, relID, prop, grade, disp string, metricEligible int, status, limits string) {
+	insertClaim := func(id, relID, prop, grade, disp string, metricEligible int, status string) {
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, context_limits)
-			VALUES (?, ?, ?, 'Fonte X', 'curated_seed', ?, ?, ?, ?, 'investigado', ?)
-		`, id, relID, prop, grade, disp, metricEligible, status, limits)
+			INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
+			VALUES (?, ?, ?, 'Fonte X', 'curated_seed', ?, ?, ?, ?, 'investigado')
+		`, id, relID, prop, grade, disp, metricEligible, status)
 		if err != nil {
 			t.Fatalf("falha ao inserir claim: %v", err)
 		}
@@ -173,10 +173,10 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 	claim3ID := uuid.NewString() // Quarentena
 	claim4ID := uuid.NewString() // Rejeitado
 
-	insertClaim(claim1ID, rel1ID, "Claim Publico Elegivel", "D", "possible_link", 1, "published", "Ressalva documental sobre escopo societário")
-	insertClaim(claim2ID, rel2ID, "Claim Publico Contexto", "E", "context_only", 0, "published", "Esclarecimento de homônimo arquivado")
-	insertClaim(claim3ID, rel3ID, "Claim Quarentenado", "E", "possible_link", 0, "quarantined", "")
-	insertClaim(claim4ID, rel4ID, "Claim Rejeitado", "B", "supports_link", 1, "rejected", "")
+	insertClaim(claim1ID, rel1ID, "Claim Publico Elegivel", "D", "possible_link", 1, "published")
+	insertClaim(claim2ID, rel2ID, "Claim Publico Contexto", "E", "context_only", 0, "published")
+	insertClaim(claim3ID, rel3ID, "Claim Quarentenado", "E", "possible_link", 0, "quarantined")
+	insertClaim(claim4ID, rel4ID, "Claim Rejeitado", "B", "supports_link", 1, "rejected")
 
 	// Inserir Sources e Evidence
 	insertSource := func(id, url string) {
