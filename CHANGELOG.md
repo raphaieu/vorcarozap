@@ -7,7 +7,10 @@ Todas as alterações notáveis deste projeto são registradas neste documento. 
 ### Adicionado
 - **Motor de Exportação XLSX (`internal/exporter`):**
   - Implementação da geração determinística de planilhas XLSX via `github.com/xuri/excelize/v2` a partir de consultas exclusivas ao estado público do SQLite (`public_claims_view`).
+  - Extração transacional atômica e consistente via `BeginTx(ctx, &sql.TxOptions{ReadOnly: true})`, encerrando a transação de leitura antes da montagem do XLSX.
   - Segregação dos dados em 4 abas canônicas: `Entidades`, `Alegações e Relações`, `Evidências e Fontes`, e `Metodologia e Critérios`.
+  - Inclusão da coluna **"Limites Contextuais / Ressalvas"** (`context_limits`) na aba de alegações, preservando ressalvas e contrapontos exibidos no site.
+  - Aba de metodologia alinhada à metodologia canônica do produto: Relevância 1–5 mensurando alcance institucional e interesse público (sem aferição de suspeição/culpa), Graus A–E canônicos e seção discriminando as regras da base inicial curada (Grau D publicado elegível; Grau E retificado como contexto não elegível; Grau E ambíguo quarentenado).
   - Proteção estrita contra Formula Injection (CSV/XLSX injection) gravando todas as células de texto com `SetCellStr` e neutralizando caracteres disparadores (`=`, `+`, `-`, `@`, tab).
   - Preservação da distinção de elegibilidade métrica: alegações públicas com `metric_eligible = false` (ex.: Grau E corrigido) continuam na exportação com a coluna `Elegível nas Métricas = Não`, enquanto itens de rede figuram com `Sim`.
   - Exclusão estrita de dados em quarentena (21 registros legados), alegações rejeitadas, arquivadas ou metadados de processamento interno.
@@ -15,13 +18,14 @@ Todas as alterações notáveis deste projeto são registradas neste documento. 
 - **Subcomando CLI de Exportação (`cmd/vorcarozap`):**
   - Comando `vorcarozap export [--out <caminho.xlsx>]` para geração de arquivo diretamente pelo terminal.
 - **Download HTTP e Integração na Interface Web (`internal/web`, `web/pages`, `web/components`):**
-  - Endpoint `GET /exportar/base.xlsx` com cabeçalhos apropriados de download de anexo (`Content-Disposition: attachment; filename="vorcarozap-dados-publicos-YYYY-MM-DD.xlsx"`).
+  - Endpoint `GET /exportar/base.xlsx` com geração prévia em memória (`bytes.Buffer`), garantindo que em falha retorne HTTP 500 sem cabeçalho `Content-Disposition`.
   - Redirect amigável `GET /exportar` -> `/exportar/base.xlsx`.
   - Botão de download no cabeçalho de resultados de `/pessoas`, no card de consulta da Home e link no menu de navegação.
 - **Suíte de Testes Automatizados:**
   - Testes unitários de sanitização e proteção contra formula injection em `internal/exporter/exporter_test.go`.
   - Testes de integridade de abas, células e cabeçalhos em cenário de base vazia.
-  - Testes de exclusão de estados não públicos e validação de elegibilidade métrica.
+  - Testes de exclusão de estados não públicos, validação de elegibilidade métrica e preservação de `context_limits`.
+  - Teste de tratamento de erro do endpoint de exportação (`TestExportEndpoint_ErrorHandling`), garantindo retorno 500 sem cabeçalho de anexo em falha de extração.
   - Smoke test end-to-end com importação real da planilha seed e exportação no banco SQLite (`internal/exporter/smoke_export_test.go`).
   - Testes de integração HTTP do endpoint `/exportar/base.xlsx` em `internal/web/server_test.go`.
 

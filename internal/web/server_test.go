@@ -934,11 +934,15 @@ func TestExportEndpoint_ErrorHandling(t *testing.T) {
 		t.Fatalf("falha ao rodar migrations: %v", err)
 	}
 
-	srv := web.NewServer(web.ServerConfig{
-		Addr:             ":0",
-		DB:               db,
+	cfg := &config.Config{
+		Port:             8080,
+		Env:              "test",
 		PublicDataCutoff: "2026-09-03",
-	})
+	}
+	srv, err := web.NewServer(cfg, db)
+	if err != nil {
+		t.Fatalf("falha ao criar servidor web: %v", err)
+	}
 
 	// Fecha intencionalmente o banco para forçar falha no início da transação de exportação
 	_ = db.Close()
