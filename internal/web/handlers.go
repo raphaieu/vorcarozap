@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -186,14 +187,20 @@ func (h *Handlers) HandleMethodology(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleExportXLSX(w http.ResponseWriter, r *http.Request) {
 	exp := exporter.New(h.db, h.publicDataCutoff)
 
+	var buf bytes.Buffer
+	if err := exp.WriteTo(r.Context(), &buf); err != nil {
+		slog.Error("failed to generate public xlsx export", "error", err)
+		http.Error(w, "Erro interno ao gerar planilha de exportação", http.StatusInternalServerError)
+		return
+	}
+
 	filename := "vorcarozap-dados-publicos-" + time.Now().UTC().Format("2006-01-02") + ".xlsx"
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-
-	if err := exp.WriteTo(r.Context(), w); err != nil {
-		slog.Error("failed to generate public xlsx export", "error", err)
-		// Caso headers já tenham sido enviados pelo streaming, o erro é registrado no log.
-	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }
+

@@ -270,9 +270,15 @@ type PublicExportData struct {
 	Sources  []sqlc.ListPublicEvidenceSourcesForExportRow
 }
 
-// GetPublicExportData extrai os conjuntos de entidades, alegações e evidências/fontes públicas ativas.
+// GetPublicExportData extrai atomicamente os conjuntos de entidades, alegações e evidências/fontes públicas ativas sob uma mesma transação de leitura.
 func GetPublicExportData(ctx context.Context, db *sql.DB) (*PublicExportData, error) {
-	q := sqlc.New(db)
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao iniciar transação de leitura para exportação: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := sqlc.New(tx)
 
 	entities, err := q.ListPublicEntitiesForExport(ctx)
 	if err != nil {
@@ -289,9 +295,14 @@ func GetPublicExportData(ctx context.Context, db *sql.DB) (*PublicExportData, er
 		return nil, fmt.Errorf("store: falha ao listar evidências/fontes para exportação: %w", err)
 	}
 
+	if err := tx.Commit(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		return nil, fmt.Errorf("store: falha ao finalizar transação de leitura de exportação: %w", err)
+	}
+
 	return &PublicExportData{
 		Entities: entities,
 		Claims:   claims,
 		Sources:  sources,
 	}, nil
 }
+

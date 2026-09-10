@@ -248,6 +248,7 @@ func (e *Exporter) populateClaimsSheet(f *excelize.File, rows []sqlc.ListPublicC
 		"Tipo de Relação",
 		"Alvo da Relação",
 		"Fato Documentado / Proposição",
+		"Limites Contextuais / Ressalvas",
 		"Grau Editorial",
 		"Disposição",
 		"Elegível nas Métricas",
@@ -259,7 +260,8 @@ func (e *Exporter) populateClaimsSheet(f *excelize.File, rows []sqlc.ListPublicC
 
 	colWidths := map[string]float64{
 		"A": 36, "B": 28, "C": 22, "D": 22, "E": 28, "F": 45,
-		"G": 15, "H": 18, "I": 20, "J": 25, "K": 25, "L": 22, "M": 22,
+		"G": 35, "H": 15, "I": 18, "J": 20, "K": 25, "L": 25,
+		"M": 22, "N": 22,
 	}
 	for col, width := range colWidths {
 		_ = f.SetColWidth(SheetClaims, col, col, width)
@@ -307,6 +309,7 @@ func (e *Exporter) populateClaimsSheet(f *excelize.File, rows []sqlc.ListPublicC
 			SanitizeCellText(c.RelationshipType),
 			SanitizeCellText(alvoFormatado),
 			SanitizeCellText(c.Proposition),
+			SanitizeCellText(c.ContextLimits),
 			SanitizeCellText(c.Grade),
 			SanitizeCellText(c.Disposition),
 			SanitizeCellText(elegivelTexto),
@@ -509,19 +512,18 @@ func (e *Exporter) populateMethodologySheet(f *excelize.File, metaHeaderStyle in
 	row += 2
 
 	// Escala de Graus A a E
-	_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("A%d", row), "Escala Editorial de Graus (A a E)")
+	_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("A%d", row), "Escala Documental de Alegações (Graus A a E)")
 	if sectionStyle != 0 {
 		_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("A%d", row), fmt.Sprintf("B%d", row), sectionStyle)
 	}
 	row++
 
 	graus := [][]string{
-		{"Grau A", "Direto confirmado — Citação ou registro em laudo pericial, documento oficial ou registro probatório direto que atesta o vínculo ou contato."},
-		{"Grau B", "Direto documentado / controvertido — Documentado em fontes públicas ou reportagens investigativas, com contraponto, contestação ou pendência de confirmação pericial plena."},
-		{"Grau C", "Agenda / Menção em registro — Registro em lista de contatos, agenda ou menção incidental em comunicação, sem demonstração de tratativa ilícita ou relacionamento operacional continuado."},
-		{"Grau D", "Indireto / Potencial — Vínculo atribuído por terceiros ou relação societária/familiar indireta, dependente de apuração documental posterior. Elegível nas métricas de rede como vínculo potencial."},
-		{"Grau E (corrigido)", "Fraco / Corrigido — Menção fraca, esclarecida, retificada ou de mero contexto histórico. Mantida no acervo público como contexto/correção, mas NÃO elegível nas métricas de rede."},
-		{"Grau E (ambíguo)", "Fraco / Ambíguo — Homônimos não confirmados, fontes inconclusivas ou alegações sem suporte. Ficam mantidos em quarentena técnica e NÃO constam nesta exportação pública."},
+		{"Grau A", "Documento ou manifestação direta — Comprovação por meio de documentos primários, registros de mensagens com autenticação ou ata notarial, ofícios oficiais, atas societárias ou declaração direta prestada em autos ou em entrevista oficial gravada."},
+		{"Grau B", "Reportagem fundamentada ou confirmação independente — Notícia ou reportagem investigativa assinada por veículo com governança jornalística, citando fontes plurais e com confirmação independente dos fatos relatados."},
+		{"Grau C", "Associação documentada com significado incompleto — Relação formal, societária, contratual ou protocolar confirmada em documento, mas cujo significado factual quanto ao caso investigado é incompleto ou exige cautela interpretativa. Exige explicitação textual clara dos limites contextuais."},
+		{"Grau D", "Alegação atribuída sem confirmação independente — Declaração atribuída a terceiros, delações ou depoimentos unilaterais não corroborados por documentos ou investigações concluídas."},
+		{"Grau E", "Pista ou menção indireta — Menção de passagem, homônimo a esclarecer, citação periférica ou material sem evidência robusta de relevância causal para o tema."},
 	}
 
 	for _, g := range graus {
@@ -533,24 +535,25 @@ func (e *Exporter) populateMethodologySheet(f *excelize.File, metaHeaderStyle in
 		if textStyle != 0 {
 			_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("B%d", row), fmt.Sprintf("B%d", row), textStyle)
 		}
-		_ = f.SetRowHeight(SheetMethodology, row, 28)
+		_ = f.SetRowHeight(SheetMethodology, row, 36)
 		row++
 	}
 	row++
 
-	// Escala de Relevância Institucional (1 a 5)
-	_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("A%d", row), "Escala de Relevância Pública (1 a 5)")
+	// Escala de Relevância Pública das Entidades (1 a 5)
+	_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("A%d", row), "Nível de Relevância Pública das Entidades (1 a 5)")
 	if sectionStyle != 0 {
 		_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("A%d", row), fmt.Sprintf("B%d", row), sectionStyle)
 	}
 	row++
 
 	relevancias := [][]string{
-		{"Nível 5", "Protagonista central / Principal investigado ou controlador institucional diretamente envolvido."},
-		{"Nível 4", "Alta relevância / Decisor financeiro ou institucional de primeiro escalão com papel executivo documentado."},
-		{"Nível 3", "Relevância média / Operador, intermediário direto ou beneficiário com participação comprovada."},
-		{"Nível 2", "Relevância moderada / Citado contextual com cargo institucional ou representação funcional."},
-		{"Nível 1", "Relevância periférica / Contato pontual ou menção incidental sem papel deliberativo demonstrado."},
+		{"Critério Geral", "A escala de relevância (1 a 5) pertence exclusivamente à entidade (pessoa física ou jurídica) e mensura seu alcance institucional e interesse público, e NÃO o seu grau de suspeição, proximidade ou envolvimento ilícito."},
+		{"Nível 1", "Local ou circunstancial — Atuação em âmbito restrito, sem função executiva ou representação política nacional."},
+		{"Nível 2", "Setorial ou regional — Dirigente de entidade regional, empresa setorial ou cargo de suporte intermediário."},
+		{"Nível 3", "Nacional moderada — Executivo de grande porte, parlamentar em comissões temáticas ou figura pública com exposição em pautas econômicas."},
+		{"Nível 4", "Alta relevância nacional — Ministros de Estado, membros de cortes superiores, líderes partidários de cúpula ou controladores de grandes conglomerados."},
+		{"Nível 5", "Estratégica ou internacional — Chefes de Poder, governadores de estados centrais, autoridades monetárias ou dirigentes de repercussão internacional."},
 	}
 
 	for _, r := range relevancias {
@@ -562,6 +565,35 @@ func (e *Exporter) populateMethodologySheet(f *excelize.File, metaHeaderStyle in
 		if textStyle != 0 {
 			_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("B%d", row), fmt.Sprintf("B%d", row), textStyle)
 		}
+		_ = f.SetRowHeight(SheetMethodology, row, 32)
+		row++
+	}
+	row++
+
+	// Exceções e Tratamento do Seed Curado Inicial
+	_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("A%d", row), "Calibração e Exceções da Base Curada Inicial")
+	if sectionStyle != 0 {
+		_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("A%d", row), fmt.Sprintf("B%d", row), sectionStyle)
+	}
+	row++
+
+	seedData := [][]string{
+		{"Regra de Automação", "Na esteira de monitoramento automatizado contínuo (OpenRouter/Fase 4), alegações classificadas como Grau D ou Grau E seguem obrigatoriamente para quarentena técnica por padrão, exigindo avaliação humana."},
+		{"Grau D no Seed", "Na importação curada da base inicial (curated_seed / import-mapping-v1), itens de Grau D foram aprovados para publicação e são elegíveis para as métricas da rede (metric_eligible = true, disposition = possible_link), refletindo vínculos potenciais documentados em reportagens."},
+		{"Grau E Corrigido no Seed", "Itens de Grau E que representam esclarecimento, retificação ou contexto histórico foram publicados com disposition = context_only e metric_eligible = false. Constam no acervo público e nesta planilha para integridade documental, mas NÃO aumentam a rede de vínculos."},
+		{"Grau E Ambíguo no Seed", "Itens com homônimos não confirmados, pistas sem fonte ou ausência de dados essenciais foram direcionados à quarentena técnica (quarantined, metric_eligible = false) e NÃO constam nesta exportação."},
+	}
+
+	for _, s := range seedData {
+		_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("A%d", row), SanitizeCellText(s[0]))
+		_ = f.SetCellStr(SheetMethodology, fmt.Sprintf("B%d", row), SanitizeCellText(s[1]))
+		if boldStyle != 0 {
+			_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("A%d", row), fmt.Sprintf("A%d", row), boldStyle)
+		}
+		if textStyle != 0 {
+			_ = f.SetCellStyle(SheetMethodology, fmt.Sprintf("B%d", row), fmt.Sprintf("B%d", row), textStyle)
+		}
+		_ = f.SetRowHeight(SheetMethodology, row, 38)
 		row++
 	}
 	row++

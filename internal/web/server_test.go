@@ -921,3 +921,45 @@ func TestExportEndpoint(t *testing.T) {
 		t.Errorf("link para /exportar/base.xlsx não encontrado no HTML da Home")
 	}
 }
+
+func TestExportEndpoint_ErrorHandling(t *testing.T) {
+	// Cria servidor de teste com banco válido inicial
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)")
+	if err != nil {
+		t.Fatalf("falha ao abrir sqlite em memória: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao rodar migrations: %v", err)
+	}
+
+	srv := web.NewServer(web.ServerConfig{
+		Addr:             ":0",
+		DB:               db,
+		PublicDataCutoff: "2026-09-03",
+	})
+
+	// Fecha intencionalmente o banco para forçar falha no início da transação de exportação
+	_ = db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/exportar/base.xlsx", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	// Valida que retornou HTTP 500
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status de falha: esperado 500, obtido %d", w.Code)
+	}
+
+	// Valida que NÃO enviou cabeçalho de anexo
+	if cd := w.Header().Get("Content-Disposition"); cd != "" {
+		t.Errorf("Content-Disposition deve ser vazio em caso de erro, obtido %q", cd)
+	}
+
+	// Valida mensagem de erro no corpo
+	if !strings.Contains(w.Body.String(), "Erro interno ao gerar planilha de exportação") {
+		t.Errorf("corpo da resposta de erro inesperado: %s", w.Body.String())
+	}
+}
+

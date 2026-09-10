@@ -158,11 +158,11 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 	insertRel(rel4ID, ent4ID)
 
 	// Inserir Claims
-	insertClaim := func(id, relID, prop, grade, disp string, metricEligible int, status string) {
+	insertClaim := func(id, relID, prop, grade, disp string, metricEligible int, status, limits string) {
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status)
-			VALUES (?, ?, ?, 'Fonte X', 'curated_seed', ?, ?, ?, ?)
-		`, id, relID, prop, grade, disp, metricEligible, status)
+			INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, context_limits)
+			VALUES (?, ?, ?, 'Fonte X', 'curated_seed', ?, ?, ?, ?, 'investigado', ?)
+		`, id, relID, prop, grade, disp, metricEligible, status, limits)
 		if err != nil {
 			t.Fatalf("falha ao inserir claim: %v", err)
 		}
@@ -173,10 +173,10 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 	claim3ID := uuid.NewString() // Quarentena
 	claim4ID := uuid.NewString() // Rejeitado
 
-	insertClaim(claim1ID, rel1ID, "Claim Publico Elegivel", "D", "possible_link", 1, "published")
-	insertClaim(claim2ID, rel2ID, "Claim Publico Contexto", "E", "context_only", 0, "published")
-	insertClaim(claim3ID, rel3ID, "Claim Quarentenado", "E", "possible_link", 0, "quarantined")
-	insertClaim(claim4ID, rel4ID, "Claim Rejeitado", "B", "supports_link", 1, "rejected")
+	insertClaim(claim1ID, rel1ID, "Claim Publico Elegivel", "D", "possible_link", 1, "published", "Ressalva documental sobre escopo societário")
+	insertClaim(claim2ID, rel2ID, "Claim Publico Contexto", "E", "context_only", 0, "published", "Esclarecimento de homônimo arquivado")
+	insertClaim(claim3ID, rel3ID, "Claim Quarentenado", "E", "possible_link", 0, "quarantined", "")
+	insertClaim(claim4ID, rel4ID, "Claim Rejeitado", "B", "supports_link", 1, "rejected", "")
 
 	// Inserir Sources e Evidence
 	insertSource := func(id, url string) {
@@ -279,17 +279,24 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 	foundClaim2 := false
 	for _, r := range claimRows[1:] {
 		prop := r[5]
-		elegivel := r[8]
+		limits := r[6]
+		elegivel := r[9]
 		if prop == "Claim Publico Elegivel" {
 			foundClaim1 = true
 			if elegivel != "Sim" {
 				t.Errorf("Claim1 deveria ter Elegível nas Métricas = 'Sim', obteve %q", elegivel)
+			}
+			if limits != "Ressalva documental sobre escopo societário" {
+				t.Errorf("Claim1 deveria ter Limites Contextuais preservados, obteve %q", limits)
 			}
 		}
 		if prop == "Claim Publico Contexto" {
 			foundClaim2 = true
 			if elegivel != "Não" {
 				t.Errorf("Claim2 deveria ter Elegível nas Métricas = 'Não', obteve %q", elegivel)
+			}
+			if limits != "Esclarecimento de homônimo arquivado" {
+				t.Errorf("Claim2 deveria ter Limites Contextuais preservados, obteve %q", limits)
 			}
 		}
 		if prop == "Claim Quarentenado" || prop == "Claim Rejeitado" {

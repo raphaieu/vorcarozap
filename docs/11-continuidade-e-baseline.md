@@ -16,10 +16,13 @@ Documento sintético de continuidade registrando o estado verificado do VorcaroZ
 
 No ciclo de saneamento e implementação de VZ-009, consolidaram-se as seguintes entregas:
 - **Exportação derivada estritamente da visão pública:** A geração do XLSX decorre exclusivamente da `public_claims_view` e consultas relacionais de suporte ativo, nunca da planilha seed original.
+- **Transação de leitura atômica unificada:** Entidades, alegações e fontes são extraídas sob uma mesma transação `ReadOnly: true`, garantindo consistência estrita entre abas e contagens antes da montagem do XLSX.
 - **Isolamento de visibilidade:** Itens em quarentena técnica (como os 21 registros do seed com Grau E ambíguo), alegações rejeitadas, arquivadas ou metadados de processamento interno não constam na planilha gerada.
-- **Preservação de conteúdo e distinção métrica:** Alegações de contexto e correções com `metric_eligible = false` (ex.: Grau E corrigido) continuam presentes na exportação para integridade documental, com a indicação explícita `Elegível nas Métricas = Não`, enquanto itens da rede figuram com `Sim`.
+- **Preservação de conteúdo e limites contextuais:** Alegações de contexto e correções com `metric_eligible = false` (ex.: Grau E corrigido) continuam presentes na exportação para integridade documental, com a indicação explícita `Elegível nas Métricas = Não`. A nova coluna **"Limites Contextuais / Ressalvas"** (`context_limits`) preserva integralmente as ressalvas e contrapontos exibidos no site.
+- **Metodologia canônica e calibração de relevância:** Aba de metodologia alinhada à definição estrita do produto — Relevância (1 a 5) medindo alcance institucional e interesse público (sem aferição de culpa ou suspeição), Graus A–E definidos canonicamente e seção detalhando o tratamento do seed curado vs. automação futura.
+- **Tratamento seguro no handler de download:** O payload XLSX é gerado em memória (`bytes.Buffer`) antes do envio dos cabeçalhos HTTP. Em caso de falha de extração ou serialização, o endpoint responde com HTTP 500 sem disparar cabeçalho `Content-Disposition`, prevenindo downloads com arquivo corrompido ou vazio.
 - **Prevenção contra Formula Injection:** Todas as células de texto são gravadas com tipagem estrita de string (`SetCellStr`), e caracteres disparadores (`=`, `+`, `-`, `@`, tab) são neutralizados preventivamente com apóstrofo `'`.
-- **4 abas canônicas formatadas:** `Entidades`, `Alegações e Relações`, `Evidências e Fontes`, e `Metodologia e Critérios` (incluindo nota de independência, escala A–E, relevância 1–5 e regras de rede).
+- **4 abas canônicas formatadas:** `Entidades`, `Alegações e Relações`, `Evidências e Fontes`, e `Metodologia e Critérios`.
 - **Rótulos fiéis e linguagem pública:** "Fontes Citadas", "Entidades na Rede" e "Alegações Elegíveis", distinguindo rede ativa do acervo público geral.
 
 ## 3. Validações Executadas
