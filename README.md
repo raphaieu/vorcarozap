@@ -113,12 +113,15 @@ make import
 make compose-proxy
 ```
 
+# Exportar base pública ativa em planilha XLSX
+vorcarozap export [--out <caminho.xlsx>]
+
+# Download HTTP público da planilha
+GET /exportar/base.xlsx (ou /exportar)
+
 ### Comandos planejados para fases posteriores
 
 ```bash
-# Fase 2 / Fase 3 (Exportação e download de dados):
-vorcarozap export
-
 # Fase 4 (Monitoramento automatizado com OpenRouter):
 vorcarozap monitor
 ```

@@ -1,6 +1,6 @@
 # Backlog inicial priorizado
 
-O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após o ciclo de review é **VZ-009**.
+O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-009 é **VZ-020**.
 
 ## P0 — Escopo do MVP
 
@@ -14,8 +14,8 @@ O backlog distingue o que está **concluído**, o que está **planejado no MVP**
 | VZ-006 | P0 | Listagem pública com filtros multifacetados, busca e detalhe de entidades e fontes | Concluído (Fase 3) |
 | VZ-007 | P0 | Metodologia pública, fontes rastreáveis e linguagem humana para Graus A a E | Concluído (Fase 3) |
 | VZ-008 | P0 | Engine de métricas públicas por estado ativo e integração na Home | Concluído (Fase 3) |
-| VZ-009 | P0 | Exportação XLSX derivada do banco e download público | **Próxima etapa funcional após fechamento do review** |
-| VZ-020 | P0 | Verificador GET seguro/limitado e política de `source_access_status` (incorporar `SOURCE_NOT_CHECKED_POLICY_*` ao config; **dependência técnica dos gates de publicação automática**) | Planejado no MVP |
+| VZ-009 | P0 | Exportação XLSX derivada do banco e download público | Concluído (Fase 3) |
+| VZ-020 | P0 | Verificador GET seguro/limitado e política de `source_access_status` (incorporar `SOURCE_NOT_CHECKED_POLICY_*` ao config; **dependência técnica dos gates de publicação automática**) | **Próxima etapa funcional no MVP** |
 | VZ-010 | P0 | ResearchProvider/OpenRouter e esteira de web search | Planejado no MVP |
 | VZ-011 | P0 | Schema estruturado, normalização de dados e deduplicação | Planejado no MVP |
 | VZ-012 | P0 | Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E | Planejado no MVP |

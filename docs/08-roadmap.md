@@ -10,15 +10,14 @@ Visão, modelo editorial, arquitetura, schema, ADRs, backlog e escopo econômico
 
 CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite`), migrations com Goose, Compose/Caddy, layout mobile-first e página base. (VZ-001, VZ-002, VZ-003).
 
-## Fase 2 — núcleo editorial e importação (Núcleo Concluído)
+## Fase 2 — núcleo editorial e importação (Concluída)
 
 - **Concluído:** Entidades, relações, claims com disposição/elegibilidade métrica, evidence_sources moderáveis, sources com acessibilidade, estados, importador XLSX com `origin = curated_seed`, mapeamento versionado em YAML (`config/import-mapping-v1.yaml`) e idempotência comprovada no SQLite. (VZ-004, VZ-005).
-- **Em transição para Fase 3:** Exportação XLSX derivada do banco (VZ-009 — próximo item prioritário).
 
-## Fase 3 — página pública e métricas (Interface Concluída)
+## Fase 3 — página pública, métricas e exportação (Concluída)
 
-- **Concluído:** Listagem com busca e filtros multifacetados (`/pessoas`), detalhes de perfis com segregação de fontes e defesas (`/pessoas/{slug}`), página canônica de metodologia e critérios (`/metodologia`), motor de métricas por estado ativo (`public_claims_view`) e Home pública com indicadores e distribuições integrados (`/`). (VZ-006, VZ-007, VZ-008).
-- **Próximo item:** Download/exportação direta da base de dados em planilha XLSX (VZ-009).
+- **Concluído:** Listagem com busca e filtros multifacetados (`/pessoas`), detalhes de perfis com segregação de fontes e defesas (`/pessoas/{slug}`), página canônica de metodologia e critérios (`/metodologia`), motor de métricas por estado ativo (`public_claims_view`), Home pública com indicadores e distribuições integrados (`/`), e exportação XLSX derivada do banco SQLite com subcomando CLI e download HTTP (`/exportar/base.xlsx`). (VZ-006, VZ-007, VZ-008, VZ-009).
+- **Próximo item:** Verificador GET seguro/limitado e política de `source_access_status` (VZ-020 — dependência técnica dos gates de publicação automática da Fase 4).
 
 ## Fase 4 — monitoramento OpenRouter (Planejado no MVP)
 

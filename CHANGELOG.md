@@ -2,7 +2,34 @@
 
 Todas as alterações notáveis deste projeto são registradas neste documento. O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
-## [Não lançado] — Ciclo de Saneamento da Apresentação e Consolidação da Visão Documental
+## [Não lançado] — VZ-009: Exportação XLSX Derivada da Base Pública
+
+### Adicionado
+- **Motor de Exportação XLSX (`internal/exporter`):**
+  - Implementação da geração determinística de planilhas XLSX via `github.com/xuri/excelize/v2` a partir de consultas exclusivas ao estado público do SQLite (`public_claims_view`).
+  - Segregação dos dados em 4 abas canônicas: `Entidades`, `Alegações e Relações`, `Evidências e Fontes`, e `Metodologia e Critérios`.
+  - Proteção estrita contra Formula Injection (CSV/XLSX injection) gravando todas as células de texto com `SetCellStr` e neutralizando caracteres disparadores (`=`, `+`, `-`, `@`, tab).
+  - Preservação da distinção de elegibilidade métrica: alegações públicas com `metric_eligible = false` (ex.: Grau E corrigido) continuam na exportação com a coluna `Elegível nas Métricas = Não`, enquanto itens de rede figuram com `Sim`.
+  - Exclusão estrita de dados em quarentena (21 registros legados), alegações rejeitadas, arquivadas ou metadados de processamento interno.
+  - Formatação visual institucional, larguras calibradas e congelamento de painéis de cabeçalho.
+- **Subcomando CLI de Exportação (`cmd/vorcarozap`):**
+  - Comando `vorcarozap export [--out <caminho.xlsx>]` para geração de arquivo diretamente pelo terminal.
+- **Download HTTP e Integração na Interface Web (`internal/web`, `web/pages`, `web/components`):**
+  - Endpoint `GET /exportar/base.xlsx` com cabeçalhos apropriados de download de anexo (`Content-Disposition: attachment; filename="vorcarozap-dados-publicos-YYYY-MM-DD.xlsx"`).
+  - Redirect amigável `GET /exportar` -> `/exportar/base.xlsx`.
+  - Botão de download no cabeçalho de resultados de `/pessoas`, no card de consulta da Home e link no menu de navegação.
+- **Suíte de Testes Automatizados:**
+  - Testes unitários de sanitização e proteção contra formula injection em `internal/exporter/exporter_test.go`.
+  - Testes de integridade de abas, células e cabeçalhos em cenário de base vazia.
+  - Testes de exclusão de estados não públicos e validação de elegibilidade métrica.
+  - Smoke test end-to-end com importação real da planilha seed e exportação no banco SQLite (`internal/exporter/smoke_export_test.go`).
+  - Testes de integração HTTP do endpoint `/exportar/base.xlsx` em `internal/web/server_test.go`.
+
+### Modificado
+- **Makefile:** Inclusão da flag `-T` em `DEV_RUN` para desabilitar alocação de pseudo-TTY do Docker Compose em execuções de automação não interativas.
+- **Documentação:** Atualização de `docs/08-roadmap.md`, `docs/09-backlog-inicial.md`, `docs/11-continuidade-e-baseline.md` e `README.md`, marcando VZ-009 como concluído e definindo VZ-020 como próxima etapa.
+
+## [0.3.0] — Ciclo de Saneamento da Apresentação e Consolidação da Visão Documental
 
 ### Modificado
 - **Apresentação pública da Home (`web/pages/home.templ`):**
