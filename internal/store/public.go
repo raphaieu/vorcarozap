@@ -262,3 +262,36 @@ func ListPublicCategories(ctx context.Context, db *sql.DB) ([]string, error) {
 	}
 	return cats, nil
 }
+
+// PublicExportData agrega todas as fatias públicas necessárias para a exportação XLSX.
+type PublicExportData struct {
+	Entities []sqlc.ListPublicEntitiesForExportRow
+	Claims   []sqlc.ListPublicClaimsForExportRow
+	Sources  []sqlc.ListPublicEvidenceSourcesForExportRow
+}
+
+// GetPublicExportData extrai os conjuntos de entidades, alegações e evidências/fontes públicas ativas.
+func GetPublicExportData(ctx context.Context, db *sql.DB) (*PublicExportData, error) {
+	q := sqlc.New(db)
+
+	entities, err := q.ListPublicEntitiesForExport(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao listar entidades para exportação: %w", err)
+	}
+
+	claims, err := q.ListPublicClaimsForExport(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao listar claims para exportação: %w", err)
+	}
+
+	sources, err := q.ListPublicEvidenceSourcesForExport(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao listar evidências/fontes para exportação: %w", err)
+	}
+
+	return &PublicExportData{
+		Entities: entities,
+		Claims:   claims,
+		Sources:  sources,
+	}, nil
+}
