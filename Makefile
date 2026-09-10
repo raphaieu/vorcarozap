@@ -1,5 +1,5 @@
 COMPOSE ?= docker compose
-DEV_RUN := $(COMPOSE) --profile dev run --rm dev
+DEV_RUN := $(COMPOSE) --profile dev run --rm -T dev
 
 IMPORT_FILE ?= _notes/mapa-vorcaro-contatos-2026-09-03.xlsx
 
