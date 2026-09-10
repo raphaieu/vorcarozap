@@ -154,8 +154,11 @@ func TestSmokeWithRealSpreadsheet(t *testing.T) {
 	if !strings.Contains(homeBody, "Monitoramento automático ainda não ativado") {
 		t.Errorf("Home não contém aviso de monitoramento ainda não ativado")
 	}
-	if !strings.Contains(homeBody, "Pessoas na Rede") || !strings.Contains(homeBody, "Vínculos Qualificados") {
+	if !strings.Contains(homeBody, "Entidades na Rede") || !strings.Contains(homeBody, "Alegações Elegíveis") {
 		t.Errorf("Home não contém cards de métricas ativas")
+	}
+	if !strings.Contains(homeBody, "Fontes Citadas") {
+		t.Errorf("Home não contém card de fontes citadas")
 	}
 	if !strings.Contains(homeBody, "Alegações por Grau Probatório (A–E)") {
 		t.Errorf("Home não contém distribuição de graus")

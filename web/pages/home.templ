@@ -11,7 +11,7 @@ templ Home(vm HomeVM) {
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<meta name="description" content="VorcaroZAP — Plataforma investigativa e documental com fontes auditáveis, classificação editorial e métricas públicas por estado ativo."/>
+			<meta name="description" content="VorcaroZAP — Plataforma investigativa e documental com fontes rastreáveis, classificação editorial e métricas públicas por estado ativo."/>
 			<title>VorcaroZAP — Base Documental e Investigativa</title>
 			<link rel="stylesheet" href="/static/css/app.css"/>
 		</head>
@@ -30,7 +30,7 @@ templ Home(vm HomeVM) {
 				<section class="monitoring-inactive-banner" aria-label="Status do Monitoramento">
 					<strong>Monitoramento automático ainda não ativado</strong>
 					<span>
-						A plataforma opera atualmente com a base documental consolidada até <strong>{ vm.CutoffDateHuman }</strong>, resultante da importação e curadoria inicial com auditoria de fontes públicas. A esteira de monitoramento autônomo periódico com OpenRouter será habilitada em etapa posterior.
+						A plataforma opera atualmente com a base documental consolidada até <strong>{ vm.CutoffDateHuman }</strong>, resultante da importação e curadoria inicial a partir de fontes públicas citadas. A esteira de monitoramento autônomo contínuo será habilitada em etapa posterior.
 					</span>
 				</section>
 
@@ -41,18 +41,18 @@ templ Home(vm HomeVM) {
 						<span class="status-tag" style="background: var(--color-brand); color: #fff;">Estado Ativo</span>
 					</h2>
 					<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;">
-						Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações com status <code>published</code> e <code>metric_eligible = true</code>, diferenciando relações comprovadas de menções contextuais.
+						Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações ativas qualificadas como vínculos substantivos, diferenciando conexões diretas de menções de mero contexto ou correções.
 					</p>
 					<div class="metrics-grid">
 						<div class="metric-box metric-box-featured">
-							<div class="metric-label">Pessoas na Rede</div>
+							<div class="metric-label">Entidades na Rede</div>
 							<div class="metric-value">{ fmt.Sprintf("%d", vm.EligibleEntities) }</div>
-							<div class="metric-subtitle">Elegíveis para métricas</div>
+							<div class="metric-subtitle">Pessoas e organizações elegíveis</div>
 						</div>
 						<div class="metric-box metric-box-featured">
-							<div class="metric-label">Vínculos Qualificados</div>
+							<div class="metric-label">Alegações Elegíveis</div>
 							<div class="metric-value">{ fmt.Sprintf("%d", vm.EligibleClaims) }</div>
-							<div class="metric-subtitle">metric_eligible = true</div>
+							<div class="metric-subtitle">Vínculos qualificados na rede</div>
 						</div>
 						<div class="metric-box">
 							<div class="metric-label">Total de Entidades</div>
@@ -65,7 +65,7 @@ templ Home(vm HomeVM) {
 							<div class="metric-subtitle">Inclui contexto e correções</div>
 						</div>
 						<div class="metric-box">
-							<div class="metric-label">Fontes Auditadas</div>
+							<div class="metric-label">Fontes Citadas</div>
 							<div class="metric-value">{ fmt.Sprintf("%d", vm.TotalSources) }</div>
 							<div class="metric-subtitle">Fontes ativas distintas</div>
 						</div>
@@ -83,7 +83,7 @@ templ Home(vm HomeVM) {
 					<section class="card dist-card" aria-label="Distribuição por Grau">
 						<h3 class="dist-card-title">Alegações por Grau Probatório (A–E)</h3>
 						<p style="font-size: 0.8rem; color: var(--color-text-muted);">
-							Proporção documental das alegações elegíveis na rede.
+							Proporção das alegações elegíveis na rede. Os links abaixo consultam o acervo público geral de pessoas e organizações.
 						</p>
 						<ul class="dist-list">
 							for _, g := range vm.GradeDistribution {
@@ -101,7 +101,7 @@ templ Home(vm HomeVM) {
 										<div class={ "metric-bar-fill", "grade-fill-" + g.Grade } style={ "width: " + g.CSSWidth + ";" }></div>
 									</div>
 									<a href={ templ.SafeURL(g.FilterURL) } class="dist-filter-link">
-										Ver pessoas com alegações Grau { g.Grade } &rarr;
+										Ver entidades com alegações Grau { g.Grade } no acervo público &rarr;
 									</a>
 								</li>
 							}
@@ -112,7 +112,7 @@ templ Home(vm HomeVM) {
 					<section class="card dist-card" aria-label="Distribuição por Relevância">
 						<h3 class="dist-card-title">Entidades por Relevância Pública (1–5)</h3>
 						<p style="font-size: 0.8rem; color: var(--color-text-muted);">
-							Alcance institucional das entidades qualificadas na rede.
+							Alcance institucional das entidades qualificadas na rede. Os links de filtro abrem a consulta no acervo público geral.
 						</p>
 						<ul class="dist-list">
 							for _, r := range vm.RelevanceDistribution {
@@ -127,7 +127,7 @@ templ Home(vm HomeVM) {
 										<div class="metric-bar-fill" style={ "width: " + r.CSSWidth + ";" }></div>
 									</div>
 									<a href={ templ.SafeURL(r.FilterURL) } class="dist-filter-link">
-										Ver pessoas de nível { fmt.Sprintf("%d", r.Relevance) } &rarr;
+										Ver entidades de nível { fmt.Sprintf("%d", r.Relevance) } no acervo público &rarr;
 									</a>
 								</li>
 							}
@@ -139,7 +139,7 @@ templ Home(vm HomeVM) {
 						<section class="card dist-card" aria-label="Distribuição por Categoria">
 							<h3 class="dist-card-title">Entidades por Categoria</h3>
 							<p style="font-size: 0.8rem; color: var(--color-text-muted);">
-								Divisão temática das entidades da rede elegível.
+								Divisão temática das entidades da rede elegível. Os links de filtro abrem a consulta no acervo público geral.
 							</p>
 							<ul class="dist-list">
 								for _, c := range vm.CategoryDistribution {
@@ -154,7 +154,7 @@ templ Home(vm HomeVM) {
 											<div class="metric-bar-fill" style={ "width: " + c.CSSWidth + ";" }></div>
 										</div>
 										<a href={ templ.SafeURL(c.FilterURL) } class="dist-filter-link">
-											Filtrar por { c.Category } &rarr;
+											Filtrar por { c.Category } no acervo público &rarr;
 										</a>
 									</li>
 								}
@@ -171,7 +171,7 @@ templ Home(vm HomeVM) {
 							<span class="status-tag">Corte { vm.CutoffDateHuman }</span>
 						</h2>
 						<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;">
-							Últimas proposições registradas na base curada inicial com comprovação documental.
+							Últimas proposições registradas na base curada inicial com fontes citadas.
 						</p>
 						<div class="recent-claims-list">
 							for _, rc := range vm.RecentClaims {

@@ -314,8 +314,11 @@ func TestHomeMetricsRendering(t *testing.T) {
 	body := w.Body.String()
 
 	// 1. Visão Geral e Rede Elegível
-	if !strings.Contains(body, "Pessoas na Rede") || !strings.Contains(body, "Vínculos Qualificados") {
+	if !strings.Contains(body, "Entidades na Rede") || !strings.Contains(body, "Alegações Elegíveis") {
 		t.Errorf("cards de rede qualificada não renderizados")
+	}
+	if !strings.Contains(body, "Fontes Citadas") {
+		t.Errorf("card de fontes citadas não renderizado")
 	}
 	if !strings.Contains(body, "Total de Entidades") || !strings.Contains(body, "Total de Alegações") {
 		t.Errorf("cards de totais públicos não renderizados")

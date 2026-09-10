@@ -34,7 +34,7 @@ func Home(vm HomeVM) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><meta name=\"description\" content=\"VorcaroZAP — Plataforma investigativa e documental com fontes auditáveis, classificação editorial e métricas públicas por estado ativo.\"><title>VorcaroZAP — Base Documental e Investigativa</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"></head><body>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><meta name=\"description\" content=\"VorcaroZAP — Plataforma investigativa e documental com fontes rastreáveis, classificação editorial e métricas públicas por estado ativo.\"><title>VorcaroZAP — Base Documental e Investigativa</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"></head><body>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -55,7 +55,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</strong>, resultante da importação e curadoria inicial com auditoria de fontes públicas. A esteira de monitoramento autônomo periódico com OpenRouter será habilitada em etapa posterior.</span></section><!-- Seção: Visão Geral do Acervo e Rede Elegível --><section class=\"card\" aria-label=\"Indicadores Documentais e Métricas da Rede\"><h2 class=\"card-title\"><span>Métricas da Rede Documental</span> <span class=\"status-tag\" style=\"background: var(--color-brand); color: #fff;\">Estado Ativo</span></h2><p style=\"font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;\">Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações com status <code>published</code> e <code>metric_eligible = true</code>, diferenciando relações comprovadas de menções contextuais.</p><div class=\"metrics-grid\"><div class=\"metric-box metric-box-featured\"><div class=\"metric-label\">Pessoas na Rede</div><div class=\"metric-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</strong>, resultante da importação e curadoria inicial a partir de fontes públicas citadas. A esteira de monitoramento autônomo contínuo será habilitada em etapa posterior.</span></section><!-- Seção: Visão Geral do Acervo e Rede Elegível --><section class=\"card\" aria-label=\"Indicadores Documentais e Métricas da Rede\"><h2 class=\"card-title\"><span>Métricas da Rede Documental</span> <span class=\"status-tag\" style=\"background: var(--color-brand); color: #fff;\">Estado Ativo</span></h2><p style=\"font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;\">Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações ativas qualificadas como vínculos substantivos, diferenciando conexões diretas de menções de mero contexto ou correções.</p><div class=\"metrics-grid\"><div class=\"metric-box metric-box-featured\"><div class=\"metric-label\">Entidades na Rede</div><div class=\"metric-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -68,7 +68,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><div class=\"metric-subtitle\">Elegíveis para métricas</div></div><div class=\"metric-box metric-box-featured\"><div class=\"metric-label\">Vínculos Qualificados</div><div class=\"metric-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><div class=\"metric-subtitle\">Pessoas e organizações elegíveis</div></div><div class=\"metric-box metric-box-featured\"><div class=\"metric-label\">Alegações Elegíveis</div><div class=\"metric-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -81,7 +81,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><div class=\"metric-subtitle\">metric_eligible = true</div></div><div class=\"metric-box\"><div class=\"metric-label\">Total de Entidades</div><div class=\"metric-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><div class=\"metric-subtitle\">Vínculos qualificados na rede</div></div><div class=\"metric-box\"><div class=\"metric-label\">Total de Entidades</div><div class=\"metric-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -107,7 +107,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div><div class=\"metric-subtitle\">Inclui contexto e correções</div></div><div class=\"metric-box\"><div class=\"metric-label\">Fontes Auditadas</div><div class=\"metric-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div><div class=\"metric-subtitle\">Inclui contexto e correções</div></div><div class=\"metric-box\"><div class=\"metric-label\">Fontes Citadas</div><div class=\"metric-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -146,7 +146,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div></div></section><!-- Seção: Distribuições Estatísticas --><div class=\"distributions-grid\"><!-- Distribuição por Grau Documental --><section class=\"card dist-card\" aria-label=\"Distribuição por Grau\"><h3 class=\"dist-card-title\">Alegações por Grau Probatório (A–E)</h3><p style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Proporção documental das alegações elegíveis na rede.</p><ul class=\"dist-list\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div></div></section><!-- Seção: Distribuições Estatísticas --><div class=\"distributions-grid\"><!-- Distribuição por Grau Documental --><section class=\"card dist-card\" aria-label=\"Distribuição por Grau\"><h3 class=\"dist-card-title\">Alegações por Grau Probatório (A–E)</h3><p style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Proporção das alegações elegíveis na rede. Os links abaixo consultam o acervo público geral de pessoas e organizações.</p><ul class=\"dist-list\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -273,25 +273,25 @@ func Home(vm HomeVM) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"dist-filter-link\">Ver pessoas com alegações Grau ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"dist-filter-link\">Ver entidades com alegações Grau ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(g.Grade)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/home.templ`, Line: 104, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/home.templ`, Line: 104, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " &rarr;</a></li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " no acervo público &rarr;</a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</ul></section><!-- Distribuição por Relevância Pública --><section class=\"card dist-card\" aria-label=\"Distribuição por Relevância\"><h3 class=\"dist-card-title\">Entidades por Relevância Pública (1–5)</h3><p style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Alcance institucional das entidades qualificadas na rede.</p><ul class=\"dist-list\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</ul></section><!-- Distribuição por Relevância Pública --><section class=\"card dist-card\" aria-label=\"Distribuição por Relevância\"><h3 class=\"dist-card-title\">Entidades por Relevância Pública (1–5)</h3><p style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Alcance institucional das entidades qualificadas na rede. Os links de filtro abrem a consulta no acervo público geral.</p><ul class=\"dist-list\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -361,20 +361,20 @@ func Home(vm HomeVM) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"dist-filter-link\">Ver pessoas de nível ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"dist-filter-link\">Ver entidades de nível ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", r.Relevance))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/home.templ`, Line: 130, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/home.templ`, Line: 130, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, " &rarr;</a></li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, " no acervo público &rarr;</a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -384,7 +384,7 @@ func Home(vm HomeVM) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if len(vm.CategoryDistribution) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<section class=\"card dist-card\" aria-label=\"Distribuição por Categoria\"><h3 class=\"dist-card-title\">Entidades por Categoria</h3><p style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Divisão temática das entidades da rede elegível.</p><ul class=\"dist-list\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<section class=\"card dist-card\" aria-label=\"Distribuição por Categoria\"><h3 class=\"dist-card-title\">Entidades por Categoria</h3><p style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Divisão temática das entidades da rede elegível. Os links de filtro abrem a consulta no acervo público geral.</p><ul class=\"dist-list\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -467,7 +467,7 @@ func Home(vm HomeVM) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, " &rarr;</a></li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, " no acervo público &rarr;</a></li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -495,7 +495,7 @@ func Home(vm HomeVM) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</span></h2><p style=\"font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;\">Últimas proposições registradas na base curada inicial com comprovação documental.</p><div class=\"recent-claims-list\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</span></h2><p style=\"font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;\">Últimas proposições registradas na base curada inicial com fontes citadas.</p><div class=\"recent-claims-list\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
