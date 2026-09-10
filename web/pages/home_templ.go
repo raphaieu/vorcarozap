@@ -55,7 +55,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</strong>, resultante da importação e curadoria inicial a partir de fontes públicas citadas. A esteira de monitoramento autônomo contínuo será habilitada em etapa posterior.</span></section><!-- Seção: Visão Geral do Acervo e Rede Elegível --><section class=\"card\" aria-label=\"Indicadores Documentais e Métricas da Rede\"><h2 class=\"card-title\"><span>Métricas da Rede Documental</span> <span class=\"status-tag\" style=\"background: var(--color-brand); color: #fff;\">Estado Ativo</span></h2><p style=\"font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;\">Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações ativas qualificadas como vínculos substantivos, diferenciando conexões diretas de menções de mero contexto ou correções.</p><div class=\"metrics-grid\"><div class=\"metric-box metric-box-featured\"><div class=\"metric-label\">Entidades na Rede</div><div class=\"metric-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</strong>, resultante da importação e curadoria inicial a partir de fontes públicas citadas. A esteira de monitoramento autônomo contínuo será habilitada em etapa posterior.</span></section><!-- Seção: Visão Geral do Acervo e Rede Elegível --><section class=\"card\" aria-label=\"Indicadores Documentais e Métricas da Rede\"><h2 class=\"card-title\"><span>Métricas da Rede Documental</span> <span class=\"status-tag\" style=\"background: var(--color-brand); color: #fff;\">Estado Ativo</span></h2><p style=\"font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;\">Totais consolidados em tempo real. As métricas consideram alegações publicadas elegíveis, incluindo vínculos possíveis conforme a metodologia.</p><div class=\"metrics-grid\"><div class=\"metric-box metric-box-featured\"><div class=\"metric-label\">Entidades na Rede</div><div class=\"metric-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -81,7 +81,7 @@ func Home(vm HomeVM) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><div class=\"metric-subtitle\">Vínculos qualificados na rede</div></div><div class=\"metric-box\"><div class=\"metric-label\">Total de Entidades</div><div class=\"metric-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><div class=\"metric-subtitle\">Alegações consideradas nas métricas</div></div><div class=\"metric-box\"><div class=\"metric-label\">Total de Entidades</div><div class=\"metric-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

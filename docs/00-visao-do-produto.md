@@ -23,7 +23,7 @@ Iniciativas externas como o [MasterWhats](https://masterwhats.recomendeme.com.br
 - **Representação secundária:** Transcrições, visualizadores de mensagens ou resumos são sempre representações secundárias. O documento original, laudo oficial, página, figura e limitações metodológicas devem permanecer claramente distinguíveis pelo leitor.
 - **Menção não é conluio nem culpa:** A mera citação de um nome em mensagem, anotação ou relatório policial não implica interlocução direta, anuência, vínculo substantivo ou juízo condenatório.
 - **Proibição de fabricação ou elevação automática:** O sistema jamais preenche lacunas com dados inventados, não resolve homônimos ou identidades por mera semelhança e não eleva o grau documental (A–E) por inferência de modelos de linguagem.
-- **Não independência da mesma fonte:** Múltiplos trechos, capturas ou notas derivados do mesmo laudo, documento ou veículo de imprensa constituem a mesma fonte primária e não configuram corroboração independente.
+- **Origem da informação vs. veículo publicador:** A avaliação de independência probatória considera a origem documental e investigativa da informação, e não apenas o veículo que a publicou. Múltiplos veículos que apenas reproduzem a mesma origem (como o mesmo laudo pericial, nota de vazamento, comunicado oficial ou despacho) derivam de uma fonte primária comum e não configuram corroboração independente; reciprocamente, um mesmo veículo de imprensa pode publicar reportagens com apurações factuais e origens documentais distintas e independentes.
 
 ## Estrutura de Entregas (MVP e Evolução)
 

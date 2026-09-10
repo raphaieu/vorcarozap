@@ -4,7 +4,8 @@ Documento sintético de continuidade registrando o estado verificado do VorcaroZ
 
 ## 1. Baseline e Estado Comprovado
 
-A aplicação opera como monólito Go modular, persistido em SQLite modo WAL (`modernc.org/sqlite`, [ADR-010](adr/ADR-010-escolha-do-driver-sqlite.md)), com renderização Server-Side (Templ) sem dependência de JavaScript. O ambiente é 100% conteinerizado via Docker.
+- **Commit-base de referência:** `309ee8282203f18f8f66a5217d8a004edfcd0e66` (HEAD verificado em 2026-09-10).
+- **Arquitetura comprovada:** A aplicação opera como monólito Go modular, persistido em SQLite modo WAL (`modernc.org/sqlite`, [ADR-010](adr/ADR-010-escolha-do-driver-sqlite.md)), com renderização Server-Side (Templ) sem dependência de JavaScript. O ambiente é 100% conteinerizado via Docker.
 
 ### Entregas verificadas no código:
 - **Fase 1 — Fundação:** CLI, servidor Chi, migrations (Goose), Dockerfile enxuto não-root e Compose com proxy Caddy opcional ([ADR-001](adr/ADR-001-monolito-modular-em-go.md), [ADR-002](adr/ADR-002-sqlite-com-wal.md), [ADR-003](adr/ADR-003-renderizacao-server-side.md)).
@@ -13,10 +14,10 @@ A aplicação opera como monólito Go modular, persistido em SQLite modo WAL (`m
 
 ## 2. Saneamento de Apresentação Realizado
 
-No ciclo recente de saneamento, corrigiram-se achados textuais na Home e no README:
+No ciclo de saneamento, corrigiram-se achados textuais na Home e no README:
 - **Rótulos fiéis:** “Fontes Auditadas” &rarr; “Fontes Citadas” (fiel à contagem de fontes ativas distintas); “Pessoas na Rede” &rarr; “Entidades na Rede” (abrangendo pessoas físicas e organizações); “Vínculos Qualificados” &rarr; “Alegações Elegíveis” (unidade canônica `claim`).
-- **Linguagem pública transparente:** Remoção de termos internos de banco de dados (`published`, `metric_eligible`, `OpenRouter`) na interface de usuário.
-- **Rigor factual:** Eliminação de afirmações genéricas de “comprovação documental” ou “relações comprovadas” não sustentadas pela política (Graus D/E do seed podem ser públicos/elegíveis; `not_checked` indica ausência de verificação, não auditoria).
+- **Linguagem pública transparente:** Remoção de termos internos de banco de dados (`published`, `metric_eligible`, `OpenRouter`) na interface de usuário. Subtítulo ajustado para “Alegações consideradas nas métricas” e texto esclarecendo que as métricas abrangem alegações elegíveis incluindo vínculos possíveis.
+- **Rigor factual e diferenciação de graus:** Eliminação de afirmações genéricas de “comprovação documental” ou “relações comprovadas” não sustentadas pela política. No mapeamento do seed (`config/import-mapping-v1.yaml`), o Grau D é público e elegível para as métricas (`metric_eligible = true`, ex.: alegações atribuídas e vínculos potenciais); o Grau E corrigido é público, mas sem elegibilidade métrica (`published`, `context_only`, `metric_eligible = false`); e o Grau E ambíguo fica em quarentena (`quarantined`, `metric_eligible = false`). O status `not_checked` indica unicamente ausência de teste prévio de acessibilidade da URL, não auditoria.
 - **Distinção entre rede e acervo:** Esclarecimento textual de que as distribuições estatísticas refletem a rede elegível, enquanto os links de filtro abrem o acervo público geral em `/pessoas`.
 - **Alinhamento de fases:** Sincronização da numeração de fases no `README.md` com o [Roadmap](08-roadmap.md).
 
@@ -39,10 +40,10 @@ Limites e diretrizes fixados:
 1. **Sem reuso não autorizado:** Nenhum código ou dado do projeto `masterzap` foi incorporado, dada a ausência de licença identificada na raiz consultada.
 2. **Schema preservado:** O schema do MVP já atende plenamente à referenciação pontual através de `sources`, `evidence_sources.locator` e `evidence_sources.excerpt`. Não há criação de tabelas de chat/mensagens neste estágio.
 3. **Representação secundária:** Transcrições e resumos nunca substituem o documento oficial, cujo laudo, página e figura devem ser informados.
-4. **Menção não é culpa:** Citações em mensagens ou notas não configuram conluio ou ilícito. Múltiplos trechos do mesmo laudo não configuram confirmação independente.
+4. **Origem da informação vs. veículo:** A independência probatória considera a origem documental da informação, e não apenas o veículo que a publicou. Múltiplos veículos que reproduzem a mesma peça/laudo pericial não configuram corroboração independente; um mesmo veículo pode publicar apurações factuais de origens distintas. Citações em mensagens ou notas não configuram conluio ou ilícito.
 5. **Diferimento de viewer:** Visualizadores específicos de conversas ficam catalogados como evolução proposta pós-MVP (VZ-023).
 
 ## 5. Próximo Passo Prioritário
 
-A próxima etapa funcional aprovada para execução é:
+A próxima etapa funcional após fechamento do review é:
 - **[VZ-009](09-backlog-inicial.md): Exportação XLSX derivada diretamente do banco de dados**, fechando o ciclo de entrega de dados do MVP antes do início do monitoramento automatizado.

@@ -8,7 +8,8 @@ Todas as alterações notáveis deste projeto são registradas neste documento. 
 - **Apresentação pública da Home (`web/pages/home.templ`):**
   - Rótulo “Fontes Auditadas” alterado para “Fontes Citadas”, refletindo com exatidão a contagem de fontes ativas distintas.
   - Rótulo “Pessoas na Rede” alterado para “Entidades na Rede”, incorporando organizações ao lado de pessoas físicas.
-  - Rótulo “Vínculos Qualificados” alterado para “Alegações Elegíveis”, alinhando a nomenclatura à unidade de contagem (`claim`).
+  - Rótulo “Vínculos Qualificados” alterado para “Alegações Elegíveis”, alinhando a nomenclatura à unidade de contagem (`claim`), com subtítulo corrigido para “Alegações consideradas nas métricas”.
+  - Texto explicativo ajustado para esclarecer com precisão que as métricas consideram alegações publicadas elegíveis, incluindo vínculos possíveis conforme a metodologia.
   - Substituição de jargões internos do banco (`published`, `metric_eligible = true`, `OpenRouter`) por linguagem pública clara e acessível.
   - Remoção de afirmações genéricas não respaldadas (“relações comprovadas”, “comprovação documental”, “auditoria de fontes”).
   - Inclusão de notas explicativas nos cartões de distribuição esclarecendo que os links de filtro direcionam para a consulta ampla do acervo público em `/pessoas`.
@@ -20,6 +21,9 @@ Todas as alterações notáveis deste projeto são registradas neste documento. 
   - Atualização de comandos planejados para fases posteriores.
 - **Testes de Renderização e Smoke (`internal/web`):**
   - Atualização de asserções em `server_test.go` e `smoke_test.go` para verificar os novos rótulos de apresentação pública.
+- **Visão do Produto, ADR-012 e Critérios de Aceite:**
+  - Correção na regra de não independência para focar na origem factual/documental da informação e não apenas no veículo publicador.
+  - Ajuste do status de VZ-009 para “próxima etapa funcional após fechamento do review”.
 
 ### Adicionado
 - **ADR-012 (`docs/adr/ADR-012-navegacao-documental-e-referencias-a-acervos-externos.md`):**
@@ -27,6 +31,8 @@ Todas as alterações notáveis deste projeto são registradas neste documento. 
   - Fixação de diretrizes de rastreabilidade pontual via `evidence_sources.locator` e `evidence_sources.excerpt` no schema existente do MVP.
   - Fixação de limites éticos e jurídicos: ausência de licença no repositório consultado veda reuso de código/dados; menção não implica interlocução nem culpa; transcrição é representação secundária; proibição de fabricação de dados ou elevação automática de grau.
 - **Documento de Continuidade e Baseline (`docs/11-continuidade-e-baseline.md`):**
-  - Síntese técnica do baseline comprovado, testes executados, decisões editoriais e direcionamento para o próximo passo funcional (VZ-009).
+  - Síntese técnica do baseline comprovado com ancoragem concreta no commit `309ee8282203f18f8f66a5217d8a004edfcd0e66` (2026-09-10).
+  - Discriminação exata do tratamento dos Graus D (público e elegível) e E (corrigido: público não-elegível; ambíguo: quarentena) no seed curado.
+  - Direcionamento para o próximo passo funcional (VZ-009 após fechamento do review).
 - **Consolidação de Documentação:**
   - Atualização de `docs/00-visao-do-produto.md`, `docs/08-roadmap.md`, `docs/09-backlog-inicial.md` e `docs/10-criterios-de-aceite.md` delimitando o estado implementado, o planejado no MVP (com VZ-020 e VZ-021 explicitados como dependências) e as propostas de evolução pós-MVP (VZ-022 e VZ-023).

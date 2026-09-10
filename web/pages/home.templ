@@ -41,7 +41,7 @@ templ Home(vm HomeVM) {
 						<span class="status-tag" style="background: var(--color-brand); color: #fff;">Estado Ativo</span>
 					</h2>
 					<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.75rem;">
-						Totais consolidados em tempo real. As métricas da rede computam exclusivamente alegações ativas qualificadas como vínculos substantivos, diferenciando conexões diretas de menções de mero contexto ou correções.
+						Totais consolidados em tempo real. As métricas consideram alegações publicadas elegíveis, incluindo vínculos possíveis conforme a metodologia.
 					</p>
 					<div class="metrics-grid">
 						<div class="metric-box metric-box-featured">
@@ -52,7 +52,7 @@ templ Home(vm HomeVM) {
 						<div class="metric-box metric-box-featured">
 							<div class="metric-label">Alegações Elegíveis</div>
 							<div class="metric-value">{ fmt.Sprintf("%d", vm.EligibleClaims) }</div>
-							<div class="metric-subtitle">Vínculos qualificados na rede</div>
+							<div class="metric-subtitle">Alegações consideradas nas métricas</div>
 						</div>
 						<div class="metric-box">
 							<div class="metric-label">Total de Entidades</div>

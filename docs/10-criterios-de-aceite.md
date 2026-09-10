@@ -54,7 +54,7 @@ São obrigatórios testes unitários table-driven para decisão `published`/`qua
 - Rastreabilidade pontual: referências a laudos e peças utilizam `evidence_sources.locator` (ex: número do laudo, página, figura) e `evidence_sources.excerpt` (trecho literal), mantendo o documento oficial primário sempre distinguível de qualquer transcrição secundária.
 - Menção não é conluio nem culpa: a identificação de um nome em anotação ou laudo documental não autoriza inferir contato direto ou ilícito.
 - Proibição de fabricação: nenhum modelo ou operador pode preencher lacunas contextuais ou atribuir identidades por mera semelhança nominal.
-- Não independência probatória: múltiplos trechos derivados do mesmo laudo pericial ou inquérito pertencem à mesma fonte e não constituem confirmação externa independente.
+- Independência da origem documental: a avaliação de corroboração considera a origem factual da informação e não apenas o veículo publicador; múltiplos veículos reproduzindo a mesma peça ou vazamento derivam de fonte primária comum e não constituem confirmação externa independente, assim como múltiplos trechos do mesmo laudo pertencem à mesma origem.
 - Sem violação de licenças: nenhuma importação ou reuso de bases/código de terceiros sem licença expressa identificada.
 
 ## Não bloqueiam o MVP

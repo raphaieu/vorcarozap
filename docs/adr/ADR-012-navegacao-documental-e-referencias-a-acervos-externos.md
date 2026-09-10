@@ -32,8 +32,8 @@ Foram identificados os seguintes fatores condicionantes:
    A presença de um nome em anotação, lista de contatos, captura de tela ou relatório policial indica exclusivamente uma menção documental. Não autoriza inferir conluio, interlocução bilateral direta, concordância ou responsabilidade penal/civil.
 6. **Vedação à fabricação de conteúdo e elevação automática:**
    É expressamente proibido a modelos de linguagem ou curadores preencher lacunas de mensagens omitidas com conteúdo hipotético, inferir identidades de pessoas por homônimos sem confirmação documental ou elevar o grau probatório (A–E) sem evidência formal correspondente.
-7. **Não independência de fontes derivadas do mesmo documento:**
-   Múltiplas citações, recortes ou mensagens extraídos do mesmo laudo pericial ou da mesma peça de inquérito contam como emanações da mesma fonte primária e não configuram corroboração independente para fins de classificação editorial em Grau B ou superior.
+7. **Origem da informação vs. veículo publicador na corroboração:**
+   A avaliação de independência probatória considera a origem documental e investigativa da informação, e não apenas o veículo que a publicou. Múltiplos veículos que reproduzem a mesma peça, laudo pericial ou vazamento derivam de uma fonte primária comum e não configuram corroboração independente para fins de elevação de grau probatório; reciprocamente, apurações com origens documentais distintas mantêm sua independência mesmo quando veiculadas pelo mesmo órgão de imprensa.
 8. **Conformidade de direitos autorais e licenças:**
    Nenhum código-fonte ou arquivo de dados de repositórios terceiros será incorporado à base de código do VorcaroZAP sem confirmação formal de licença compatível ou autorização expressa de seus titulares.
 9. **Manutenção estrita da stack e do cronograma:**
