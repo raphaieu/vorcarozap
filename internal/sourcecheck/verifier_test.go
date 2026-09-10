@@ -181,54 +181,147 @@ func TestVerifier_ClassificationTableDriven(t *testing.T) {
 }
 
 func TestVerifier_Redirects(t *testing.T) {
-	t.Run("Redirecionamento válido até 3 saltos", func(t *testing.T) {
-		step := 0
+	t.Run("Exatamente 3 saltos permitidos com contagem correta e destino alcancado", func(t *testing.T) {
 		var ts *httptest.Server
 		ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			step++
-			if r.URL.Path == "/final" {
+			switch r.URL.Path {
+			case "/start":
+				http.Redirect(w, r, ts.URL+"/jump1", http.StatusFound)
+			case "/jump1":
+				http.Redirect(w, r, ts.URL+"/jump2", http.StatusFound)
+			case "/jump2":
+				http.Redirect(w, r, ts.URL+"/final", http.StatusFound)
+			case "/final":
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("destino alcançado"))
-				return
+			default:
+				http.NotFound(w, r)
 			}
-			http.Redirect(w, r, ts.URL+"/final", http.StatusFound)
 		}))
 		defer ts.Close()
 
 		cfg := sourcecheck.DefaultVerifierConfig()
+		cfg.MaxRedirects = 3
 		cfg.AllowLocalIPsForTesting = true
 		v := sourcecheck.NewVerifier(cfg)
 
 		res := v.Check(context.Background(), ts.URL+"/start")
 		if res.Status != domain.SourceAccessReachable {
-			t.Fatalf("esperado reachable, obtido %s: %s", res.Status, res.ErrorMessage)
+			t.Fatalf("esperado reachable com 3 saltos, obtido %s: %s", res.Status, res.ErrorMessage)
 		}
 		if !strings.HasSuffix(res.FinalURL, "/final") {
 			t.Errorf("FinalURL esperada /final, obtido %q", res.FinalURL)
 		}
+		if res.RedirectCount != 3 {
+			t.Errorf("RedirectCount esperado 3, obtido %d", res.RedirectCount)
+		}
 	})
 
-	t.Run("Limite de redirecionamentos excedido gera not_checked inconclusivo", func(t *testing.T) {
+	t.Run("Quarto salto excede MaxRedirects=3 e vira not_checked inconclusivo", func(t *testing.T) {
 		var ts *httptest.Server
 		ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, ts.URL+"/loop", http.StatusFound)
+			switch r.URL.Path {
+			case "/start":
+				http.Redirect(w, r, ts.URL+"/jump1", http.StatusFound)
+			case "/jump1":
+				http.Redirect(w, r, ts.URL+"/jump2", http.StatusFound)
+			case "/jump2":
+				http.Redirect(w, r, ts.URL+"/jump3", http.StatusFound)
+			case "/jump3":
+				http.Redirect(w, r, ts.URL+"/final", http.StatusFound)
+			case "/final":
+				w.WriteHeader(http.StatusOK)
+			default:
+				http.NotFound(w, r)
+			}
 		}))
 		defer ts.Close()
 
 		cfg := sourcecheck.DefaultVerifierConfig()
-		cfg.MaxRedirects = 2
+		cfg.MaxRedirects = 3
 		cfg.AllowLocalIPsForTesting = true
 		v := sourcecheck.NewVerifier(cfg)
 
 		res := v.Check(context.Background(), ts.URL+"/start")
 		if res.Status != domain.SourceAccessNotChecked {
-			t.Errorf("esperado not_checked, obtido %s", res.Status)
+			t.Errorf("esperado not_checked ao tentar 4 saltos, obtido %s", res.Status)
 		}
 		if res.TechnicalReason != sourcecheck.ReasonTooManyRedirects {
 			t.Errorf("esperado too_many_redirects, obtido %s", res.TechnicalReason)
 		}
 		if !res.IsInconclusive {
 			t.Errorf("resultado com redirecionamentos excessivos deve ser inconclusivo")
+		}
+	})
+
+	t.Run("Cabecalho Referer e credenciais sao removidos em redirecionamento entre hosts", func(t *testing.T) {
+		receivedReferer := "NIL"
+		receivedAuth := "NIL"
+
+		serverDest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedReferer = r.Header.Get("Referer")
+			receivedAuth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		}))
+		defer serverDest.Close()
+
+		serverOrigin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, serverDest.URL+"/target", http.StatusFound)
+		}))
+		defer serverOrigin.Close()
+
+		cfg := sourcecheck.DefaultVerifierConfig()
+		cfg.AllowLocalIPsForTesting = true
+		v := sourcecheck.NewVerifier(cfg)
+
+		// URL inicial contém parâmetro de token sensível na query
+		initialURL := serverOrigin.URL + "/source-doc?token=segredo-confidencial-123"
+		res := v.Check(context.Background(), initialURL)
+		if res.Status != domain.SourceAccessReachable {
+			t.Fatalf("esperado reachable, obtido %s: %s", res.Status, res.ErrorMessage)
+		}
+
+		if receivedReferer != "" {
+			t.Errorf("Referer deveria ter sido removido no salto para evitar vazamento de token, obteve %q", receivedReferer)
+		}
+		if receivedAuth != "" {
+			t.Errorf("Authorization deveria ter sido removido no salto, obteve %q", receivedAuth)
+		}
+	})
+
+	t.Run("Falha temporaria de DNS em redirecionamento nao vira bloqueio SSRF definitivo", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "http://dominio-dns-oscilando.com/noticia", http.StatusFound)
+		}))
+		defer ts.Close()
+
+		cfg := sourcecheck.DefaultVerifierConfig()
+		cfg.AllowLocalIPsForTesting = true
+		cfg.Resolver = &mockResolver{
+			lookupFunc: func(ctx context.Context, network, host string) ([]net.IP, error) {
+				if host == "dominio-dns-oscilando.com" {
+					return nil, &net.DNSError{
+						Err:       "connection timed out",
+						Name:      host,
+						IsTimeout: true,
+					}
+				}
+				// Para o servidor local inicial
+				return net.DefaultResolver.LookupIP(ctx, network, host)
+			},
+		}
+		v := sourcecheck.NewVerifier(cfg)
+
+		res := v.Check(context.Background(), ts.URL+"/start")
+		if res.Status != domain.SourceAccessNotChecked {
+			t.Errorf("falha temporária de DNS em redirect deve ser not_checked, obtido %s", res.Status)
+		}
+		if res.TechnicalReason != sourcecheck.ReasonDNSTemporary {
+			t.Errorf("TechnicalReason esperado dns_temporary, obtido %s", res.TechnicalReason)
+		}
+		if res.IsSSRFBlocked {
+			t.Errorf("falha de DNS em redirect NÃO pode ser classificada como SSRFBlocked")
 		}
 	})
 
@@ -240,13 +333,10 @@ func TestVerifier_Redirects(t *testing.T) {
 		defer ts.Close()
 
 		cfg := sourcecheck.DefaultVerifierConfig()
-		// Permite conectar no servidor de teste inicial, mas o redirecionador usa a validação padrão sem bypass para o salto
-		// Para testar o salto estrito, usamos o validador padrão que proíbe 169.254.169.254
 		cfg.AllowLocalIPsForTesting = true
 		v := sourcecheck.NewVerifier(cfg)
 
 		res := v.Check(context.Background(), ts.URL+"/redirect-to-metadata")
-		// O salto aponta para 169.254.169.254, que é estritamente bloqueado como SSRF
 		if res.Status != domain.SourceAccessUnreachable {
 			t.Errorf("redirecionamento malicioso deve ser unreachable, obteve %s", res.Status)
 		}
@@ -364,6 +454,35 @@ func TestVerifier_DNSResolutionHandling(t *testing.T) {
 			t.Errorf("esperado IsSSRFBlocked = true")
 		}
 	})
+
+	t.Run("Mitigação de DNS Rebinding: intercepta resolução para IP proibido no DialContext", func(t *testing.T) {
+		// Demonstra a proteção contra DNS Rebinding:
+		// Mesmo que a URL seja sintaticamente permitida e o transporte tente discar,
+		// o DialContext resolve e valida o IP antes de abrir a conexão TCP.
+		// Se o resolver retornar um IP privado (ataque de rebinding), a conexão é abortada como SSRF.
+		mockRes := &mockResolver{
+			lookupFunc: func(ctx context.Context, network, host string) ([]net.IP, error) {
+				// Simula retorno de IP de rede interna privada na etapa de conexão
+				return []net.IP{net.ParseIP("10.0.0.5")}, nil
+			},
+		}
+
+		cfg := sourcecheck.DefaultVerifierConfig()
+		cfg.AllowLocalIPsForTesting = false
+		cfg.Resolver = mockRes
+		v := sourcecheck.NewVerifier(cfg)
+
+		res := v.Check(context.Background(), "http://servico-legitimo.com/artigo")
+		if res.Status != domain.SourceAccessUnreachable {
+			t.Errorf("ataque de DNS rebinding para IP privado deve ser unreachable, obtido %s (erro: %s)", res.Status, res.ErrorMessage)
+		}
+		if !res.IsSSRFBlocked {
+			t.Errorf("esperado IsSSRFBlocked = true quando o IP de conexão é privado")
+		}
+		if res.TechnicalReason != sourcecheck.ReasonSSRFBlocked {
+			t.Errorf("TechnicalReason esperado ssrf_blocked, obtido %s", res.TechnicalReason)
+		}
+	})
 }
 
 func TestVerifier_TimeoutsAndCancellation(t *testing.T) {
@@ -443,6 +562,47 @@ func TestVerifier_BoundedBodyRead(t *testing.T) {
 	}
 	if res.HTTPStatus != http.StatusOK {
 		t.Errorf("esperado status HTTP 200, obtido %d", res.HTTPStatus)
+	}
+	if res.BytesRead != 16*1024 {
+		t.Errorf("BytesRead esperado 16384, obtido %d", res.BytesRead)
+	}
+}
+
+func TestVerifier_BodyReadTimeoutAfter200(t *testing.T) {
+	// Servidor responde imediatamente com 200 OK nos cabeçalhos, faz Flush, mas trava antes/durante a entrega do corpo
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		// Trava a conexão até o timeout estourar
+		time.Sleep(300 * time.Millisecond)
+		_, _ = w.Write([]byte("tarde demais"))
+	}))
+	defer ts.Close()
+
+	cfg := sourcecheck.DefaultVerifierConfig()
+	cfg.TotalTimeout = 100 * time.Millisecond
+	cfg.AllowLocalIPsForTesting = true
+	v := sourcecheck.NewVerifier(cfg)
+
+	res := v.Check(context.Background(), ts.URL)
+
+	// O timeout durante o corpo DEVE transformar o resultado em not_checked inconclusivo, NUNCA em reachable!
+	if res.Status != domain.SourceAccessNotChecked {
+		t.Fatalf("timeout durante o corpo DEVE ser not_checked, obtido %s (HTTPStatus=%d)", res.Status, res.HTTPStatus)
+	}
+	if res.TechnicalReason != sourcecheck.ReasonTimeout {
+		t.Errorf("TechnicalReason esperado timeout, obtido %s", res.TechnicalReason)
+	}
+	if !res.IsInconclusive {
+		t.Errorf("resultado com timeout de corpo deve ser marcado como IsInconclusive = true")
+	}
+	if res.HTTPStatus != http.StatusOK {
+		t.Errorf("HTTPStatus deve preservar o status 200 recebido antes da falha, obtido %d", res.HTTPStatus)
+	}
+	if res.Duration < 80*time.Millisecond {
+		t.Errorf("Duration (%v) deve incluir o tempo gasto na leitura do corpo", res.Duration)
 	}
 }
 

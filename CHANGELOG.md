@@ -18,20 +18,26 @@ Todas as alterações notáveis deste projeto são registradas neste documento. 
     - `reachable`: atende o requisito técnico de acessibilidade (`GateDecisionAllow`), sem autorizar publicação por si só.
     - `unreachable`: erro definitivo ou bloqueio de segurança leva a quarentena obrigatória (`GateDecisionQuarantine`).
     - `cited_by_provider`: citação pela LLM não equivale a verificação própria -> quarentena (`GateDecisionQuarantine`).
-    - `not_checked`: diferenciação por origem: `curated_seed` preserva `initial_state` do mapeamento com política `allow`, enquanto `openrouter` vai preventivamente para quarentena com política `quarantine`.
+    - `not_checked`: diferenciação por origem: `curated_seed` preserva `initial_state` do mapeamento com política `allow`, enquanto `openrouter` vai preventivamente para quarentena com política `quarantine` (fail-closed obrigatório).
+    - **Proteção contra aprovação por histórico (`GateInput`):** deliberação de novas descobertas avalia estritamente a tentativa atual (`CurrentCheck`). Um histórico prévio `reachable` no banco jamais autoriza ou aprova publicação se a verificação atual falhou ou resultou inconclusiva (`not_checked`).
   - `ResolveStatusUpdate`: transição de estado não destrutiva no banco, impedindo que falhas temporárias (timeout, 429, 5xx) apaguem silenciosamente comprovações prévias de `reachable`.
+- **Endurecimento de Rede e Transporte HTTP (`internal/sourcecheck`):**
+  - Tratamento de erro na leitura limitada do corpo (`io.Copy`), reclassificando interrupções, cortes de conexão e timeouts durante o body após 200 OK como `not_checked` inconclusivo (com medição precisa de `Duration` e `BytesRead`), impedindo falsos `reachable`.
+  - Preservação da causa de erro original em redirecionamentos: falhas transitórias de DNS (`dns_temporary`) ou timeout em redirects não são mais rotuladas como violação definitiva de segurança SSRF.
+  - Sanitização de cabeçalho `Referer` (além de `Authorization` e `Cookie`) em cada salto de redirecionamento, impedindo vazamento de tokens de URLs sensíveis entre hosts.
+  - Definição explícita de `MaxResponseHeaderBytes` (32 KB) no transporte HTTP e ajuste do contador de saltos para permitir exatamente até 3 saltos e bloquear a partir do 4º.
 - **Configuração Operacional (`internal/config`, `.env.example`):**
   - Incorporação das variáveis de política `SOURCE_NOT_CHECKED_POLICY_OPENROUTER` (padrão: `quarantine`) e `SOURCE_NOT_CHECKED_POLICY_CURATED_SEED` (padrão: `allow`), além de `SOURCE_CHECK_TIMEOUT` (padrão: `5s`).
-- **Persistência Segura (`internal/store/queries/editorial.sql`, `internal/sourcecheck/updater.go`):**
+- **Persistência Segura (`internal/store/queries/editorial.sql`, `internal/sourcecheck/updater.go`):
   - Novas queries SQLC `UpdateSourceAccessStatus` e `ListSourcesByAccessStatus`.
   - Persistência desacoplada da rede (`PersistCheckResult` e `CheckAndPersist`), garantindo que chamadas de rede nunca ocorram dentro de transações do SQLite.
 - **Suíte de Testes Automatizados (`internal/sourcecheck/*_test.go`, `internal/config/*_test.go`):**
   - Testes table-driven para validação do método GET, classificação de status HTTP, detecção de erros conclusivos e inconclusivos.
   - Testes de bloqueio SSRF (IPv4, IPv6, loopback, redes privadas, metadados de nuvem, credenciais na URL e portas inválidas).
-  - Testes de redirecionamentos (limite de saltos e interceptação de redirecionamento para IP privado).
-  - Testes de resiliência a timeouts, cancelamento de contexto e limitação de leitura de corpos extensos.
-  - Teste de injeção de resolver para validação de erros de DNS e rebinding.
-  - Testes da matriz editorial e regras de transição.
+  - Testes de redirecionamentos: verificação de 3 saltos permitidos, 4º salto bloqueado, remoção de Referer/Authorization entre hosts e tratamento de falhas temporárias de DNS.
+  - Testes de mitigação de DNS Rebinding comprovando interceptação na camada do `DialContext`.
+  - Testes de resiliência a timeouts, cancelamento de contexto, interrupção na leitura do corpo após 200 OK e validação de `BytesRead`.
+  - Testes da matriz editorial com `GateInput` e prioridade da verificação atual sobre status armazenado.
   - Teste de integração com SQLite em memória descartável.
 
 ## [0.4.0] — VZ-009: Exportação XLSX Derivada da Base Pública

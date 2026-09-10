@@ -53,6 +53,8 @@ type CheckResult struct {
 	FinalURL string `json:"final_url,omitempty"`
 	// RedirectCount é o total de redirecionamentos seguidos com sucesso
 	RedirectCount int `json:"redirect_count"`
+	// BytesRead é o total de bytes efetivamente lidos do corpo da resposta
+	BytesRead int64 `json:"bytes_read"`
 	// IsSSRFBlocked indica se a tentativa foi abortada por violação de segurança de rede
 	IsSSRFBlocked bool `json:"is_ssrf_blocked"`
 	// IsInconclusive indica se o resultado é transitório ou incompleto (não autoriza publicação nem comprova indisponibilidade)

@@ -20,11 +20,14 @@ var (
 	ErrRedirectSSRF     = errors.New("redirecionamento bloqueado por política SSRF")
 )
 
+type redirectTrackerKey struct{}
+
 // VerifierConfig define os parâmetros operacionais e limites do verificador de fontes.
 type VerifierConfig struct {
 	TotalTimeout            time.Duration
 	DialTimeout             time.Duration
 	ResponseHeaderTimeout   time.Duration
+	MaxResponseHeaderBytes  int64
 	MaxRedirects            int
 	MaxBodyBytes            int64
 	UserAgent               string
@@ -38,6 +41,7 @@ func DefaultVerifierConfig() VerifierConfig {
 		TotalTimeout:            5 * time.Second,
 		DialTimeout:             3 * time.Second,
 		ResponseHeaderTimeout:   3 * time.Second,
+		MaxResponseHeaderBytes:  32 * 1024, // 32 KB limite conservador de cabeçalhos
 		MaxRedirects:            3,
 		MaxBodyBytes:            64 * 1024, // 64 KB
 		UserAgent:               "VorcaroZAP-SourceChecker/1.0 (+https://github.com/raphaieu/vorcarozap)",
@@ -63,6 +67,9 @@ func NewVerifier(cfg VerifierConfig) *Verifier {
 	}
 	if cfg.ResponseHeaderTimeout <= 0 {
 		cfg.ResponseHeaderTimeout = 3 * time.Second
+	}
+	if cfg.MaxResponseHeaderBytes <= 0 {
+		cfg.MaxResponseHeaderBytes = 32 * 1024
 	}
 	if cfg.MaxRedirects <= 0 {
 		cfg.MaxRedirects = 3
@@ -103,10 +110,11 @@ func NewVerifier(cfg VerifierConfig) *Verifier {
 			targetAddr := net.JoinHostPort(validIPs[0].String(), port)
 			return dialer.DialContext(ctx, network, targetAddr)
 		},
-		ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
-		TLSHandshakeTimeout:   cfg.DialTimeout,
-		DisableKeepAlives:     true,
-		MaxIdleConns:          0,
+		ResponseHeaderTimeout:  cfg.ResponseHeaderTimeout,
+		TLSHandshakeTimeout:    cfg.DialTimeout,
+		MaxResponseHeaderBytes: cfg.MaxResponseHeaderBytes,
+		DisableKeepAlives:      true,
+		MaxIdleConns:           0,
 		// Preserva validação TLS completa e SNI usando os certificados do sistema
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: false,
@@ -121,7 +129,13 @@ func NewVerifier(cfg VerifierConfig) *Verifier {
 	v.client = &http.Client{
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= cfg.MaxRedirects {
+			// Atualiza a contagem efetiva de redirecionamentos no contexto
+			if tracker, ok := req.Context().Value(redirectTrackerKey{}).(*int); ok && tracker != nil {
+				*tracker = len(via)
+			}
+
+			// via inclui a requisição inicial; bloqueia apenas quando ultrapassar cfg.MaxRedirects saltos
+			if len(via) > cfg.MaxRedirects {
 				return ErrTooManyRedirects
 			}
 
@@ -132,10 +146,17 @@ func NewVerifier(cfg VerifierConfig) *Verifier {
 			}
 
 			if _, err := validator.ResolveAndValidateHost(req.Context(), cfg.Resolver, newHost); err != nil {
-				return fmt.Errorf("%w: %v", ErrRedirectSSRF, err)
+				// Só classifica como violação de segurança SSRF se o IP/host for explicitamente bloqueado
+				if errors.Is(err, ErrBlockedIP) || errors.Is(err, ErrBlockedHostname) {
+					return fmt.Errorf("%w: %v", ErrRedirectSSRF, err)
+				}
+				// Preserva o erro original de DNS temporário, timeout ou cancelamento
+				return err
 			}
 
-			// Remove quaisquer cabeçalhos de autenticação ou cookies que pudessem ter sido anexados
+			// Remove Referer para evitar vazamento de parâmetros sensíveis entre domínios
+			req.Header.Del("Referer")
+			// Remove quaisquer cabeçalhos de autenticação ou cookies
 			req.Header.Del("Authorization")
 			req.Header.Del("Cookie")
 
@@ -176,9 +197,12 @@ func (v *Verifier) Check(ctx context.Context, rawURL string) CheckResult {
 		return res
 	}
 
-	// 2. Timeout total delimitado
+	// 2. Timeout total delimitado e rastreador de saltos
 	ctxReq, cancel := context.WithTimeout(ctx, v.cfg.TotalTimeout)
 	defer cancel()
+
+	redirectCount := new(int)
+	ctxReq = context.WithValue(ctxReq, redirectTrackerKey{}, redirectCount)
 
 	// 3. Montagem da requisição GET real (nunca HEAD)
 	req, err := http.NewRequestWithContext(ctxReq, http.MethodGet, rawURL, nil)
@@ -197,22 +221,31 @@ func (v *Verifier) Check(ctx context.Context, rawURL string) CheckResult {
 
 	// 4. Execução da requisição
 	resp, err := v.client.Do(req)
-	res.Duration = time.Since(start)
+	res.RedirectCount = *redirectCount
 
 	if err != nil {
+		res.Duration = time.Since(start)
 		res.ErrorMessage = err.Error()
 		v.classifyError(err, host, &res)
 		return res
 	}
 	defer resp.Body.Close()
 
-	// 5. Leitura limitada do corpo sem persistência nem scraping
-	// Usa LimitReader para não drenar respostas gigantescas ou bombas de descompressão
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, v.cfg.MaxBodyBytes))
-
-	res.HTTPStatus = resp.StatusCode
 	if resp.Request != nil && resp.Request.URL != nil {
 		res.FinalURL = resp.Request.URL.String()
+	}
+
+	// 5. Leitura limitada do corpo sem persistência nem scraping
+	// Usa LimitReader para não drenar respostas gigantescas ou bombas de descompressão
+	bytesRead, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, v.cfg.MaxBodyBytes))
+	res.Duration = time.Since(start)
+	res.BytesRead = bytesRead
+	res.HTTPStatus = resp.StatusCode
+
+	if readErr != nil {
+		res.ErrorMessage = fmt.Sprintf("falha na leitura do corpo: %v", readErr)
+		v.classifyError(readErr, host, &res)
+		return res
 	}
 
 	// 6. Classificação do status HTTP

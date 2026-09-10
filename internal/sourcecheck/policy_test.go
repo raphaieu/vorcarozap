@@ -118,11 +118,11 @@ func TestEvaluateSourceAccessGate_TableDriven(t *testing.T) {
 			expectedDecision: sourcecheck.GateDecisionQuarantine,
 		},
 		{
-			name:             "openrouter not_checked com policy allow permite gate",
+			name:             "openrouter not_checked sempre resulta em quarentena preventiva mesmo com config permissiva",
 			origin:           domain.ClaimOriginOpenRouter,
 			status:           domain.SourceAccessNotChecked,
 			cfg:              permissiveCfg,
-			expectedDecision: sourcecheck.GateDecisionAllow,
+			expectedDecision: sourcecheck.GateDecisionQuarantine,
 		},
 
 		// 6. not_checked com admin ou origem desconhecida
@@ -144,10 +144,121 @@ func TestEvaluateSourceAccessGate_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res := sourcecheck.EvaluateSourceAccessGate(tt.origin, tt.status, tt.cfg)
+			res := sourcecheck.EvaluateSourceStatusGate(tt.origin, tt.status, tt.cfg)
 			if res.Decision != tt.expectedDecision {
-				t.Errorf("EvaluateSourceAccessGate(%s, %s) = %s; esperado %s (motivo: %s)",
+				t.Errorf("EvaluateSourceStatusGate(%s, %s) = %s; esperado %s (motivo: %s)",
 					tt.origin, tt.status, res.Decision, tt.expectedDecision, res.Rationale)
+			}
+		})
+	}
+}
+
+func TestEvaluateSourceAccessGate_WithCurrentCheck(t *testing.T) {
+	defaultCfg := &config.Config{
+		SourceNotCheckedPolicyOpenRouter:  "quarantine",
+		SourceNotCheckedPolicyCuratedSeed: "allow",
+	}
+
+	tests := []struct {
+		name             string
+		input            sourcecheck.GateInput
+		cfg              *config.Config
+		expectedDecision sourcecheck.GateDecision
+	}{
+		{
+			name: "HISTORICO REACHABLE COM TENTATIVA ATUAL 429 NOT_CHECKED: DEVE SER QUARENTENA",
+			input: sourcecheck.GateInput{
+				Origin:       domain.ClaimOriginOpenRouter,
+				StoredStatus: domain.SourceAccessReachable,
+				CurrentCheck: &sourcecheck.CheckResult{
+					Status:              domain.SourceAccessNotChecked,
+					TechnicalReason:     sourcecheck.ReasonHTTP429,
+					HTTPStatus:          429,
+					NormalizedErrorCode: "http_429",
+					IsInconclusive:      true,
+				},
+			},
+			cfg:              defaultCfg,
+			expectedDecision: sourcecheck.GateDecisionQuarantine,
+		},
+		{
+			name: "HISTORICO REACHABLE COM TENTATIVA ATUAL TIMEOUT: DEVE SER QUARENTENA",
+			input: sourcecheck.GateInput{
+				Origin:       domain.ClaimOriginOpenRouter,
+				StoredStatus: domain.SourceAccessReachable,
+				CurrentCheck: &sourcecheck.CheckResult{
+					Status:              domain.SourceAccessNotChecked,
+					TechnicalReason:     sourcecheck.ReasonTimeout,
+					NormalizedErrorCode: "timeout",
+					IsInconclusive:      true,
+				},
+			},
+			cfg:              defaultCfg,
+			expectedDecision: sourcecheck.GateDecisionQuarantine,
+		},
+		{
+			name: "HISTORICO REACHABLE COM TENTATIVA ATUAL 404 UNREACHABLE: DEVE SER QUARENTENA",
+			input: sourcecheck.GateInput{
+				Origin:       domain.ClaimOriginOpenRouter,
+				StoredStatus: domain.SourceAccessReachable,
+				CurrentCheck: &sourcecheck.CheckResult{
+					Status:              domain.SourceAccessUnreachable,
+					TechnicalReason:     sourcecheck.ReasonHTTP404,
+					HTTPStatus:          404,
+					NormalizedErrorCode: "http_404",
+				},
+			},
+			cfg:              defaultCfg,
+			expectedDecision: sourcecheck.GateDecisionQuarantine,
+		},
+		{
+			name: "HISTORICO CITED_BY_PROVIDER COM TENTATIVA ATUAL 200 REACHABLE: DEVE SER ALLOW",
+			input: sourcecheck.GateInput{
+				Origin:       domain.ClaimOriginOpenRouter,
+				StoredStatus: domain.SourceAccessCitedByProvider,
+				CurrentCheck: &sourcecheck.CheckResult{
+					Status:          domain.SourceAccessReachable,
+					TechnicalReason: sourcecheck.ReasonOK,
+					HTTPStatus:      200,
+				},
+			},
+			cfg:              defaultCfg,
+			expectedDecision: sourcecheck.GateDecisionAllow,
+		},
+		{
+			name: "CURATED_SEED COM TENTATIVA ATUAL NOT_CHECKED SOB POLICY ALLOW: PRESERVA ESTADO",
+			input: sourcecheck.GateInput{
+				Origin:       domain.ClaimOriginCuratedSeed,
+				StoredStatus: domain.SourceAccessNotChecked,
+				CurrentCheck: &sourcecheck.CheckResult{
+					Status:              domain.SourceAccessNotChecked,
+					TechnicalReason:     sourcecheck.ReasonHTTP5xx,
+					HTTPStatus:          503,
+					NormalizedErrorCode: "http_503",
+					IsInconclusive:      true,
+				},
+			},
+			cfg:              defaultCfg,
+			expectedDecision: sourcecheck.GateDecisionAllow,
+		},
+		{
+			name: "AVALIAÇÃO SEM TENTATIVA ATUAL COM HISTORICO REACHABLE: ALLOW",
+			input: sourcecheck.GateInput{
+				Origin:       domain.ClaimOriginOpenRouter,
+				StoredStatus: domain.SourceAccessReachable,
+				CurrentCheck: nil,
+			},
+			cfg:              defaultCfg,
+			expectedDecision: sourcecheck.GateDecisionAllow,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := sourcecheck.EvaluateSourceAccessGate(tt.input, tt.cfg)
+			if res.Decision != tt.expectedDecision {
+				t.Errorf("EvaluateSourceAccessGate(%+v) = %s; esperado %s (motivo: %s)",
+					tt.input, res.Decision, tt.expectedDecision, res.Rationale)
 			}
 		})
 	}
