@@ -94,6 +94,59 @@ type ImportRun struct {
 	CompletedAt    sql.NullString `json:"completed_at"`
 }
 
+type MonitoringCandidate struct {
+	ID                    string         `json:"id"`
+	MonitoringRunID       string         `json:"monitoring_run_id"`
+	Fingerprint           string         `json:"fingerprint"`
+	FingerprintVersion    int64          `json:"fingerprint_version"`
+	EntityName            string         `json:"entity_name"`
+	NormalizedEntityName  string         `json:"normalized_entity_name"`
+	Proposition           string         `json:"proposition"`
+	SuggestedGrade        string         `json:"suggested_grade"`
+	SourceUrl             string         `json:"source_url"`
+	CanonicalUrl          string         `json:"canonical_url"`
+	SourceTitle           string         `json:"source_title"`
+	PublisherOrAuthor     string         `json:"publisher_or_author"`
+	PublishedAt           sql.NullString `json:"published_at"`
+	Excerpt               string         `json:"excerpt"`
+	Locator               string         `json:"locator"`
+	ContextLimits         string         `json:"context_limits"`
+	TechnicalConfidence   float64        `json:"technical_confidence"`
+	RawPayload            string         `json:"raw_payload"`
+	EditorialStatus       string         `json:"editorial_status"`
+	IsDuplicate           int64          `json:"is_duplicate"`
+	DuplicateReason       string         `json:"duplicate_reason"`
+	CanonicalCandidateID  sql.NullString `json:"canonical_candidate_id"`
+	StructuralGatePassed  sql.NullInt64  `json:"structural_gate_passed"`
+	StructuralGateReasons string         `json:"structural_gate_reasons"`
+	SemanticGatePassed    sql.NullInt64  `json:"semantic_gate_passed"`
+	SemanticGateReasons   string         `json:"semantic_gate_reasons"`
+	PolicyAction          string         `json:"policy_action"`
+	PolicyReasons         string         `json:"policy_reasons"`
+	CreatedAt             string         `json:"created_at"`
+	UpdatedAt             string         `json:"updated_at"`
+}
+
+type MonitoringRun struct {
+	ID                   string          `json:"id"`
+	Status               string          `json:"status"`
+	Query                string          `json:"query"`
+	DiscoveryProvider    string          `json:"discovery_provider"`
+	DiscoveryModel       string          `json:"discovery_model"`
+	VerificationProvider string          `json:"verification_provider"`
+	VerificationModel    string          `json:"verification_model"`
+	PromptTokens         int64           `json:"prompt_tokens"`
+	CompletionTokens     int64           `json:"completion_tokens"`
+	TotalTokens          int64           `json:"total_tokens"`
+	EstimatedCost        sql.NullFloat64 `json:"estimated_cost"`
+	WebSearchCalls       int64           `json:"web_search_calls"`
+	ErrorMessage         sql.NullString  `json:"error_message"`
+	SummaryCounts        string          `json:"summary_counts"`
+	TechnicalSummary     string          `json:"technical_summary"`
+	CreatedAt            string          `json:"created_at"`
+	CompletedAt          sql.NullString  `json:"completed_at"`
+}
+
 type PublicClaimsView struct {
 	ClaimID             string         `json:"claim_id"`
 	RelationshipID      string         `json:"relationship_id"`

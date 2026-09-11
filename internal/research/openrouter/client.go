@@ -120,7 +120,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 // Ensure Client implements research.ResearchProvider at compile time.
 var _ research.ResearchProvider = (*Client)(nil)
 
-// Discover executa uma pesquisa na web utilizando a server tool openrouter:web_search.
+// Discover executa uma pesquisa na web com Structured Outputs e a server tool openrouter:web_search.
 func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
 	if c.apiKey == "" {
 		return nil, research.ErrMissingAPIKey
@@ -141,6 +141,14 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 			{
 				Role:    "user",
 				Content: buildUserDiscoveryPrompt(query),
+			},
+		},
+		ResponseFormat: &responseFormatDefinition{
+			Type: "json_schema",
+			JSONSchema: &jsonSchemaPayload{
+				Name:   "candidate_extraction",
+				Strict: true,
+				Schema: buildCandidatesJSONSchema(),
 			},
 		},
 		Tools: []toolDefinition{
@@ -216,12 +224,32 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 	}
 
 	firstChoice := respPayload.Choices[0]
-	content := strings.TrimSpace(firstChoice.Message.Content)
+	rawContent := strings.TrimSpace(firstChoice.Message.Content)
 
 	citations := extractCitations(firstChoice.Message)
 
-	if content == "" && len(citations) == 0 {
-		return nil, research.ErrEmptyResponse
+	if rawContent == "" {
+		if len(citations) == 0 {
+			return nil, research.ErrEmptyResponse
+		}
+		return nil, fmt.Errorf("%w: resposta do provedor contém apenas citações sem payload JSON de candidatos", research.ErrInvalidResponse)
+	}
+
+	// Decodifica e valida o schema estruturado de candidatos (fail closed)
+	var candidatesWrapper struct {
+		Candidates []research.CandidateExtraction `json:"candidates"`
+	}
+
+	if err := json.Unmarshal([]byte(rawContent), &candidatesWrapper); err != nil {
+		return nil, fmt.Errorf("%w: resposta não adere ao schema JSON de candidatos: %v", research.ErrInvalidResponse, sanitizeError(err, c.apiKey))
+	}
+	if candidatesWrapper.Candidates == nil {
+		return nil, fmt.Errorf("%w: campo 'candidates' ausente no JSON estruturado", research.ErrInvalidResponse)
+	}
+	for i, cand := range candidatesWrapper.Candidates {
+		if err := cand.Validate(); err != nil {
+			return nil, fmt.Errorf("%w: candidato[%d] inválido: %v", research.ErrInvalidCandidate, i, err)
+		}
 	}
 
 	webSearchCalls := 0
@@ -235,7 +263,8 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 	}
 
 	return &research.DiscoverResult{
-		Content:          content,
+		Candidates:       candidatesWrapper.Candidates,
+		Content:          rawContent,
 		Model:            modelUsed,
 		Citations:        citations,
 		PromptTokens:     respPayload.Usage.PromptTokens,
@@ -248,6 +277,83 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 // Verify representa o gate semântico futuro (VZ-012). Não implementado nesta fase.
 func (c *Client) Verify(ctx context.Context, input research.VerifyInput) (*research.VerifyResult, error) {
 	return nil, research.ErrNotImplemented
+}
+
+func buildCandidatesJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"candidates": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"entity_name": map[string]any{
+							"type":        "string",
+							"description": "Nome da pessoa ou organização mencionada",
+						},
+						"proposition": map[string]any{
+							"type":        "string",
+							"description": "Proposição factual atribuível documentada na fonte",
+						},
+						"suggested_grade": map[string]any{
+							"type":        "string",
+							"enum":        []string{"A", "B", "C", "D", "E"},
+							"description": "Grau de força documental sugerido (A a E)",
+						},
+						"source_url": map[string]any{
+							"type":        "string",
+							"description": "URL pública e verificável da fonte",
+						},
+						"source_title": map[string]any{
+							"type":        "string",
+							"description": "Título da matéria ou documento",
+						},
+						"publisher_or_author": map[string]any{
+							"type":        "string",
+							"description": "Veículo publicador ou autor",
+						},
+						"published_at": map[string]any{
+							"type":        "string",
+							"description": "Data de publicação se disponível (formato YYYY-MM-DD ou textual)",
+						},
+						"excerpt": map[string]any{
+							"type":        "string",
+							"description": "Trecho comprobatório extraído da fonte",
+						},
+						"locator": map[string]any{
+							"type":        "string",
+							"description": "Localizador específico (página, parágrafo, seção) se houver",
+						},
+						"context_limits": map[string]any{
+							"type":        "string",
+							"description": "Limites de contexto, ressalvas ou escopo da informação",
+						},
+						"technical_confidence": map[string]any{
+							"type":        "number",
+							"description": "Confiança técnica da extração no intervalo de 0.0 a 1.0",
+						},
+					},
+					"required": []string{
+						"entity_name",
+						"proposition",
+						"suggested_grade",
+						"source_url",
+						"source_title",
+						"publisher_or_author",
+						"published_at",
+						"excerpt",
+						"locator",
+						"context_limits",
+						"technical_confidence",
+					},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"candidates"},
+		"additionalProperties": false,
+	}
 }
 
 func extractCitations(msg respMessage) []research.Citation {
@@ -323,11 +429,23 @@ func sanitizeBodySnippet(body string, secret string) string {
 // Tipos internos de serialização JSON para a API OpenRouter.
 
 type chatCompletionRequest struct {
-	Model        string           `json:"model"`
-	Messages     []chatMessage    `json:"messages"`
-	Tools        []toolDefinition `json:"tools,omitempty"`
-	MaxToolCalls int              `json:"max_tool_calls,omitempty"`
-	Stream       bool             `json:"stream"`
+	Model          string                    `json:"model"`
+	Messages       []chatMessage             `json:"messages"`
+	ResponseFormat *responseFormatDefinition `json:"response_format,omitempty"`
+	Tools          []toolDefinition          `json:"tools,omitempty"`
+	MaxToolCalls   int                       `json:"max_tool_calls,omitempty"`
+	Stream         bool                      `json:"stream"`
+}
+
+type responseFormatDefinition struct {
+	Type       string             `json:"type"`
+	JSONSchema *jsonSchemaPayload `json:"json_schema,omitempty"`
+}
+
+type jsonSchemaPayload struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict"`
+	Schema map[string]any `json:"schema"`
 }
 
 type chatMessage struct {
