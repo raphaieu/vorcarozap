@@ -72,13 +72,26 @@ Comandos disponíveis nesta fase:
   help       Exibe esta mensagem de ajuda
 
 Configuração via variáveis de ambiente:
-  APP_PORT          Porta HTTP do servidor (padrão: 8080)
-  APP_ENV           Ambiente de execução (padrão: development)
-  DB_PATH           Caminho do banco SQLite (padrão: ./data/vorcarozap.db)
-  MAPPING_PATH      Caminho do YAML de mapping (padrão: config/import-mapping-v1.yaml)
-  APP_READ_TIMEOUT  Timeout de leitura HTTP (padrão: 5s)
-  APP_WRITE_TIMEOUT Timeout de escrita HTTP (padrão: 10s)
-  APP_IDLE_TIMEOUT  Timeout de conexões ociosas (padrão: 60s)
+  APP_PORT                                Porta HTTP do servidor (padrão: 8080)
+  APP_ENV                                 Ambiente de execução (padrão: development)
+  DB_PATH                                 Caminho do banco SQLite (padrão: ./data/vorcarozap.db)
+  MAPPING_PATH                            Caminho do YAML de mapping (padrão: config/import-mapping-v1.yaml)
+  PUBLIC_DATA_CUTOFF                      Data de corte para dados públicos YYYY-MM-DD (padrão: 2026-09-03)
+  APP_READ_TIMEOUT                        Timeout de leitura HTTP (padrão: 5s)
+  APP_WRITE_TIMEOUT                       Timeout de escrita HTTP (padrão: 10s)
+  APP_IDLE_TIMEOUT                        Timeout de conexões ociosas (padrão: 60s)
+  SOURCE_NOT_CHECKED_POLICY_OPENROUTER    Política para openrouter not_checked: quarantine|allow (padrão: quarantine)
+  SOURCE_NOT_CHECKED_POLICY_CURATED_SEED  Política para curated_seed not_checked: quarantine|allow (padrão: allow)
+  SOURCE_CHECK_TIMEOUT                    Timeout de verificação de fonte (padrão: 5s)
+  OPENROUTER_API_KEY                      Chave de API do OpenRouter (sem default; obrigatória para descoberta)
+  OPENROUTER_BASE_URL                     Endpoint de completions (padrão: https://openrouter.ai/api/v1/chat/completions)
+  OPENROUTER_DISCOVERY_MODEL              Modelo LLM para descoberta (padrão: openai/gpt-4.1-mini)
+  OPENROUTER_TIMEOUT                      Timeout HTTP para chamadas OpenRouter (padrão: 30s)
+  OPENROUTER_WEB_SEARCH_ENGINE            Mecanismo de busca: auto|native|exa|firecrawl|parallel|perplexity (padrão: auto)
+  OPENROUTER_WEB_SEARCH_MAX_RESULTS       Resultados por busca 1..25 (padrão: 5)
+  OPENROUTER_WEB_SEARCH_MAX_TOTAL_RESULTS Limite cumulativo de resultados por requisição (padrão: 15)
+  OPENROUTER_WEB_SEARCH_MAX_USES          Limite de buscas por requisição (padrão: 3)
+  OPENROUTER_MAX_TOOL_CALLS               Passos máximos de server tools 1..30 (padrão: 5)
 `)
 }
 
