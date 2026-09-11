@@ -67,7 +67,7 @@ A avaliação verifica identidade, suporte, extrapolação, atribuição, grau, 
 - D/E: quarentena por padrão; podem ser aprovados no painel.
 - Qualquer grau: quarentena para homônimo, source `unreachable`, trecho sem suporte direto, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou rejeição semelhante; `not_checked` segue a política diferenciada por origem definida no [ADR-006](adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state do mapeamento para curated_seed).
 
-Descoberta e gate semântico podem usar modelos diferentes por configuração. Os resultados, modelo, schema e motivos da política ficam registrados.
+Descoberta e gate semântico podem usar modelos diferentes por configuração (`OPENROUTER_DISCOVERY_MODEL` e `OPENROUTER_VERIFICATION_MODEL`, default `openai/gpt-4.1-mini`). Os resultados, modelo, schema e motivos da política ficam registrados na tabela imutável `semantic_evaluations` e nos campos de auditoria de `monitoring_candidates` ([ADR-014](adr/ADR-014-gate-estrutural-gate-semantico-e-politica-de-publicacao-automatica.md)).
 
 ## Acessibilidade da fonte
 

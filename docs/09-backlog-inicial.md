@@ -1,24 +1,24 @@
 # Backlog inicial priorizado
 
-O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-011 é **VZ-012**.
+O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-012 é **VZ-013**.
 
-## P0 — Escopo do MVP
+## P0 — Núcleo do MVP
 
 | ID | P | Entrega | Status |
 |---|---|---|---|
-| VZ-001 | P0 | Módulo Go, CLI, config e build em container | Concluído (Fase 1) |
-| VZ-002 | P0 | SQLite WAL, migrations com Goose e volume persistente | Concluído (Fase 1) |
-| VZ-003 | P0 | Compose/Caddy e página base mobile-first com Templ | Concluído (Fase 1) |
-| VZ-004 | P0 | Schema de entidades, claims com disposição/métrica, evidence_sources moderáveis e sources com acesso | Concluído (Fase 2) |
-| VZ-005 | P0 | Importador XLSX `curated_seed` com dry-run, mapeamento versionado em YAML e idempotência | Concluído (Fase 2) |
-| VZ-006 | P0 | Listagem pública com filtros multifacetados, busca e detalhe de entidades e fontes | Concluído (Fase 3) |
+| VZ-001 | P0 | Estrutura Go, Dockerfile enxuto, Compose e Caddy | Concluído (Fase 1) |
+| VZ-002 | P0 | SQLite com WAL, Goose e schema inicial | Concluído (Fase 1) |
+| VZ-003 | P0 | SSR com Templ, layout mobile-first e página base | Concluído (Fase 1) |
+| VZ-004 | P0 | Domínio, schema relacional e queries tipadas | Concluído (Fase 2) |
+| VZ-005 | P0 | Importador da planilha inicial (`origin = curated_seed`) | Concluído (Fase 2) |
+| VZ-006 | P0 | Listagem, busca, filtros e detalhe de pessoas/claims | Concluído (Fase 3) |
 | VZ-007 | P0 | Metodologia pública, fontes rastreáveis e linguagem humana para Graus A a E | Concluído (Fase 3) |
 | VZ-008 | P0 | Engine de métricas públicas por estado ativo e integração na Home | Concluído (Fase 3) |
 | VZ-009 | P0 | Exportação XLSX derivada do banco e download público | Concluído (Fase 3) |
 | VZ-020 | P0 | Verificador GET seguro/limitado e política de `source_access_status` (incorporar `SOURCE_NOT_CHECKED_POLICY_*` ao config; **dependência técnica dos gates de publicação automática**) | Concluído (Fase 4) |
 | VZ-010 | P0 | ResearchProvider/OpenRouter e esteira de web search | Concluído (Fase 4) |
 | VZ-011 | P0 | Schema estruturado, normalização de dados e deduplicação | Concluído (Fase 4) |
-| VZ-012 | P0 | Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E | Planejado no MVP |
+| VZ-012 | P0 | Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E | Concluído (Fase 4) |
 | VZ-013 | P0 | Lock de execução, janela incremental e limites de custo de LLM | Planejado no MVP |
 | VZ-014 | P0 | Proteção simples do `/admin` por autenticação HTTP | Planejado no MVP |
 | VZ-015 | P0 | Painel simples para listagem e inspeção de fontes, evidências e candidatos | Planejado no MVP |
