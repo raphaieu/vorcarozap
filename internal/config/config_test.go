@@ -22,6 +22,7 @@ func TestConfigLoadDefaults(t *testing.T) {
 	_ = os.Unsetenv("OPENROUTER_API_KEY")
 	_ = os.Unsetenv("OPENROUTER_BASE_URL")
 	_ = os.Unsetenv("OPENROUTER_DISCOVERY_MODEL")
+	_ = os.Unsetenv("OPENROUTER_VERIFICATION_MODEL")
 	_ = os.Unsetenv("OPENROUTER_TIMEOUT")
 	_ = os.Unsetenv("OPENROUTER_WEB_SEARCH_ENGINE")
 	_ = os.Unsetenv("OPENROUTER_WEB_SEARCH_MAX_RESULTS")
@@ -73,6 +74,9 @@ func TestConfigLoadDefaults(t *testing.T) {
 	if cfg.OpenRouterDiscoveryModel != "openai/gpt-4.1-mini" {
 		t.Errorf("OpenRouterDiscoveryModel: esperado 'openai/gpt-4.1-mini', obtido %q", cfg.OpenRouterDiscoveryModel)
 	}
+	if cfg.OpenRouterVerificationModel != "openai/gpt-4.1-mini" {
+		t.Errorf("OpenRouterVerificationModel: esperado 'openai/gpt-4.1-mini', obtido %q", cfg.OpenRouterVerificationModel)
+	}
 	if cfg.OpenRouterTimeout != 30*time.Second {
 		t.Errorf("OpenRouterTimeout: esperado 30s, obtido %v", cfg.OpenRouterTimeout)
 	}
@@ -98,6 +102,7 @@ func TestConfigOpenRouter(t *testing.T) {
 		t.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test-key")
 		t.Setenv("OPENROUTER_BASE_URL", "https://custom.openrouter.test/v1/chat/completions")
 		t.Setenv("OPENROUTER_DISCOVERY_MODEL", "google/gemini-2.5-flash")
+		t.Setenv("OPENROUTER_VERIFICATION_MODEL", "anthropic/claude-3.5-sonnet")
 		t.Setenv("OPENROUTER_TIMEOUT", "45s")
 		t.Setenv("OPENROUTER_WEB_SEARCH_ENGINE", "exa")
 		t.Setenv("OPENROUTER_WEB_SEARCH_MAX_RESULTS", "10")

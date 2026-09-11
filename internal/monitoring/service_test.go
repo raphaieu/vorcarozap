@@ -311,6 +311,132 @@ func TestExecuteRunCrossRunDeduplication(t *testing.T) {
 	}
 }
 
+func TestExecuteRunMixedCanonicalAndDuplicates(t *testing.T) {
+	db, ctx := setupTestDB(t)
+
+	// Pre-seed an existing canonical candidate in the database
+	seedProvider := &mockResearchProvider{
+		discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+			return &research.DiscoverResult{
+				Candidates: []research.CandidateExtraction{
+					{
+						EntityName:          "Entidade Existente",
+						Proposition:         "Proposição pré-existente",
+						SuggestedGrade:      "A",
+						SourceURL:           "https://noticias.exemplo.com/previa",
+						Excerpt:             "Trecho prévio",
+						TechnicalConfidence: 0.95,
+					},
+				},
+				Model:       "openai/gpt-4.1-mini",
+				TotalTokens: 50,
+			}, nil
+		},
+	}
+
+	svc, err := monitoring.NewService(monitoring.ServiceConfig{
+		DB:       db,
+		Provider: seedProvider,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar Service: %v", err)
+	}
+
+	_, err = svc.ExecuteRun(ctx, monitoring.RunInput{Query: "seed run"})
+	if err != nil {
+		t.Fatalf("Seed run falhou: %v", err)
+	}
+
+	// Now execute a run with 5 candidates:
+	// 1. Cross-run duplicate of "Entidade Existente"
+	// 2. New Canonical 1 ("Daniel Vorcaro")
+	// 3. Intra-run duplicate of New Canonical 1
+	// 4. New Canonical 2 ("Banco Master")
+	// 5. Intra-run duplicate of New Canonical 2
+	mixedProvider := &mockResearchProvider{
+		discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+			return &research.DiscoverResult{
+				Candidates: []research.CandidateExtraction{
+					{
+						EntityName:          "Entidade Existente",
+						Proposition:         "Proposição pré-existente",
+						SuggestedGrade:      "A",
+						SourceURL:           "https://noticias.exemplo.com/previa#fragment",
+						Excerpt:             "Trecho prévio",
+						TechnicalConfidence: 0.95,
+					},
+					{
+						EntityName:          "Daniel Vorcaro",
+						Proposition:         "Nova Proposição 1",
+						SuggestedGrade:      "B",
+						SourceURL:           "https://noticias.exemplo.com/nova-1",
+						Excerpt:             "Trecho novo 1",
+						TechnicalConfidence: 0.90,
+					},
+					{
+						EntityName:          "Daniel Vorcaro",
+						Proposition:         "Nova Proposição 1",
+						SuggestedGrade:      "B",
+						SourceURL:           "https://noticias.exemplo.com/nova-1",
+						Excerpt:             "Trecho novo 1",
+						TechnicalConfidence: 0.90,
+					},
+					{
+						EntityName:          "Banco Master",
+						Proposition:         "Nova Proposição 2",
+						SuggestedGrade:      "C",
+						SourceURL:           "https://noticias.exemplo.com/nova-2",
+						Excerpt:             "Trecho novo 2",
+						TechnicalConfidence: 0.85,
+					},
+					{
+						EntityName:          "Banco Master",
+						Proposition:         "Nova Proposição 2",
+						SuggestedGrade:      "C",
+						SourceURL:           "https://noticias.exemplo.com/nova-2#dup",
+						Excerpt:             "Trecho novo 2",
+						TechnicalConfidence: 0.85,
+					},
+				},
+				Model:       "openai/gpt-4.1-mini",
+				TotalTokens: 200,
+			}, nil
+		},
+	}
+
+	mixedSvc, err := monitoring.NewService(monitoring.ServiceConfig{
+		DB:       db,
+		Provider: mixedProvider,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar mixed Service: %v", err)
+	}
+
+	res, err := mixedSvc.ExecuteRun(ctx, monitoring.RunInput{Query: "pesquisa mista"})
+	if err != nil {
+		t.Fatalf("ExecuteRun falhou: %v", err)
+	}
+
+	if res.TotalCandidates != 5 {
+		t.Errorf("TotalCandidates esperado 5, obtido %d", res.TotalCandidates)
+	}
+	if res.UniqueCandidates != 2 {
+		t.Errorf("UniqueCandidates esperado 2, obtido %d", res.UniqueCandidates)
+	}
+	if res.DuplicateCandidates != 3 {
+		t.Errorf("DuplicateCandidates esperado 3, obtido %d", res.DuplicateCandidates)
+	}
+
+	run, err := mixedSvc.GetRun(ctx, res.RunID)
+	if err != nil {
+		t.Fatalf("GetRun falhou: %v", err)
+	}
+	expectedSummaryJSON := `{"duplicate_candidates":3,"total_candidates":5,"unique_candidates":2}`
+	if run.SummaryCounts != expectedSummaryJSON && !strings.Contains(run.SummaryCounts, `"unique_candidates":2`) {
+		t.Errorf("summary_counts inesperado: %s", run.SummaryCounts)
+	}
+}
+
 func TestExecuteRunProviderError(t *testing.T) {
 	db, ctx := setupTestDB(t)
 

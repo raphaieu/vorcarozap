@@ -86,6 +86,7 @@ Configuração via variáveis de ambiente:
   OPENROUTER_API_KEY                      Chave de API do OpenRouter (sem default; obrigatória para descoberta)
   OPENROUTER_BASE_URL                     Endpoint de completions (padrão: https://openrouter.ai/api/v1/chat/completions)
   OPENROUTER_DISCOVERY_MODEL              Modelo LLM para descoberta (padrão: openai/gpt-4.1-mini)
+  OPENROUTER_VERIFICATION_MODEL           Modelo LLM para gate semântico (padrão: openai/gpt-4.1-mini)
   OPENROUTER_TIMEOUT                      Timeout HTTP para chamadas OpenRouter (padrão: 30s)
   OPENROUTER_WEB_SEARCH_ENGINE            Mecanismo de busca: auto|native|exa|firecrawl|parallel|perplexity (padrão: auto)
   OPENROUTER_WEB_SEARCH_MAX_RESULTS       Resultados por busca 1..25 (padrão: 5)

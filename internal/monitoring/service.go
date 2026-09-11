@@ -128,27 +128,32 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 
 	// 3. Processamento, normalização e deduplicação defensiva de candidatos
 	type processedCandidate struct {
-		id                   string
-		fingerprint          string
-		fingerprintVersion   int64
-		entityName           string
-		normalizedEntityName string
-		proposition          string
-		suggestedGrade       string
-		sourceURL            string
-		canonicalURL         string
-		sourceTitle          string
-		publisherOrAuthor    string
-		publishedAt          sql.NullString
-		excerpt              string
-		locator              string
-		contextLimits        string
-		technicalConfidence  float64
-		rawPayload           string
-		editorialStatus      string
-		isDuplicate          int64
-		duplicateReason      string
-		canonicalCandidateID sql.NullString
+		id                         string
+		fingerprint                string
+		fingerprintVersion         int64
+		entityName                 string
+		normalizedEntityName       string
+		targetEntityName           string
+		normalizedTargetEntityName string
+		caseName                   string
+		normalizedCaseName         string
+		relationshipType           string
+		proposition                string
+		suggestedGrade             string
+		sourceURL                  string
+		canonicalURL               string
+		sourceTitle                string
+		publisherOrAuthor          string
+		publishedAt                sql.NullString
+		excerpt                    string
+		locator                    string
+		contextLimits              string
+		technicalConfidence        float64
+		rawPayload                 string
+		editorialStatus            string
+		isDuplicate                int64
+		duplicateReason            string
+		canonicalCandidateID       sql.NullString
 	}
 
 	var candidatesToInsert []processedCandidate
@@ -175,6 +180,11 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 		// Normalização pura
 		cleanEntity := normalize.String(rawCand.EntityName)
 		normEntity := normalize.Name(cleanEntity)
+		cleanTarget := normalize.String(rawCand.TargetEntityName)
+		normTarget := normalize.Name(cleanTarget)
+		cleanCase := normalize.String(rawCand.CaseName)
+		normCase := normalize.Name(cleanCase)
+		cleanRelType := normalize.String(rawCand.RelationshipType)
 		cleanProp := normalize.String(normalize.Unicode(rawCand.Proposition))
 		cleanExcerpt := normalize.String(normalize.Unicode(rawCand.Excerpt))
 		cleanTitle := normalize.String(rawCand.SourceTitle)
@@ -231,27 +241,32 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 		}
 
 		candidatesToInsert = append(candidatesToInsert, processedCandidate{
-			id:                   candID,
-			fingerprint:          fp,
-			fingerprintVersion:   1,
-			entityName:           cleanEntity,
-			normalizedEntityName: normEntity,
-			proposition:          cleanProp,
-			suggestedGrade:       rawCand.SuggestedGrade,
-			sourceURL:            rawCand.SourceURL,
-			canonicalURL:         canonicalURL,
-			sourceTitle:          cleanTitle,
-			publisherOrAuthor:    cleanPublisher,
-			publishedAt:          pubAt,
-			excerpt:              cleanExcerpt,
-			locator:              cleanLocator,
-			contextLimits:        cleanLimits,
-			technicalConfidence:  rawCand.TechnicalConfidence,
-			rawPayload:           string(rawBytes),
-			editorialStatus:      "quarantined", // Todo candidato novo inicia seguro em quarentena
-			isDuplicate:          isDup,
-			duplicateReason:      dupReason,
-			canonicalCandidateID: canonicalID,
+			id:                         candID,
+			fingerprint:                fp,
+			fingerprintVersion:         1,
+			entityName:                 cleanEntity,
+			normalizedEntityName:       normEntity,
+			targetEntityName:           cleanTarget,
+			normalizedTargetEntityName: normTarget,
+			caseName:                   cleanCase,
+			normalizedCaseName:         normCase,
+			relationshipType:           cleanRelType,
+			proposition:                cleanProp,
+			suggestedGrade:             rawCand.SuggestedGrade,
+			sourceURL:                  rawCand.SourceURL,
+			canonicalURL:               canonicalURL,
+			sourceTitle:                cleanTitle,
+			publisherOrAuthor:          cleanPublisher,
+			publishedAt:                pubAt,
+			excerpt:                    cleanExcerpt,
+			locator:                    cleanLocator,
+			contextLimits:              cleanLimits,
+			technicalConfidence:        rawCand.TechnicalConfidence,
+			rawPayload:                 string(rawBytes),
+			editorialStatus:            "quarantined", // Todo candidato novo inicia seguro em quarentena
+			isDuplicate:                isDup,
+			duplicateReason:            dupReason,
+			canonicalCandidateID:       canonicalID,
 		})
 	}
 
@@ -282,33 +297,38 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 	txErr := store.ExecTx(ctx, s.db, func(txQ *sqlc.Queries) error {
 		for _, c := range candidatesToInsert {
 			_, err := txQ.CreateMonitoringCandidate(ctx, sqlc.CreateMonitoringCandidateParams{
-				ID:                    c.id,
-				MonitoringRunID:       runID,
-				Fingerprint:           c.fingerprint,
-				FingerprintVersion:    c.fingerprintVersion,
-				EntityName:            c.entityName,
-				NormalizedEntityName:  c.normalizedEntityName,
-				Proposition:           c.proposition,
-				SuggestedGrade:        c.suggestedGrade,
-				SourceUrl:             c.sourceURL,
-				CanonicalUrl:          c.canonicalURL,
-				SourceTitle:           c.sourceTitle,
-				PublisherOrAuthor:     c.publisherOrAuthor,
-				PublishedAt:           c.publishedAt,
-				Excerpt:               c.excerpt,
-				Locator:               c.locator,
-				ContextLimits:         c.contextLimits,
-				TechnicalConfidence:   c.technicalConfidence,
-				RawPayload:            c.rawPayload,
-				EditorialStatus:       c.editorialStatus,
-				IsDuplicate:           c.isDuplicate,
-				DuplicateReason:       c.duplicateReason,
-				CanonicalCandidateID:  c.canonicalCandidateID,
-				StructuralGateReasons: "[]",
-				SemanticGateReasons:   "[]",
-				PolicyReasons:         "[]",
-				CreatedAt:             completedNow,
-				UpdatedAt:             completedNow,
+				ID:                         c.id,
+				MonitoringRunID:            runID,
+				Fingerprint:                c.fingerprint,
+				FingerprintVersion:         c.fingerprintVersion,
+				EntityName:                 c.entityName,
+				NormalizedEntityName:       c.normalizedEntityName,
+				TargetEntityName:           c.targetEntityName,
+				NormalizedTargetEntityName: c.normalizedTargetEntityName,
+				CaseName:                   c.caseName,
+				NormalizedCaseName:         c.normalizedCaseName,
+				RelationshipType:           c.relationshipType,
+				Proposition:                c.proposition,
+				SuggestedGrade:             c.suggestedGrade,
+				SourceUrl:                  c.sourceURL,
+				CanonicalUrl:               c.canonicalURL,
+				SourceTitle:                c.sourceTitle,
+				PublisherOrAuthor:          c.publisherOrAuthor,
+				PublishedAt:                c.publishedAt,
+				Excerpt:                    c.excerpt,
+				Locator:                    c.locator,
+				ContextLimits:              c.contextLimits,
+				TechnicalConfidence:        c.technicalConfidence,
+				RawPayload:                 c.rawPayload,
+				EditorialStatus:            c.editorialStatus,
+				IsDuplicate:                c.isDuplicate,
+				DuplicateReason:            c.duplicateReason,
+				CanonicalCandidateID:       c.canonicalCandidateID,
+				StructuralGateReasons:      "[]",
+				SemanticGateReasons:        "[]",
+				PolicyReasons:              "[]",
+				CreatedAt:                  completedNow,
+				UpdatedAt:                  completedNow,
 			})
 			if err != nil {
 				return fmt.Errorf("monitoring: falha ao inserir candidato %s: %w", c.id, err)

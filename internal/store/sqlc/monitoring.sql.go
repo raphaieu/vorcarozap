@@ -10,6 +10,68 @@ import (
 	"database/sql"
 )
 
+const claimQuarantinedCandidateForPublication = `-- name: ClaimQuarantinedCandidateForPublication :one
+UPDATE monitoring_candidates
+SET updated_at = ?
+WHERE id = ?
+  AND editorial_status = 'quarantined'
+  AND is_duplicate = 0
+  AND published_claim_id IS NULL
+RETURNING id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at
+`
+
+type ClaimQuarantinedCandidateForPublicationParams struct {
+	UpdatedAt string `json:"updated_at"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) ClaimQuarantinedCandidateForPublication(ctx context.Context, arg ClaimQuarantinedCandidateForPublicationParams) (MonitoringCandidate, error) {
+	row := q.db.QueryRowContext(ctx, claimQuarantinedCandidateForPublication, arg.UpdatedAt, arg.ID)
+	var i MonitoringCandidate
+	err := row.Scan(
+		&i.ID,
+		&i.MonitoringRunID,
+		&i.Fingerprint,
+		&i.FingerprintVersion,
+		&i.EntityName,
+		&i.NormalizedEntityName,
+		&i.TargetEntityName,
+		&i.NormalizedTargetEntityName,
+		&i.CaseName,
+		&i.NormalizedCaseName,
+		&i.RelationshipType,
+		&i.Proposition,
+		&i.SuggestedGrade,
+		&i.SourceUrl,
+		&i.CanonicalUrl,
+		&i.SourceTitle,
+		&i.PublisherOrAuthor,
+		&i.PublishedAt,
+		&i.Excerpt,
+		&i.Locator,
+		&i.ContextLimits,
+		&i.TechnicalConfidence,
+		&i.RawPayload,
+		&i.EditorialStatus,
+		&i.IsDuplicate,
+		&i.DuplicateReason,
+		&i.CanonicalCandidateID,
+		&i.ResolvedSubjectEntityID,
+		&i.ResolvedTargetEntityID,
+		&i.ResolvedCaseID,
+		&i.PublishedClaimID,
+		&i.StructuralGatePassed,
+		&i.StructuralGateReasons,
+		&i.SemanticGatePassed,
+		&i.SemanticGateReasons,
+		&i.PolicyAction,
+		&i.PolicyReasons,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countCandidatesByRunID = `-- name: CountCandidatesByRunID :one
 SELECT
     count(*) AS total_count,
@@ -35,48 +97,66 @@ func (q *Queries) CountCandidatesByRunID(ctx context.Context, monitoringRunID st
 const createMonitoringCandidate = `-- name: CreateMonitoringCandidate :one
 INSERT INTO monitoring_candidates (
     id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name,
+    target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type,
     proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author,
     published_at, excerpt, locator, context_limits, technical_confidence, raw_payload,
     editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id,
+    resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id,
     structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons,
     policy_action, policy_reasons, created_at, updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?, ?, ?
 )
-RETURNING id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at
+RETURNING id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at
 `
 
 type CreateMonitoringCandidateParams struct {
-	ID                    string         `json:"id"`
-	MonitoringRunID       string         `json:"monitoring_run_id"`
-	Fingerprint           string         `json:"fingerprint"`
-	FingerprintVersion    int64          `json:"fingerprint_version"`
-	EntityName            string         `json:"entity_name"`
-	NormalizedEntityName  string         `json:"normalized_entity_name"`
-	Proposition           string         `json:"proposition"`
-	SuggestedGrade        string         `json:"suggested_grade"`
-	SourceUrl             string         `json:"source_url"`
-	CanonicalUrl          string         `json:"canonical_url"`
-	SourceTitle           string         `json:"source_title"`
-	PublisherOrAuthor     string         `json:"publisher_or_author"`
-	PublishedAt           sql.NullString `json:"published_at"`
-	Excerpt               string         `json:"excerpt"`
-	Locator               string         `json:"locator"`
-	ContextLimits         string         `json:"context_limits"`
-	TechnicalConfidence   float64        `json:"technical_confidence"`
-	RawPayload            string         `json:"raw_payload"`
-	EditorialStatus       string         `json:"editorial_status"`
-	IsDuplicate           int64          `json:"is_duplicate"`
-	DuplicateReason       string         `json:"duplicate_reason"`
-	CanonicalCandidateID  sql.NullString `json:"canonical_candidate_id"`
-	StructuralGatePassed  sql.NullInt64  `json:"structural_gate_passed"`
-	StructuralGateReasons string         `json:"structural_gate_reasons"`
-	SemanticGatePassed    sql.NullInt64  `json:"semantic_gate_passed"`
-	SemanticGateReasons   string         `json:"semantic_gate_reasons"`
-	PolicyAction          string         `json:"policy_action"`
-	PolicyReasons         string         `json:"policy_reasons"`
-	CreatedAt             string         `json:"created_at"`
-	UpdatedAt             string         `json:"updated_at"`
+	ID                         string         `json:"id"`
+	MonitoringRunID            string         `json:"monitoring_run_id"`
+	Fingerprint                string         `json:"fingerprint"`
+	FingerprintVersion         int64          `json:"fingerprint_version"`
+	EntityName                 string         `json:"entity_name"`
+	NormalizedEntityName       string         `json:"normalized_entity_name"`
+	TargetEntityName           string         `json:"target_entity_name"`
+	NormalizedTargetEntityName string         `json:"normalized_target_entity_name"`
+	CaseName                   string         `json:"case_name"`
+	NormalizedCaseName         string         `json:"normalized_case_name"`
+	RelationshipType           string         `json:"relationship_type"`
+	Proposition                string         `json:"proposition"`
+	SuggestedGrade             string         `json:"suggested_grade"`
+	SourceUrl                  string         `json:"source_url"`
+	CanonicalUrl               string         `json:"canonical_url"`
+	SourceTitle                string         `json:"source_title"`
+	PublisherOrAuthor          string         `json:"publisher_or_author"`
+	PublishedAt                sql.NullString `json:"published_at"`
+	Excerpt                    string         `json:"excerpt"`
+	Locator                    string         `json:"locator"`
+	ContextLimits              string         `json:"context_limits"`
+	TechnicalConfidence        float64        `json:"technical_confidence"`
+	RawPayload                 string         `json:"raw_payload"`
+	EditorialStatus            string         `json:"editorial_status"`
+	IsDuplicate                int64          `json:"is_duplicate"`
+	DuplicateReason            string         `json:"duplicate_reason"`
+	CanonicalCandidateID       sql.NullString `json:"canonical_candidate_id"`
+	ResolvedSubjectEntityID    sql.NullString `json:"resolved_subject_entity_id"`
+	ResolvedTargetEntityID     sql.NullString `json:"resolved_target_entity_id"`
+	ResolvedCaseID             sql.NullString `json:"resolved_case_id"`
+	PublishedClaimID           sql.NullString `json:"published_claim_id"`
+	StructuralGatePassed       sql.NullInt64  `json:"structural_gate_passed"`
+	StructuralGateReasons      string         `json:"structural_gate_reasons"`
+	SemanticGatePassed         sql.NullInt64  `json:"semantic_gate_passed"`
+	SemanticGateReasons        string         `json:"semantic_gate_reasons"`
+	PolicyAction               string         `json:"policy_action"`
+	PolicyReasons              string         `json:"policy_reasons"`
+	CreatedAt                  string         `json:"created_at"`
+	UpdatedAt                  string         `json:"updated_at"`
 }
 
 func (q *Queries) CreateMonitoringCandidate(ctx context.Context, arg CreateMonitoringCandidateParams) (MonitoringCandidate, error) {
@@ -87,6 +167,11 @@ func (q *Queries) CreateMonitoringCandidate(ctx context.Context, arg CreateMonit
 		arg.FingerprintVersion,
 		arg.EntityName,
 		arg.NormalizedEntityName,
+		arg.TargetEntityName,
+		arg.NormalizedTargetEntityName,
+		arg.CaseName,
+		arg.NormalizedCaseName,
+		arg.RelationshipType,
 		arg.Proposition,
 		arg.SuggestedGrade,
 		arg.SourceUrl,
@@ -103,6 +188,10 @@ func (q *Queries) CreateMonitoringCandidate(ctx context.Context, arg CreateMonit
 		arg.IsDuplicate,
 		arg.DuplicateReason,
 		arg.CanonicalCandidateID,
+		arg.ResolvedSubjectEntityID,
+		arg.ResolvedTargetEntityID,
+		arg.ResolvedCaseID,
+		arg.PublishedClaimID,
 		arg.StructuralGatePassed,
 		arg.StructuralGateReasons,
 		arg.SemanticGatePassed,
@@ -120,6 +209,11 @@ func (q *Queries) CreateMonitoringCandidate(ctx context.Context, arg CreateMonit
 		&i.FingerprintVersion,
 		&i.EntityName,
 		&i.NormalizedEntityName,
+		&i.TargetEntityName,
+		&i.NormalizedTargetEntityName,
+		&i.CaseName,
+		&i.NormalizedCaseName,
+		&i.RelationshipType,
 		&i.Proposition,
 		&i.SuggestedGrade,
 		&i.SourceUrl,
@@ -136,6 +230,10 @@ func (q *Queries) CreateMonitoringCandidate(ctx context.Context, arg CreateMonit
 		&i.IsDuplicate,
 		&i.DuplicateReason,
 		&i.CanonicalCandidateID,
+		&i.ResolvedSubjectEntityID,
+		&i.ResolvedTargetEntityID,
+		&i.ResolvedCaseID,
+		&i.PublishedClaimID,
 		&i.StructuralGatePassed,
 		&i.StructuralGateReasons,
 		&i.SemanticGatePassed,
@@ -222,8 +320,80 @@ func (q *Queries) CreateMonitoringRun(ctx context.Context, arg CreateMonitoringR
 	return i, err
 }
 
+const createSemanticEvaluation = `-- name: CreateSemanticEvaluation :one
+INSERT INTO semantic_evaluations (
+    id, monitoring_candidate_id, provider, model, schema_version,
+    identity_match, claim_supported, claim_overstates_source, attribution_explicit,
+    grade_compatible, contains_illicit_inference, uncertainties, recommended_action,
+    raw_response, created_at
+) VALUES (
+    ?, ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?
+)
+RETURNING id, monitoring_candidate_id, provider, model, schema_version, identity_match, claim_supported, claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference, uncertainties, recommended_action, raw_response, created_at
+`
+
+type CreateSemanticEvaluationParams struct {
+	ID                       string `json:"id"`
+	MonitoringCandidateID    string `json:"monitoring_candidate_id"`
+	Provider                 string `json:"provider"`
+	Model                    string `json:"model"`
+	SchemaVersion            string `json:"schema_version"`
+	IdentityMatch            int64  `json:"identity_match"`
+	ClaimSupported           int64  `json:"claim_supported"`
+	ClaimOverstatesSource    int64  `json:"claim_overstates_source"`
+	AttributionExplicit      int64  `json:"attribution_explicit"`
+	GradeCompatible          int64  `json:"grade_compatible"`
+	ContainsIllicitInference int64  `json:"contains_illicit_inference"`
+	Uncertainties            string `json:"uncertainties"`
+	RecommendedAction        string `json:"recommended_action"`
+	RawResponse              string `json:"raw_response"`
+	CreatedAt                string `json:"created_at"`
+}
+
+func (q *Queries) CreateSemanticEvaluation(ctx context.Context, arg CreateSemanticEvaluationParams) (SemanticEvaluation, error) {
+	row := q.db.QueryRowContext(ctx, createSemanticEvaluation,
+		arg.ID,
+		arg.MonitoringCandidateID,
+		arg.Provider,
+		arg.Model,
+		arg.SchemaVersion,
+		arg.IdentityMatch,
+		arg.ClaimSupported,
+		arg.ClaimOverstatesSource,
+		arg.AttributionExplicit,
+		arg.GradeCompatible,
+		arg.ContainsIllicitInference,
+		arg.Uncertainties,
+		arg.RecommendedAction,
+		arg.RawResponse,
+		arg.CreatedAt,
+	)
+	var i SemanticEvaluation
+	err := row.Scan(
+		&i.ID,
+		&i.MonitoringCandidateID,
+		&i.Provider,
+		&i.Model,
+		&i.SchemaVersion,
+		&i.IdentityMatch,
+		&i.ClaimSupported,
+		&i.ClaimOverstatesSource,
+		&i.AttributionExplicit,
+		&i.GradeCompatible,
+		&i.ContainsIllicitInference,
+		&i.Uncertainties,
+		&i.RecommendedAction,
+		&i.RawResponse,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCanonicalCandidateByFingerprint = `-- name: GetCanonicalCandidateByFingerprint :one
-SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
+SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
 WHERE fingerprint = ? AND is_duplicate = 0
 ORDER BY created_at ASC, rowid ASC
 LIMIT 1
@@ -239,6 +409,11 @@ func (q *Queries) GetCanonicalCandidateByFingerprint(ctx context.Context, finger
 		&i.FingerprintVersion,
 		&i.EntityName,
 		&i.NormalizedEntityName,
+		&i.TargetEntityName,
+		&i.NormalizedTargetEntityName,
+		&i.CaseName,
+		&i.NormalizedCaseName,
+		&i.RelationshipType,
 		&i.Proposition,
 		&i.SuggestedGrade,
 		&i.SourceUrl,
@@ -255,6 +430,10 @@ func (q *Queries) GetCanonicalCandidateByFingerprint(ctx context.Context, finger
 		&i.IsDuplicate,
 		&i.DuplicateReason,
 		&i.CanonicalCandidateID,
+		&i.ResolvedSubjectEntityID,
+		&i.ResolvedTargetEntityID,
+		&i.ResolvedCaseID,
+		&i.PublishedClaimID,
 		&i.StructuralGatePassed,
 		&i.StructuralGateReasons,
 		&i.SemanticGatePassed,
@@ -268,7 +447,7 @@ func (q *Queries) GetCanonicalCandidateByFingerprint(ctx context.Context, finger
 }
 
 const getMonitoringCandidateByID = `-- name: GetMonitoringCandidateByID :one
-SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
+SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
 WHERE id = ? LIMIT 1
 `
 
@@ -282,6 +461,11 @@ func (q *Queries) GetMonitoringCandidateByID(ctx context.Context, id string) (Mo
 		&i.FingerprintVersion,
 		&i.EntityName,
 		&i.NormalizedEntityName,
+		&i.TargetEntityName,
+		&i.NormalizedTargetEntityName,
+		&i.CaseName,
+		&i.NormalizedCaseName,
+		&i.RelationshipType,
 		&i.Proposition,
 		&i.SuggestedGrade,
 		&i.SourceUrl,
@@ -298,6 +482,10 @@ func (q *Queries) GetMonitoringCandidateByID(ctx context.Context, id string) (Mo
 		&i.IsDuplicate,
 		&i.DuplicateReason,
 		&i.CanonicalCandidateID,
+		&i.ResolvedSubjectEntityID,
+		&i.ResolvedTargetEntityID,
+		&i.ResolvedCaseID,
+		&i.PublishedClaimID,
 		&i.StructuralGatePassed,
 		&i.StructuralGateReasons,
 		&i.SemanticGatePassed,
@@ -340,8 +528,22 @@ func (q *Queries) GetMonitoringRunByID(ctx context.Context, id string) (Monitori
 	return i, err
 }
 
+const hasRejectedCandidateByFingerprint = `-- name: HasRejectedCandidateByFingerprint :one
+SELECT count(*) > 0 AS is_rejected
+FROM monitoring_candidates
+WHERE fingerprint = ?
+  AND editorial_status = 'rejected'
+`
+
+func (q *Queries) HasRejectedCandidateByFingerprint(ctx context.Context, fingerprint string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasRejectedCandidateByFingerprint, fingerprint)
+	var is_rejected bool
+	err := row.Scan(&is_rejected)
+	return is_rejected, err
+}
+
 const listCandidatesByRunID = `-- name: ListCandidatesByRunID :many
-SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
+SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
 WHERE monitoring_run_id = ?
 ORDER BY created_at ASC, rowid ASC
 `
@@ -362,6 +564,11 @@ func (q *Queries) ListCandidatesByRunID(ctx context.Context, monitoringRunID str
 			&i.FingerprintVersion,
 			&i.EntityName,
 			&i.NormalizedEntityName,
+			&i.TargetEntityName,
+			&i.NormalizedTargetEntityName,
+			&i.CaseName,
+			&i.NormalizedCaseName,
+			&i.RelationshipType,
 			&i.Proposition,
 			&i.SuggestedGrade,
 			&i.SourceUrl,
@@ -378,6 +585,10 @@ func (q *Queries) ListCandidatesByRunID(ctx context.Context, monitoringRunID str
 			&i.IsDuplicate,
 			&i.DuplicateReason,
 			&i.CanonicalCandidateID,
+			&i.ResolvedSubjectEntityID,
+			&i.ResolvedTargetEntityID,
+			&i.ResolvedCaseID,
+			&i.PublishedClaimID,
 			&i.StructuralGatePassed,
 			&i.StructuralGateReasons,
 			&i.SemanticGatePassed,
@@ -450,6 +661,217 @@ func (q *Queries) ListMonitoringRuns(ctx context.Context, arg ListMonitoringRuns
 		return nil, err
 	}
 	return items, nil
+}
+
+const listQuarantinedCandidatesForEvaluation = `-- name: ListQuarantinedCandidatesForEvaluation :many
+SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
+WHERE editorial_status = 'quarantined'
+  AND is_duplicate = 0
+ORDER BY created_at ASC, rowid ASC
+LIMIT ?
+`
+
+func (q *Queries) ListQuarantinedCandidatesForEvaluation(ctx context.Context, limit int64) ([]MonitoringCandidate, error) {
+	rows, err := q.db.QueryContext(ctx, listQuarantinedCandidatesForEvaluation, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MonitoringCandidate
+	for rows.Next() {
+		var i MonitoringCandidate
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitoringRunID,
+			&i.Fingerprint,
+			&i.FingerprintVersion,
+			&i.EntityName,
+			&i.NormalizedEntityName,
+			&i.TargetEntityName,
+			&i.NormalizedTargetEntityName,
+			&i.CaseName,
+			&i.NormalizedCaseName,
+			&i.RelationshipType,
+			&i.Proposition,
+			&i.SuggestedGrade,
+			&i.SourceUrl,
+			&i.CanonicalUrl,
+			&i.SourceTitle,
+			&i.PublisherOrAuthor,
+			&i.PublishedAt,
+			&i.Excerpt,
+			&i.Locator,
+			&i.ContextLimits,
+			&i.TechnicalConfidence,
+			&i.RawPayload,
+			&i.EditorialStatus,
+			&i.IsDuplicate,
+			&i.DuplicateReason,
+			&i.CanonicalCandidateID,
+			&i.ResolvedSubjectEntityID,
+			&i.ResolvedTargetEntityID,
+			&i.ResolvedCaseID,
+			&i.PublishedClaimID,
+			&i.StructuralGatePassed,
+			&i.StructuralGateReasons,
+			&i.SemanticGatePassed,
+			&i.SemanticGateReasons,
+			&i.PolicyAction,
+			&i.PolicyReasons,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSemanticEvaluationsByCandidateID = `-- name: ListSemanticEvaluationsByCandidateID :many
+SELECT id, monitoring_candidate_id, provider, model, schema_version, identity_match, claim_supported, claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference, uncertainties, recommended_action, raw_response, created_at FROM semantic_evaluations
+WHERE monitoring_candidate_id = ?
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListSemanticEvaluationsByCandidateID(ctx context.Context, monitoringCandidateID string) ([]SemanticEvaluation, error) {
+	rows, err := q.db.QueryContext(ctx, listSemanticEvaluationsByCandidateID, monitoringCandidateID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SemanticEvaluation
+	for rows.Next() {
+		var i SemanticEvaluation
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitoringCandidateID,
+			&i.Provider,
+			&i.Model,
+			&i.SchemaVersion,
+			&i.IdentityMatch,
+			&i.ClaimSupported,
+			&i.ClaimOverstatesSource,
+			&i.AttributionExplicit,
+			&i.GradeCompatible,
+			&i.ContainsIllicitInference,
+			&i.Uncertainties,
+			&i.RecommendedAction,
+			&i.RawResponse,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateMonitoringCandidateGates = `-- name: UpdateMonitoringCandidateGates :one
+UPDATE monitoring_candidates
+SET structural_gate_passed = ?,
+    structural_gate_reasons = ?,
+    semantic_gate_passed = ?,
+    semantic_gate_reasons = ?,
+    policy_action = ?,
+    policy_reasons = ?,
+    editorial_status = ?,
+    resolved_subject_entity_id = ?,
+    resolved_target_entity_id = ?,
+    resolved_case_id = ?,
+    published_claim_id = ?,
+    updated_at = ?
+WHERE id = ?
+RETURNING id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at
+`
+
+type UpdateMonitoringCandidateGatesParams struct {
+	StructuralGatePassed    sql.NullInt64  `json:"structural_gate_passed"`
+	StructuralGateReasons   string         `json:"structural_gate_reasons"`
+	SemanticGatePassed      sql.NullInt64  `json:"semantic_gate_passed"`
+	SemanticGateReasons     string         `json:"semantic_gate_reasons"`
+	PolicyAction            string         `json:"policy_action"`
+	PolicyReasons           string         `json:"policy_reasons"`
+	EditorialStatus         string         `json:"editorial_status"`
+	ResolvedSubjectEntityID sql.NullString `json:"resolved_subject_entity_id"`
+	ResolvedTargetEntityID  sql.NullString `json:"resolved_target_entity_id"`
+	ResolvedCaseID          sql.NullString `json:"resolved_case_id"`
+	PublishedClaimID        sql.NullString `json:"published_claim_id"`
+	UpdatedAt               string         `json:"updated_at"`
+	ID                      string         `json:"id"`
+}
+
+func (q *Queries) UpdateMonitoringCandidateGates(ctx context.Context, arg UpdateMonitoringCandidateGatesParams) (MonitoringCandidate, error) {
+	row := q.db.QueryRowContext(ctx, updateMonitoringCandidateGates,
+		arg.StructuralGatePassed,
+		arg.StructuralGateReasons,
+		arg.SemanticGatePassed,
+		arg.SemanticGateReasons,
+		arg.PolicyAction,
+		arg.PolicyReasons,
+		arg.EditorialStatus,
+		arg.ResolvedSubjectEntityID,
+		arg.ResolvedTargetEntityID,
+		arg.ResolvedCaseID,
+		arg.PublishedClaimID,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	var i MonitoringCandidate
+	err := row.Scan(
+		&i.ID,
+		&i.MonitoringRunID,
+		&i.Fingerprint,
+		&i.FingerprintVersion,
+		&i.EntityName,
+		&i.NormalizedEntityName,
+		&i.TargetEntityName,
+		&i.NormalizedTargetEntityName,
+		&i.CaseName,
+		&i.NormalizedCaseName,
+		&i.RelationshipType,
+		&i.Proposition,
+		&i.SuggestedGrade,
+		&i.SourceUrl,
+		&i.CanonicalUrl,
+		&i.SourceTitle,
+		&i.PublisherOrAuthor,
+		&i.PublishedAt,
+		&i.Excerpt,
+		&i.Locator,
+		&i.ContextLimits,
+		&i.TechnicalConfidence,
+		&i.RawPayload,
+		&i.EditorialStatus,
+		&i.IsDuplicate,
+		&i.DuplicateReason,
+		&i.CanonicalCandidateID,
+		&i.ResolvedSubjectEntityID,
+		&i.ResolvedTargetEntityID,
+		&i.ResolvedCaseID,
+		&i.PublishedClaimID,
+		&i.StructuralGatePassed,
+		&i.StructuralGateReasons,
+		&i.SemanticGatePassed,
+		&i.SemanticGateReasons,
+		&i.PolicyAction,
+		&i.PolicyReasons,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateMonitoringRunStatus = `-- name: UpdateMonitoringRunStatus :one

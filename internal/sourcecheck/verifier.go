@@ -57,6 +57,8 @@ type Verifier struct {
 	client    *http.Client
 }
 
+var _ SourceVerifier = (*Verifier)(nil)
+
 // NewVerifier inicializa o verificador com transporte seguro contra SSRF e DNS rebinding.
 func NewVerifier(cfg VerifierConfig) *Verifier {
 	if cfg.TotalTimeout <= 0 {

@@ -41,6 +41,11 @@ func TestMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao consultar entities após migrate: %v", err)
 	}
 
+	// Executa rollback da migration 00007
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00007: %v", err)
+	}
+
 	// Executa rollback da migration 00006
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00006: %v", err)
@@ -725,7 +730,10 @@ func TestMigration00004_SeedFidelity(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// 2. Reverte 00006, 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	// 2. Reverte 00007, 00006, 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00007: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00006: %v", err)
 	}
@@ -818,7 +826,10 @@ func TestMigration00003_DownFailsOnIncompatibleData(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// Reverte 00006, 00005 e 00004 para ficar exatamente na 00003
+	// Reverte 00007, 00006, 00005 e 00004 para ficar exatamente na 00003
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00007: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00006: %v", err)
 	}
@@ -851,5 +862,95 @@ func TestMigration00003_DownFailsOnIncompatibleData(t *testing.T) {
 	err = db.QueryRowContext(ctx, "SELECT count(*) FROM sources WHERE id = 'src-empty-title'").Scan(&count)
 	if err != nil || count != 1 {
 		t.Fatalf("dados não devem ser perdidos na tentativa de rollback falha: count=%d, err=%v", count, err)
+	}
+}
+
+func TestMigration00007_RollbackAndReapply(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_mig_00007_rollback.db")
+	ctx := context.Background()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	defer db.Close()
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao aplicar migrations: %v", err)
+	}
+
+	// Insere registro de candidate com campos v2
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO monitoring_runs (id, status, query, discovery_provider, discovery_model, created_at)
+		VALUES ('run-mig-7', 'completed', 'query', 'openrouter', 'openai/gpt-4.1-mini', ?);
+	`, now)
+	if err != nil {
+		t.Fatalf("falha ao criar run: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO monitoring_candidates (
+			id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name,
+			target_entity_name, normalized_target_entity_name, relationship_type,
+			proposition, suggested_grade, source_url, canonical_url, technical_confidence,
+			created_at, updated_at
+		) VALUES (
+			'cand-mig-7', 'run-mig-7', 'v1:abc', 1, 'Daniel Vorcaro', 'daniel vorcaro',
+			'Banco Master', 'banco master', 'societario',
+			'Controle societário', 'A', 'https://example.com/item', 'https://example.com/item', 0.95,
+			?, ?
+		);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir candidato v2: %v", err)
+	}
+
+	// Cria avaliação semântica
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO semantic_evaluations (
+			id, monitoring_candidate_id, provider, model, schema_version,
+			identity_match, claim_supported, claim_overstates_source, attribution_explicit,
+			grade_compatible, contains_illicit_inference, uncertainties, recommended_action,
+			created_at
+		) VALUES (
+			'eval-mig-7', 'cand-mig-7', 'openrouter', 'openai/gpt-4.1-mini', 'v1',
+			1, 1, 0, 1, 1, 0, '[]', 'publish', ?
+		);
+	`, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir avaliação semântica: %v", err)
+	}
+
+	// Reverte migration 00007 (Rollback)
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00007: %v", err)
+	}
+
+	// Tabela semantic_evaluations deve ter sido removida
+	var evalCount int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM semantic_evaluations").Scan(&evalCount); err == nil {
+		t.Fatal("esperava erro ao consultar semantic_evaluations após rollback da 00007, mas tabela ainda existe")
+	}
+
+	// Tabela monitoring_candidates deve ter voltado ao formato v1 preservando dados essenciais
+	var candEntity, candProp string
+	err = db.QueryRowContext(ctx, "SELECT entity_name, proposition FROM monitoring_candidates WHERE id = 'cand-mig-7'").Scan(&candEntity, &candProp)
+	if err != nil {
+		t.Fatalf("falha ao consultar candidato após rollback 00007: %v", err)
+	}
+	if candEntity != "Daniel Vorcaro" || candProp != "Controle societário" {
+		t.Errorf("dados essenciais do candidato corrompidos após rollback 00007: entity=%q, prop=%q", candEntity, candProp)
+	}
+
+	// Re-aplica as migrations
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao re-aplicar migrations após rollback 00007: %v", err)
+	}
+
+	// semantic_evaluations deve existir novamente
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM semantic_evaluations").Scan(&evalCount); err != nil {
+		t.Fatalf("falha ao consultar semantic_evaluations após re-migrate: %v", err)
 	}
 }

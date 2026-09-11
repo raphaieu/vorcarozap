@@ -16,6 +16,7 @@ var (
 	ErrInvalidResponse  = errors.New("research: resposta do provedor inválida ou corrompida")
 	ErrResponseTooLarge = errors.New("research: resposta do provedor excedeu o limite máximo de tamanho")
 	ErrInvalidCandidate = errors.New("research: candidato com dados estruturados inválidos ou fora dos limites")
+	ErrInvalidVerifyIn  = errors.New("research: parâmetros de entrada para verificação semântica inválidos")
 )
 
 // DiscoverInput encapsula os parâmetros de consulta para descoberta de novas informações e evidências.
@@ -35,6 +36,9 @@ type Citation struct {
 // CandidateExtraction encapsula uma alegação factual estruturada extraída pelo modelo.
 type CandidateExtraction struct {
 	EntityName          string  `json:"entity_name"`
+	TargetEntityName    string  `json:"target_entity_name,omitempty"`
+	CaseName            string  `json:"case_name,omitempty"`
+	RelationshipType    string  `json:"relationship_type,omitempty"`
 	Proposition         string  `json:"proposition"`
 	SuggestedGrade      string  `json:"suggested_grade"`
 	SourceURL           string  `json:"source_url"`
@@ -84,10 +88,40 @@ type DiscoverResult struct {
 
 // VerifyInput define a entrada para a verificação semântica de compatibilidade documental (gate semântico).
 type VerifyInput struct {
-	EntityName string `json:"entity_name"`
-	ClaimText  string `json:"claim_text"`
-	SourceText string `json:"source_text"`
-	Grade      string `json:"grade"`
+	SubjectName       string `json:"subject_name"`
+	TargetEntityName  string `json:"target_entity_name,omitempty"`
+	CaseName          string `json:"case_name,omitempty"`
+	RelationshipType  string `json:"relationship_type,omitempty"`
+	Proposition       string `json:"proposition"`
+	Excerpt           string `json:"excerpt"`
+	SourceTitle       string `json:"source_title,omitempty"`
+	PublisherOrAuthor string `json:"publisher_or_author,omitempty"`
+	SourceURL         string `json:"source_url"`
+	Grade             string `json:"grade"`
+	ContextLimits     string `json:"context_limits,omitempty"`
+}
+
+// Validate valida os parâmetros de entrada para o gate semântico.
+func (v *VerifyInput) Validate() error {
+	if strings.TrimSpace(v.SubjectName) == "" {
+		return fmt.Errorf("%w: subject_name não pode ser vazio", ErrInvalidVerifyIn)
+	}
+	if strings.TrimSpace(v.Proposition) == "" {
+		return fmt.Errorf("%w: proposition não pode ser vazia", ErrInvalidVerifyIn)
+	}
+	if strings.TrimSpace(v.Excerpt) == "" {
+		return fmt.Errorf("%w: excerpt não pode ser vazio", ErrInvalidVerifyIn)
+	}
+	if strings.TrimSpace(v.SourceURL) == "" {
+		return fmt.Errorf("%w: source_url não pode ser vazia", ErrInvalidVerifyIn)
+	}
+	switch v.Grade {
+	case "A", "B", "C", "D", "E":
+		// grau válido
+	default:
+		return fmt.Errorf("%w: grade inválido %q (deve ser A, B, C, D ou E)", ErrInvalidVerifyIn, v.Grade)
+	}
+	return nil
 }
 
 // VerifyResult define a avaliação semântica estruturada retornada pela LLM.
@@ -100,6 +134,25 @@ type VerifyResult struct {
 	ContainsIllicitInference bool     `json:"contains_illicit_inference"`
 	Uncertainties            []string `json:"uncertainties"`
 	RecommendedAction        string   `json:"recommended_action"`
+}
+
+// Validate valida o resultado retornado pelo modelo de verificação.
+func (r *VerifyResult) Validate() error {
+	switch r.RecommendedAction {
+	case "publish", "quarantine", "reject":
+		// ação permitida
+	default:
+		return fmt.Errorf("%w: recommended_action inválida %q (deve ser publish, quarantine ou reject)", ErrInvalidResponse, r.RecommendedAction)
+	}
+	if r.Uncertainties == nil {
+		return fmt.Errorf("%w: uncertainties não pode ser nulo", ErrInvalidResponse)
+	}
+	for i, u := range r.Uncertainties {
+		if strings.TrimSpace(u) == "" {
+			return fmt.Errorf("%w: uncertainties[%d] não pode ser vazio ou conter apenas espaços", ErrInvalidResponse, i)
+		}
+	}
+	return nil
 }
 
 // ResearchProvider define o contrato abstrato para provedores de pesquisa e inteligência artificial.

@@ -17,6 +17,7 @@ import (
 const (
 	defaultBaseURL                  = "https://openrouter.ai/api/v1/chat/completions"
 	defaultDiscoveryModel           = "openai/gpt-4.1-mini"
+	defaultVerificationModel        = "openai/gpt-4.1-mini"
 	defaultTimeout                  = 30 * time.Second
 	defaultWebSearchEngine          = "auto"
 	defaultWebSearchMaxResults      = 5
@@ -31,6 +32,7 @@ type ClientConfig struct {
 	APIKey                   string
 	BaseURL                  string
 	DiscoveryModel           string
+	VerificationModel        string
 	Timeout                  time.Duration
 	WebSearchEngine          string
 	WebSearchMaxResults      int
@@ -45,6 +47,7 @@ type Client struct {
 	apiKey                   string
 	baseURL                  string
 	discoveryModel           string
+	verificationModel        string
 	timeout                  time.Duration
 	webSearchEngine          string
 	webSearchMaxResults      int
@@ -64,6 +67,11 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	discoveryModel := cfg.DiscoveryModel
 	if discoveryModel == "" {
 		discoveryModel = defaultDiscoveryModel
+	}
+
+	verificationModel := cfg.VerificationModel
+	if verificationModel == "" {
+		verificationModel = defaultVerificationModel
 	}
 
 	timeout := cfg.Timeout
@@ -107,6 +115,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		apiKey:                   strings.TrimSpace(cfg.APIKey),
 		baseURL:                  baseURL,
 		discoveryModel:           discoveryModel,
+		verificationModel:        verificationModel,
 		timeout:                  timeout,
 		webSearchEngine:          engine,
 		webSearchMaxResults:      maxResults,
@@ -274,9 +283,191 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 	}, nil
 }
 
-// Verify representa o gate semântico futuro (VZ-012). Não implementado nesta fase.
+// Verify executa o gate semântico via OpenRouter sem ferramentas de busca na web,
+// avaliando com schema estrito a correspondência de identidade, suporte, extrapolação, grau e inferências.
 func (c *Client) Verify(ctx context.Context, input research.VerifyInput) (*research.VerifyResult, error) {
-	return nil, research.ErrNotImplemented
+	if c.apiKey == "" {
+		return nil, research.ErrMissingAPIKey
+	}
+
+	if err := input.Validate(); err != nil {
+		return nil, fmt.Errorf("openrouter: entrada de verificação inválida: %w", err)
+	}
+
+	reqPayload := chatCompletionRequest{
+		Model: c.verificationModel,
+		Messages: []chatMessage{
+			{
+				Role:    "system",
+				Content: SystemVerificationPrompt,
+			},
+			{
+				Role:    "user",
+				Content: buildUserVerificationPrompt(input),
+			},
+		},
+		ResponseFormat: &responseFormatDefinition{
+			Type: "json_schema",
+			JSONSchema: &jsonSchemaPayload{
+				Name:   "verification_result",
+				Strict: true,
+				Schema: buildVerificationJSONSchema(),
+			},
+		},
+		Tools:        nil, // Gate semântico não executa busca na web
+		MaxToolCalls: 0,
+		Stream:       false,
+	}
+
+	payloadBytes, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: falha ao serializar payload de verificação: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: falha ao criar requisição HTTP: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("HTTP-Referer", "https://vorcarozap.local")
+	httpReq.Header.Set("X-OpenRouter-Title", "VorcaroZAP")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("openrouter: falha na comunicação HTTP de verificação: %w", sanitizeError(err, c.apiKey))
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: falha ao ler corpo da resposta de verificação: %w", sanitizeError(err, c.apiKey))
+	}
+	if int64(len(bodyBytes)) > maxResponseBodyBytes {
+		return nil, fmt.Errorf("%w: corpo da resposta de verificação excedeu 5 MiB", research.ErrResponseTooLarge)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var apiErrResp struct {
+			Error struct {
+				Message string `json:"message"`
+				Code    any    `json:"code"`
+			} `json:"error"`
+		}
+		errMsg := ""
+		if err := json.Unmarshal(bodyBytes, &apiErrResp); err == nil && apiErrResp.Error.Message != "" {
+			errMsg = sanitizeBodySnippet(apiErrResp.Error.Message, c.apiKey)
+		} else {
+			errMsg = sanitizeBodySnippet(string(bodyBytes), c.apiKey)
+		}
+		return nil, fmt.Errorf("openrouter: status %d inesperado na verificação: %s", resp.StatusCode, errMsg)
+	}
+
+	var respPayload chatCompletionResponse
+	if err := json.Unmarshal(bodyBytes, &respPayload); err != nil {
+		return nil, fmt.Errorf("%w: falha ao decodificar JSON de verificação: %v", research.ErrInvalidResponse, sanitizeError(err, c.apiKey))
+	}
+
+	if len(respPayload.Choices) == 0 {
+		return nil, research.ErrEmptyResponse
+	}
+
+	rawContent := strings.TrimSpace(respPayload.Choices[0].Message.Content)
+	if rawContent == "" {
+		return nil, research.ErrEmptyResponse
+	}
+
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(rawContent), &rawMap); err != nil {
+		return nil, fmt.Errorf("%w: resposta não adere ao schema JSON de verificação: %v", research.ErrInvalidResponse, sanitizeError(err, c.apiKey))
+	}
+	if rawMap == nil {
+		return nil, fmt.Errorf("%w: JSON de verificação não é um objeto", research.ErrInvalidResponse)
+	}
+
+	requiredFields := []string{
+		"identity_match",
+		"claim_supported",
+		"claim_overstates_source",
+		"attribution_explicit",
+		"grade_compatible",
+		"contains_illicit_inference",
+		"uncertainties",
+		"recommended_action",
+	}
+	for _, field := range requiredFields {
+		rawVal, exists := rawMap[field]
+		if !exists {
+			return nil, fmt.Errorf("%w: campo obrigatório %q ausente no JSON de verificação", research.ErrInvalidResponse, field)
+		}
+		if string(bytes.TrimSpace(rawVal)) == "null" {
+			return nil, fmt.Errorf("%w: campo obrigatório %q não pode ser null", research.ErrInvalidResponse, field)
+		}
+	}
+
+	var identityMatch bool
+	if err := json.Unmarshal(rawMap["identity_match"], &identityMatch); err != nil {
+		return nil, fmt.Errorf("%w: campo 'identity_match' deve ser booleano: %v", research.ErrInvalidResponse, err)
+	}
+	var claimSupported bool
+	if err := json.Unmarshal(rawMap["claim_supported"], &claimSupported); err != nil {
+		return nil, fmt.Errorf("%w: campo 'claim_supported' deve ser booleano: %v", research.ErrInvalidResponse, err)
+	}
+	var claimOverstatesSource bool
+	if err := json.Unmarshal(rawMap["claim_overstates_source"], &claimOverstatesSource); err != nil {
+		return nil, fmt.Errorf("%w: campo 'claim_overstates_source' deve ser booleano: %v", research.ErrInvalidResponse, err)
+	}
+	var attributionExplicit bool
+	if err := json.Unmarshal(rawMap["attribution_explicit"], &attributionExplicit); err != nil {
+		return nil, fmt.Errorf("%w: campo 'attribution_explicit' deve ser booleano: %v", research.ErrInvalidResponse, err)
+	}
+	var gradeCompatible bool
+	if err := json.Unmarshal(rawMap["grade_compatible"], &gradeCompatible); err != nil {
+		return nil, fmt.Errorf("%w: campo 'grade_compatible' deve ser booleano: %v", research.ErrInvalidResponse, err)
+	}
+	var containsIllicitInference bool
+	if err := json.Unmarshal(rawMap["contains_illicit_inference"], &containsIllicitInference); err != nil {
+		return nil, fmt.Errorf("%w: campo 'contains_illicit_inference' deve ser booleano: %v", research.ErrInvalidResponse, err)
+	}
+
+	var uncertainties []string
+	if err := json.Unmarshal(rawMap["uncertainties"], &uncertainties); err != nil {
+		return nil, fmt.Errorf("%w: campo 'uncertainties' deve ser um array de strings: %v", research.ErrInvalidResponse, err)
+	}
+	if uncertainties == nil {
+		return nil, fmt.Errorf("%w: campo 'uncertainties' não pode ser nulo", research.ErrInvalidResponse)
+	}
+	for i, u := range uncertainties {
+		if strings.TrimSpace(u) == "" {
+			return nil, fmt.Errorf("%w: item de incerteza em 'uncertainties[%d]' não pode ser vazio ou branco", research.ErrInvalidResponse, i)
+		}
+	}
+
+	var recommendedAction string
+	if err := json.Unmarshal(rawMap["recommended_action"], &recommendedAction); err != nil {
+		return nil, fmt.Errorf("%w: campo 'recommended_action' deve ser string: %v", research.ErrInvalidResponse, err)
+	}
+
+	verifyRes := research.VerifyResult{
+		IdentityMatch:            identityMatch,
+		ClaimSupported:           claimSupported,
+		ClaimOverstatesSource:    claimOverstatesSource,
+		AttributionExplicit:      attributionExplicit,
+		GradeCompatible:          gradeCompatible,
+		ContainsIllicitInference: containsIllicitInference,
+		Uncertainties:            uncertainties,
+		RecommendedAction:        recommendedAction,
+	}
+
+	if err := verifyRes.Validate(); err != nil {
+		return nil, fmt.Errorf("%w: dados da verificação semântica inválidos: %v", research.ErrInvalidResponse, err)
+	}
+
+	return &verifyRes, nil
 }
 
 func buildCandidatesJSONSchema() map[string]any {
@@ -290,7 +481,19 @@ func buildCandidatesJSONSchema() map[string]any {
 					"properties": map[string]any{
 						"entity_name": map[string]any{
 							"type":        "string",
-							"description": "Nome da pessoa ou organização mencionada",
+							"description": "Nome da pessoa ou organização mencionada (sujeito)",
+						},
+						"target_entity_name": map[string]any{
+							"type":        "string",
+							"description": "Nome da entidade-alvo da relação (deve ser vazio se case_name estiver preenchido)",
+						},
+						"case_name": map[string]any{
+							"type":        "string",
+							"description": "Nome do caso de investigação da relação (deve ser vazio se target_entity_name estiver preenchido)",
+						},
+						"relationship_type": map[string]any{
+							"type":        "string",
+							"description": "Tipo ou natureza factual do relacionamento",
 						},
 						"proposition": map[string]any{
 							"type":        "string",
@@ -336,6 +539,9 @@ func buildCandidatesJSONSchema() map[string]any {
 					},
 					"required": []string{
 						"entity_name",
+						"target_entity_name",
+						"case_name",
+						"relationship_type",
 						"proposition",
 						"suggested_grade",
 						"source_url",
@@ -352,6 +558,61 @@ func buildCandidatesJSONSchema() map[string]any {
 			},
 		},
 		"required":             []string{"candidates"},
+		"additionalProperties": false,
+	}
+}
+
+func buildVerificationJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"identity_match": map[string]any{
+				"type":        "boolean",
+				"description": "Se a identidade do sujeito e alvo/caso na fonte correspondem com exatidão à alegação sem risco de homonímia",
+			},
+			"claim_supported": map[string]any{
+				"type":        "boolean",
+				"description": "Se a proposição factual é diretamente suportada pelo trecho/evidência documental citada",
+			},
+			"claim_overstates_source": map[string]any{
+				"type":        "boolean",
+				"description": "Se a síntese/proposição extrapola ou exagera o que está estritamente comprovado na fonte",
+			},
+			"attribution_explicit": map[string]any{
+				"type":        "boolean",
+				"description": "Se a atribuição factual e responsabilidade da informação estão explícitas",
+			},
+			"grade_compatible": map[string]any{
+				"type":        "boolean",
+				"description": "Se o grau documental sugerido (A a E) é compatível com a natureza da fonte e evidência",
+			},
+			"contains_illicit_inference": map[string]any{
+				"type":        "boolean",
+				"description": "Se há inferência indevida de culpa, conluio, ilicitude ou fato criminal não comprovado",
+			},
+			"uncertainties": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "string",
+				},
+				"description": "Lista explícita de dúvidas, ambiguidades contextuais, homônimos potenciais ou lacunas",
+			},
+			"recommended_action": map[string]any{
+				"type":        "string",
+				"enum":        []string{"publish", "quarantine", "reject"},
+				"description": "Ação recomendada pelo modelo (publish, quarantine ou reject)",
+			},
+		},
+		"required": []string{
+			"identity_match",
+			"claim_supported",
+			"claim_overstates_source",
+			"attribution_explicit",
+			"grade_compatible",
+			"contains_illicit_inference",
+			"uncertainties",
+			"recommended_action",
+		},
 		"additionalProperties": false,
 	}
 }

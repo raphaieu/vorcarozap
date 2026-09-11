@@ -537,6 +537,171 @@ func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Sou
 	return i, err
 }
 
+const findCasesByNormalizedNameOrSlug = `-- name: FindCasesByNormalizedNameOrSlug :many
+SELECT id, name, slug, description, created_at, updated_at FROM cases
+WHERE slug = ? OR lower(trim(name)) = ?
+ORDER BY created_at ASC
+`
+
+type FindCasesByNormalizedNameOrSlugParams struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+func (q *Queries) FindCasesByNormalizedNameOrSlug(ctx context.Context, arg FindCasesByNormalizedNameOrSlugParams) ([]Case, error) {
+	rows, err := q.db.QueryContext(ctx, findCasesByNormalizedNameOrSlug, arg.Slug, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Case
+	for rows.Next() {
+		var i Case
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findEntitiesByNormalizedAlias = `-- name: FindEntitiesByNormalizedAlias :many
+SELECT e.id, e.type, e.name, e.normalized_name, e.slug, e.role_or_context, e.summary, e.relevance, e.relevance_rationale, e.created_at, e.updated_at, e.category, e.reach FROM entities e
+JOIN entity_aliases ea ON ea.entity_id = e.id
+WHERE ea.normalized_alias = ?
+ORDER BY e.created_at ASC
+`
+
+func (q *Queries) FindEntitiesByNormalizedAlias(ctx context.Context, normalizedAlias string) ([]Entity, error) {
+	rows, err := q.db.QueryContext(ctx, findEntitiesByNormalizedAlias, normalizedAlias)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Entity
+	for rows.Next() {
+		var i Entity
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Name,
+			&i.NormalizedName,
+			&i.Slug,
+			&i.RoleOrContext,
+			&i.Summary,
+			&i.Relevance,
+			&i.RelevanceRationale,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Category,
+			&i.Reach,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findEntitiesByNormalizedName = `-- name: FindEntitiesByNormalizedName :many
+SELECT id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at, category, reach FROM entities
+WHERE normalized_name = ?
+ORDER BY created_at ASC
+`
+
+func (q *Queries) FindEntitiesByNormalizedName(ctx context.Context, normalizedName string) ([]Entity, error) {
+	rows, err := q.db.QueryContext(ctx, findEntitiesByNormalizedName, normalizedName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Entity
+	for rows.Next() {
+		var i Entity
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Name,
+			&i.NormalizedName,
+			&i.Slug,
+			&i.RoleOrContext,
+			&i.Summary,
+			&i.Relevance,
+			&i.RelevanceRationale,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Category,
+			&i.Reach,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findRelationshipByComponents = `-- name: FindRelationshipByComponents :one
+SELECT id, subject_entity_id, target_entity_id, case_id, relationship_type, summary, context_limits, created_at, updated_at FROM relationships
+WHERE subject_entity_id = ?
+  AND ((target_entity_id = ? AND case_id IS NULL) OR (target_entity_id IS NULL AND case_id = ?))
+  AND relationship_type = ?
+LIMIT 1
+`
+
+type FindRelationshipByComponentsParams struct {
+	SubjectEntityID  string         `json:"subject_entity_id"`
+	TargetEntityID   sql.NullString `json:"target_entity_id"`
+	CaseID           sql.NullString `json:"case_id"`
+	RelationshipType string         `json:"relationship_type"`
+}
+
+func (q *Queries) FindRelationshipByComponents(ctx context.Context, arg FindRelationshipByComponentsParams) (Relationship, error) {
+	row := q.db.QueryRowContext(ctx, findRelationshipByComponents,
+		arg.SubjectEntityID,
+		arg.TargetEntityID,
+		arg.CaseID,
+		arg.RelationshipType,
+	)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectEntityID,
+		&i.TargetEntityID,
+		&i.CaseID,
+		&i.RelationshipType,
+		&i.Summary,
+		&i.ContextLimits,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getAppliedImportRun = `-- name: GetAppliedImportRun :one
 SELECT id, file_path, file_hash, origin, mapping_version, status, is_dry_run, summary_counts, summary_report, error_message, created_at, completed_at FROM import_runs
 WHERE file_hash = ? AND mapping_version = ? AND is_dry_run = 0 AND status IN ('running', 'completed', 'partial')

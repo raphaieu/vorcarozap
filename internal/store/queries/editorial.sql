@@ -413,3 +413,26 @@ ORDER BY
         ELSE 4
     END ASC,
     es.created_at ASC;
+
+-- name: FindEntitiesByNormalizedName :many
+SELECT * FROM entities
+WHERE normalized_name = ?
+ORDER BY created_at ASC;
+
+-- name: FindEntitiesByNormalizedAlias :many
+SELECT e.* FROM entities e
+JOIN entity_aliases ea ON ea.entity_id = e.id
+WHERE ea.normalized_alias = ?
+ORDER BY e.created_at ASC;
+
+-- name: FindCasesByNormalizedNameOrSlug :many
+SELECT * FROM cases
+WHERE slug = ? OR lower(trim(name)) = ?
+ORDER BY created_at ASC;
+
+-- name: FindRelationshipByComponents :one
+SELECT * FROM relationships
+WHERE subject_entity_id = ?
+  AND ((target_entity_id = ? AND case_id IS NULL) OR (target_entity_id IS NULL AND case_id = ?))
+  AND relationship_type = ?
+LIMIT 1;

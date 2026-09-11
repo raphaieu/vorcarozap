@@ -95,36 +95,45 @@ type ImportRun struct {
 }
 
 type MonitoringCandidate struct {
-	ID                    string         `json:"id"`
-	MonitoringRunID       string         `json:"monitoring_run_id"`
-	Fingerprint           string         `json:"fingerprint"`
-	FingerprintVersion    int64          `json:"fingerprint_version"`
-	EntityName            string         `json:"entity_name"`
-	NormalizedEntityName  string         `json:"normalized_entity_name"`
-	Proposition           string         `json:"proposition"`
-	SuggestedGrade        string         `json:"suggested_grade"`
-	SourceUrl             string         `json:"source_url"`
-	CanonicalUrl          string         `json:"canonical_url"`
-	SourceTitle           string         `json:"source_title"`
-	PublisherOrAuthor     string         `json:"publisher_or_author"`
-	PublishedAt           sql.NullString `json:"published_at"`
-	Excerpt               string         `json:"excerpt"`
-	Locator               string         `json:"locator"`
-	ContextLimits         string         `json:"context_limits"`
-	TechnicalConfidence   float64        `json:"technical_confidence"`
-	RawPayload            string         `json:"raw_payload"`
-	EditorialStatus       string         `json:"editorial_status"`
-	IsDuplicate           int64          `json:"is_duplicate"`
-	DuplicateReason       string         `json:"duplicate_reason"`
-	CanonicalCandidateID  sql.NullString `json:"canonical_candidate_id"`
-	StructuralGatePassed  sql.NullInt64  `json:"structural_gate_passed"`
-	StructuralGateReasons string         `json:"structural_gate_reasons"`
-	SemanticGatePassed    sql.NullInt64  `json:"semantic_gate_passed"`
-	SemanticGateReasons   string         `json:"semantic_gate_reasons"`
-	PolicyAction          string         `json:"policy_action"`
-	PolicyReasons         string         `json:"policy_reasons"`
-	CreatedAt             string         `json:"created_at"`
-	UpdatedAt             string         `json:"updated_at"`
+	ID                         string         `json:"id"`
+	MonitoringRunID            string         `json:"monitoring_run_id"`
+	Fingerprint                string         `json:"fingerprint"`
+	FingerprintVersion         int64          `json:"fingerprint_version"`
+	EntityName                 string         `json:"entity_name"`
+	NormalizedEntityName       string         `json:"normalized_entity_name"`
+	TargetEntityName           string         `json:"target_entity_name"`
+	NormalizedTargetEntityName string         `json:"normalized_target_entity_name"`
+	CaseName                   string         `json:"case_name"`
+	NormalizedCaseName         string         `json:"normalized_case_name"`
+	RelationshipType           string         `json:"relationship_type"`
+	Proposition                string         `json:"proposition"`
+	SuggestedGrade             string         `json:"suggested_grade"`
+	SourceUrl                  string         `json:"source_url"`
+	CanonicalUrl               string         `json:"canonical_url"`
+	SourceTitle                string         `json:"source_title"`
+	PublisherOrAuthor          string         `json:"publisher_or_author"`
+	PublishedAt                sql.NullString `json:"published_at"`
+	Excerpt                    string         `json:"excerpt"`
+	Locator                    string         `json:"locator"`
+	ContextLimits              string         `json:"context_limits"`
+	TechnicalConfidence        float64        `json:"technical_confidence"`
+	RawPayload                 string         `json:"raw_payload"`
+	EditorialStatus            string         `json:"editorial_status"`
+	IsDuplicate                int64          `json:"is_duplicate"`
+	DuplicateReason            string         `json:"duplicate_reason"`
+	CanonicalCandidateID       sql.NullString `json:"canonical_candidate_id"`
+	ResolvedSubjectEntityID    sql.NullString `json:"resolved_subject_entity_id"`
+	ResolvedTargetEntityID     sql.NullString `json:"resolved_target_entity_id"`
+	ResolvedCaseID             sql.NullString `json:"resolved_case_id"`
+	PublishedClaimID           sql.NullString `json:"published_claim_id"`
+	StructuralGatePassed       sql.NullInt64  `json:"structural_gate_passed"`
+	StructuralGateReasons      string         `json:"structural_gate_reasons"`
+	SemanticGatePassed         sql.NullInt64  `json:"semantic_gate_passed"`
+	SemanticGateReasons        string         `json:"semantic_gate_reasons"`
+	PolicyAction               string         `json:"policy_action"`
+	PolicyReasons              string         `json:"policy_reasons"`
+	CreatedAt                  string         `json:"created_at"`
+	UpdatedAt                  string         `json:"updated_at"`
 }
 
 type MonitoringRun struct {
@@ -178,6 +187,24 @@ type Relationship struct {
 	ContextLimits    string         `json:"context_limits"`
 	CreatedAt        string         `json:"created_at"`
 	UpdatedAt        string         `json:"updated_at"`
+}
+
+type SemanticEvaluation struct {
+	ID                       string `json:"id"`
+	MonitoringCandidateID    string `json:"monitoring_candidate_id"`
+	Provider                 string `json:"provider"`
+	Model                    string `json:"model"`
+	SchemaVersion            string `json:"schema_version"`
+	IdentityMatch            int64  `json:"identity_match"`
+	ClaimSupported           int64  `json:"claim_supported"`
+	ClaimOverstatesSource    int64  `json:"claim_overstates_source"`
+	AttributionExplicit      int64  `json:"attribution_explicit"`
+	GradeCompatible          int64  `json:"grade_compatible"`
+	ContainsIllicitInference int64  `json:"contains_illicit_inference"`
+	Uncertainties            string `json:"uncertainties"`
+	RecommendedAction        string `json:"recommended_action"`
+	RawResponse              string `json:"raw_response"`
+	CreatedAt                string `json:"created_at"`
 }
 
 type Source struct {

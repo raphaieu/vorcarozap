@@ -1,6 +1,7 @@
 package sourcecheck
 
 import (
+	"context"
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/domain"
@@ -61,4 +62,9 @@ type CheckResult struct {
 	IsInconclusive bool `json:"is_inconclusive"`
 	// ErrorMessage armazena mensagem amigável de erro em caso de falha
 	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// SourceVerifier define a interface para verificação segura de acessibilidade de fontes.
+type SourceVerifier interface {
+	Check(ctx context.Context, targetURL string) CheckResult
 }

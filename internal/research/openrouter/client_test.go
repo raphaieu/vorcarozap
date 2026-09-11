@@ -641,7 +641,191 @@ func TestClientFallbackCitationsParsing(t *testing.T) {
 	}
 }
 
-func TestClientVerifyReturnsNotImplemented(t *testing.T) {
+func TestClientVerifySuccess(t *testing.T) {
+	var capturedReqBody map[string]any
+	var capturedAuthHeader string
+	var capturedContentType string
+	var capturedReferer string
+	var capturedTitle string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("esperado método POST, obtido %s", r.Method)
+		}
+		capturedAuthHeader = r.Header.Get("Authorization")
+		capturedContentType = r.Header.Get("Content-Type")
+		capturedReferer = r.Header.Get("HTTP-Referer")
+		capturedTitle = r.Header.Get("X-OpenRouter-Title")
+
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("falha ao ler corpo: %v", err)
+		}
+		if err := json.Unmarshal(bodyBytes, &capturedReqBody); err != nil {
+			t.Errorf("falha ao decodificar JSON recebido: %v", err)
+		}
+
+		respJSON := `{
+			"id": "gen-verify-12345",
+			"model": "anthropic/claude-3.5-sonnet",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					},
+					"finish_reason": "stop"
+				}
+			],
+			"usage": {
+				"prompt_tokens": 150,
+				"completion_tokens": 40,
+				"total_tokens": 190
+			}
+		}`
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(respJSON))
+	}))
+	defer server.Close()
+
+	client, err := openrouter.NewClient(openrouter.ClientConfig{
+		APIKey:            "secret-verify-key-999",
+		BaseURL:           server.URL,
+		VerificationModel: "anthropic/claude-3.5-sonnet",
+		Timeout:           5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar client: %v", err)
+	}
+
+	ctx := context.Background()
+	input := research.VerifyInput{
+		SubjectName:       "Daniel Vorcaro",
+		TargetEntityName:  "Banco Master",
+		RelationshipType:  "societário",
+		Proposition:       "Aquisição de controle societário no Banco Master",
+		Excerpt:           "Conforme ata da assembleia de 2026, Daniel Vorcaro adquiriu o controle societário do Banco Master.",
+		SourceTitle:       "Matéria sobre aquisição societária",
+		PublisherOrAuthor: "UOL Notícias",
+		SourceURL:         "https://noticias.exemplo.com/materia-1",
+		Grade:             "A",
+		ContextLimits:     "Operação aprovada pelo Banco Central",
+	}
+
+	result, err := client.Verify(ctx, input)
+	if err != nil {
+		t.Fatalf("esperava sucesso na verificação, obtido: %v", err)
+	}
+
+	// Validações de cabeçalhos e segurança
+	if capturedAuthHeader != "Bearer secret-verify-key-999" {
+		t.Errorf("Authorization incorreto: %s", capturedAuthHeader)
+	}
+	if capturedContentType != "application/json" {
+		t.Errorf("Content-Type incorreto: %s", capturedContentType)
+	}
+	if capturedReferer != "https://vorcarozap.local" {
+		t.Errorf("HTTP-Referer incorreto: %s", capturedReferer)
+	}
+	if capturedTitle != "VorcaroZAP" {
+		t.Errorf("X-OpenRouter-Title incorreto: %s", capturedTitle)
+	}
+
+	// Validações do payload enviado
+	if capturedReqBody["model"] != "anthropic/claude-3.5-sonnet" {
+		t.Errorf("modelo esperado 'anthropic/claude-3.5-sonnet', obtido %v", capturedReqBody["model"])
+	}
+	if capturedReqBody["tools"] != nil {
+		t.Errorf("gate semântico não deve enviar tools de busca, obtido: %v", capturedReqBody["tools"])
+	}
+
+	// Validações do resultado retornado
+	if !result.IdentityMatch {
+		t.Errorf("esperava identity_match true")
+	}
+	if !result.ClaimSupported {
+		t.Errorf("esperava claim_supported true")
+	}
+	if result.ClaimOverstatesSource {
+		t.Errorf("esperava claim_overstates_source false")
+	}
+	if !result.AttributionExplicit {
+		t.Errorf("esperava attribution_explicit true")
+	}
+	if !result.GradeCompatible {
+		t.Errorf("esperava grade_compatible true")
+	}
+	if result.ContainsIllicitInference {
+		t.Errorf("esperava contains_illicit_inference false")
+	}
+	if len(result.Uncertainties) != 0 {
+		t.Errorf("esperava uncertainties vazio, obtido %v", result.Uncertainties)
+	}
+	if result.RecommendedAction != "publish" {
+		t.Errorf("esperava recommended_action 'publish', obtido %q", result.RecommendedAction)
+	}
+}
+
+func TestClientVerifyWithUncertaintiesAndQuarantine(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respJSON := `{
+			"id": "gen-verify-quarantine",
+			"model": "openai/gpt-4.1-mini",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":false,\"claim_overstates_source\":true,\"attribution_explicit\":false,\"grade_compatible\":false,\"contains_illicit_inference\":false,\"uncertainties\":[\"Fonte cita apenas menção genérica sem data específica\",\"Possível homônimo\"],\"recommended_action\":\"quarantine\"}"
+					},
+					"finish_reason": "stop"
+				}
+			],
+			"usage": {"total_tokens": 100}
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(respJSON))
+	}))
+	defer server.Close()
+
+	client, err := openrouter.NewClient(openrouter.ClientConfig{
+		APIKey:  "sk-test-key",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar client: %v", err)
+	}
+
+	result, err := client.Verify(context.Background(), research.VerifyInput{
+		SubjectName: "Daniel Vorcaro",
+		Proposition: "Proposição fraca",
+		Excerpt:     "Trecho ambíguo",
+		SourceURL:   "https://exemplo.com/materia",
+		Grade:       "C",
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if result.ClaimSupported {
+		t.Errorf("esperava claim_supported false")
+	}
+	if !result.ClaimOverstatesSource {
+		t.Errorf("esperava claim_overstates_source true")
+	}
+	if len(result.Uncertainties) != 2 {
+		t.Fatalf("esperava 2 incertezas, obtido %d", len(result.Uncertainties))
+	}
+	if result.RecommendedAction != "quarantine" {
+		t.Errorf("esperava recommended_action 'quarantine', obtido %q", result.RecommendedAction)
+	}
+}
+
+func TestClientVerifyInputValidation(t *testing.T) {
 	client, err := openrouter.NewClient(openrouter.ClientConfig{
 		APIKey: "sk-test-key",
 	})
@@ -649,11 +833,380 @@ func TestClientVerifyReturnsNotImplemented(t *testing.T) {
 		t.Fatalf("erro ao criar client: %v", err)
 	}
 
-	_, err = client.Verify(context.Background(), research.VerifyInput{
-		EntityName: "Daniel Vorcaro",
-		ClaimText:  "Alegação teste",
+	tests := []struct {
+		name  string
+		input research.VerifyInput
+	}{
+		{
+			name: "SubjectName vazio",
+			input: research.VerifyInput{
+				SubjectName: "",
+				Proposition: "Proposição válida",
+				Excerpt:     "Trecho válido",
+				SourceURL:   "https://exemplo.com",
+				Grade:       "A",
+			},
+		},
+		{
+			name: "Proposition vazia",
+			input: research.VerifyInput{
+				SubjectName: "Sujeito",
+				Proposition: "",
+				Excerpt:     "Trecho válido",
+				SourceURL:   "https://exemplo.com",
+				Grade:       "A",
+			},
+		},
+		{
+			name: "Excerpt vazio",
+			input: research.VerifyInput{
+				SubjectName: "Sujeito",
+				Proposition: "Proposição",
+				Excerpt:     "",
+				SourceURL:   "https://exemplo.com",
+				Grade:       "A",
+			},
+		},
+		{
+			name: "SourceURL vazia",
+			input: research.VerifyInput{
+				SubjectName: "Sujeito",
+				Proposition: "Proposição",
+				Excerpt:     "Trecho",
+				SourceURL:   "",
+				Grade:       "A",
+			},
+		},
+		{
+			name: "Grade inválido",
+			input: research.VerifyInput{
+				SubjectName: "Sujeito",
+				Proposition: "Proposição",
+				Excerpt:     "Trecho",
+				SourceURL:   "https://exemplo.com",
+				Grade:       "X",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.Verify(context.Background(), tt.input)
+			if err == nil {
+				t.Errorf("esperava erro de validação para caso %s, obtido nil", tt.name)
+			}
+		})
+	}
+}
+
+func TestClientVerifyWithoutAPIKey(t *testing.T) {
+	client, err := openrouter.NewClient(openrouter.ClientConfig{
+		APIKey: "",
 	})
-	if !errors.Is(err, research.ErrNotImplemented) {
-		t.Errorf("esperava ErrNotImplemented para Verify na VZ-011, obtido %v", err)
+	if err != nil {
+		t.Fatalf("erro ao criar client: %v", err)
+	}
+
+	_, err = client.Verify(context.Background(), research.VerifyInput{
+		SubjectName: "Sujeito",
+		Proposition: "Proposição",
+		Excerpt:     "Trecho",
+		SourceURL:   "https://exemplo.com",
+		Grade:       "A",
+	})
+	if !errors.Is(err, research.ErrMissingAPIKey) {
+		t.Errorf("esperava ErrMissingAPIKey, obtido %v", err)
+	}
+}
+
+func TestClientVerifyInvalidResponseAndFailClosed(t *testing.T) {
+	validFullJSON := `{"identity_match":true,"claim_supported":true,"claim_overstates_source":false,"attribution_explicit":true,"grade_compatible":true,"contains_illicit_inference":false,"uncertainties":[],"recommended_action":"publish"}`
+	_ = validFullJSON
+
+	tests := []struct {
+		name        string
+		respJSON    string
+		expectedErr error
+	}{
+		{
+			name: "JSON corrompido",
+			respJSON: `{
+				"choices": [{"message": {"role": "assistant", "content": "not-valid-json"}}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Ação recomendada inválida",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"invalid_action\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name:        "Resposta sem choices",
+			respJSON:    `{"choices": []}`,
+			expectedErr: research.ErrEmptyResponse,
+		},
+		{
+			name: "Campo identity_match ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo claim_supported ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo claim_overstates_source ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo attribution_explicit ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo grade_compatible ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo contains_illicit_inference ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo uncertainties ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo recommended_action ausente",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[]}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo uncertainties é null",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":null,\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo uncertainties contém item com apenas espaços",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[\"   \"],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo uncertainties contém item vazio",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[\"\"],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo identity_match é null",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":null,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+		{
+			name: "Campo identity_match com tipo inválido",
+			respJSON: `{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "{\"identity_match\":\"yes\",\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"
+					}
+				}]
+			}`,
+			expectedErr: research.ErrInvalidResponse,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tt.respJSON))
+			}))
+			defer server.Close()
+
+			client, err := openrouter.NewClient(openrouter.ClientConfig{
+				APIKey:  "sk-test-key",
+				BaseURL: server.URL,
+			})
+			if err != nil {
+				t.Fatalf("erro ao criar client: %v", err)
+			}
+
+			_, err = client.Verify(context.Background(), research.VerifyInput{
+				SubjectName: "Sujeito",
+				Proposition: "Proposição",
+				Excerpt:     "Trecho",
+				SourceURL:   "https://exemplo.com",
+				Grade:       "A",
+			})
+			if !errors.Is(err, tt.expectedErr) {
+				t.Errorf("esperava erro %v, obtido %v", tt.expectedErr, err)
+			}
+		})
+	}
+}
+
+func TestClientVerifyHTTPErrorAndSanitization(t *testing.T) {
+	secretKey := "sk-super-secret-key-to-redact"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Invalid key: ` + secretKey + `"}}`))
+	}))
+	defer server.Close()
+
+	client, err := openrouter.NewClient(openrouter.ClientConfig{
+		APIKey:  secretKey,
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar client: %v", err)
+	}
+
+	_, err = client.Verify(context.Background(), research.VerifyInput{
+		SubjectName: "Sujeito",
+		Proposition: "Proposição",
+		Excerpt:     "Trecho",
+		SourceURL:   "https://exemplo.com",
+		Grade:       "A",
+	})
+	if err == nil {
+		t.Fatal("esperava erro HTTP 401, obtido nil")
+	}
+
+	if strings.Contains(err.Error(), secretKey) {
+		t.Errorf("chave secreta vazou na mensagem de erro: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Errorf("esperava [REDACTED] na mensagem de erro: %v", err)
+	}
+}
+
+func TestClientVerifyContextCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := openrouter.NewClient(openrouter.ClientConfig{
+		APIKey:  "sk-test-key",
+		BaseURL: server.URL,
+		Timeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar client: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err = client.Verify(ctx, research.VerifyInput{
+		SubjectName: "Sujeito",
+		Proposition: "Proposição",
+		Excerpt:     "Trecho",
+		SourceURL:   "https://exemplo.com",
+		Grade:       "A",
+	})
+	if err == nil {
+		t.Fatal("esperava erro de timeout/cancelamento, obtido nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Errorf("esperava DeadlineExceeded ou Canceled, obtido %v", err)
 	}
 }

@@ -22,6 +22,7 @@ type Config struct {
 	OpenRouterAPIKey                   string
 	OpenRouterBaseURL                  string
 	OpenRouterDiscoveryModel           string
+	OpenRouterVerificationModel        string
 	OpenRouterTimeout                  time.Duration
 	OpenRouterWebSearchEngine          string
 	OpenRouterWebSearchMaxResults      int
@@ -106,6 +107,11 @@ func Load() (*Config, error) {
 		openRouterDiscoveryModel = "openai/gpt-4.1-mini"
 	}
 
+	openRouterVerificationModel := os.Getenv("OPENROUTER_VERIFICATION_MODEL")
+	if openRouterVerificationModel == "" {
+		openRouterVerificationModel = "openai/gpt-4.1-mini"
+	}
+
 	openRouterTimeout, err := parseTimeout("OPENROUTER_TIMEOUT", os.Getenv("OPENROUTER_TIMEOUT"), 30*time.Second)
 	if err != nil {
 		return nil, err
@@ -157,6 +163,7 @@ func Load() (*Config, error) {
 		OpenRouterAPIKey:                   openRouterAPIKey,
 		OpenRouterBaseURL:                  openRouterBaseURL,
 		OpenRouterDiscoveryModel:           openRouterDiscoveryModel,
+		OpenRouterVerificationModel:        openRouterVerificationModel,
 		OpenRouterTimeout:                  openRouterTimeout,
 		OpenRouterWebSearchEngine:          openRouterEngine,
 		OpenRouterWebSearchMaxResults:      openRouterMaxResults,
