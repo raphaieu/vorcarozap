@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/raphaieu/vorcarozap/internal/research"
 )
 
 // Config contém os parâmetros operacionais da aplicação.
@@ -29,6 +31,14 @@ type Config struct {
 	OpenRouterWebSearchMaxTotalResults int
 	OpenRouterWebSearchMaxUses         int
 	OpenRouterMaxToolCalls             int
+	MonitorWindow                      time.Duration
+	MonitorMaxCandidatesPerRun         int
+	MonitorMaxVerificationsPerRun      int
+	MonitorMaxCostPerRunUSD            float64
+	MonitorMaxCostPerRunMicroUSD       int64
+	MonitorMaxCostPerDayUSD            float64
+	MonitorMaxCostPerDayMicroUSD       int64
+	MonitorLockTTL                     time.Duration
 }
 
 // Load carrega a configuração a partir de variáveis de ambiente com defaults seguros.
@@ -149,6 +159,36 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	monitorWindow, err := parseDurationMax("MONITOR_WINDOW", os.Getenv("MONITOR_WINDOW"), 24*time.Hour, 1*time.Minute, 720*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
+	monitorMaxCandidates, err := parseInt("MONITOR_MAX_CANDIDATES_PER_RUN", os.Getenv("MONITOR_MAX_CANDIDATES_PER_RUN"), 10, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	monitorMaxVerifications, err := parseInt("MONITOR_MAX_VERIFICATIONS_PER_RUN", os.Getenv("MONITOR_MAX_VERIFICATIONS_PER_RUN"), 10, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	monitorMaxCostPerRunMicros, err := parseCostMicroUSD("MONITOR_MAX_COST_PER_RUN_USD", os.Getenv("MONITOR_MAX_COST_PER_RUN_USD"), 250000, 100, 1000000000)
+	if err != nil {
+		return nil, err
+	}
+
+	monitorMaxCostPerDayMicros, err := parseCostMicroUSD("MONITOR_MAX_COST_PER_DAY_USD", os.Getenv("MONITOR_MAX_COST_PER_DAY_USD"), 1000000, 100, 10000000000)
+	if err != nil {
+		return nil, err
+	}
+
+	monitorLockTTL, err := parseDurationMax("MONITOR_LOCK_TTL", os.Getenv("MONITOR_LOCK_TTL"), 10*time.Minute, 5*time.Second, 24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                               port,
 		Env:                                env,
@@ -170,6 +210,14 @@ func Load() (*Config, error) {
 		OpenRouterWebSearchMaxTotalResults: openRouterMaxTotalResults,
 		OpenRouterWebSearchMaxUses:         openRouterMaxUses,
 		OpenRouterMaxToolCalls:             openRouterMaxToolCalls,
+		MonitorWindow:                      monitorWindow,
+		MonitorMaxCandidatesPerRun:         monitorMaxCandidates,
+		MonitorMaxVerificationsPerRun:      monitorMaxVerifications,
+		MonitorMaxCostPerRunUSD:            research.MicroUSDToFloat(monitorMaxCostPerRunMicros),
+		MonitorMaxCostPerRunMicroUSD:       monitorMaxCostPerRunMicros,
+		MonitorMaxCostPerDayUSD:            research.MicroUSDToFloat(monitorMaxCostPerDayMicros),
+		MonitorMaxCostPerDayMicroUSD:       monitorMaxCostPerDayMicros,
+		MonitorLockTTL:                     monitorLockTTL,
 	}, nil
 }
 
@@ -187,6 +235,20 @@ func parseTimeout(envKey, val string, defaultVal time.Duration) (time.Duration, 
 	return d, nil
 }
 
+func parseDurationMax(envKey, val string, defaultVal, minVal, maxVal time.Duration) (time.Duration, error) {
+	if val == "" {
+		return defaultVal, nil
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s inválido %q: %w", envKey, val, err)
+	}
+	if d < minVal || d > maxVal {
+		return 0, fmt.Errorf("config: %s inválido %v: deve estar entre %v e %v", envKey, d, minVal, maxVal)
+	}
+	return d, nil
+}
+
 func parseInt(envKey, val string, defaultVal, minVal, maxVal int) (int, error) {
 	if val == "" {
 		return defaultVal, nil
@@ -199,4 +261,18 @@ func parseInt(envKey, val string, defaultVal, minVal, maxVal int) (int, error) {
 		return 0, fmt.Errorf("config: %s inválido %d: deve estar entre %d e %d", envKey, n, minVal, maxVal)
 	}
 	return n, nil
+}
+
+func parseCostMicroUSD(envKey, val string, defaultMicros, minMicros, maxMicros int64) (int64, error) {
+	if val == "" {
+		return defaultMicros, nil
+	}
+	micros, err := research.ParseDecimalCostStringToMicroUSD(val)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s inválido %q: %w", envKey, val, err)
+	}
+	if micros < minMicros || micros > maxMicros {
+		return 0, fmt.Errorf("config: %s inválido %q: deve estar entre $%.4f e $%.4f", envKey, val, float64(minMicros)/1000000.0, float64(maxMicros)/1000000.0)
+	}
+	return micros, nil
 }

@@ -136,24 +136,43 @@ type MonitoringCandidate struct {
 	UpdatedAt                  string         `json:"updated_at"`
 }
 
+type MonitoringLock struct {
+	Name       string `json:"name"`
+	Holder     string `json:"holder"`
+	AcquiredAt string `json:"acquired_at"`
+	ExpiresAt  string `json:"expires_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
 type MonitoringRun struct {
-	ID                   string          `json:"id"`
-	Status               string          `json:"status"`
-	Query                string          `json:"query"`
-	DiscoveryProvider    string          `json:"discovery_provider"`
-	DiscoveryModel       string          `json:"discovery_model"`
-	VerificationProvider string          `json:"verification_provider"`
-	VerificationModel    string          `json:"verification_model"`
-	PromptTokens         int64           `json:"prompt_tokens"`
-	CompletionTokens     int64           `json:"completion_tokens"`
-	TotalTokens          int64           `json:"total_tokens"`
-	EstimatedCost        sql.NullFloat64 `json:"estimated_cost"`
-	WebSearchCalls       int64           `json:"web_search_calls"`
-	ErrorMessage         sql.NullString  `json:"error_message"`
-	SummaryCounts        string          `json:"summary_counts"`
-	TechnicalSummary     string          `json:"technical_summary"`
-	CreatedAt            string          `json:"created_at"`
-	CompletedAt          sql.NullString  `json:"completed_at"`
+	ID                       string          `json:"id"`
+	Status                   string          `json:"status"`
+	Query                    string          `json:"query"`
+	DiscoveryProvider        string          `json:"discovery_provider"`
+	DiscoveryModel           string          `json:"discovery_model"`
+	VerificationProvider     string          `json:"verification_provider"`
+	VerificationModel        string          `json:"verification_model"`
+	PromptTokens             int64           `json:"prompt_tokens"`
+	CompletionTokens         int64           `json:"completion_tokens"`
+	TotalTokens              int64           `json:"total_tokens"`
+	EstimatedCost            sql.NullFloat64 `json:"estimated_cost"`
+	WebSearchCalls           int64           `json:"web_search_calls"`
+	ErrorMessage             sql.NullString  `json:"error_message"`
+	SummaryCounts            string          `json:"summary_counts"`
+	TechnicalSummary         string          `json:"technical_summary"`
+	CreatedAt                string          `json:"created_at"`
+	CompletedAt              sql.NullString  `json:"completed_at"`
+	WindowStart              sql.NullString  `json:"window_start"`
+	WindowEnd                sql.NullString  `json:"window_end"`
+	DiscoveryTokens          int64           `json:"discovery_tokens"`
+	DiscoveryCostMicrousd    int64           `json:"discovery_cost_microusd"`
+	DiscoveryCost            float64         `json:"discovery_cost"`
+	VerificationTokens       int64           `json:"verification_tokens"`
+	VerificationCostMicrousd int64           `json:"verification_cost_microusd"`
+	VerificationCost         float64         `json:"verification_cost"`
+	TotalCostMicrousd        int64           `json:"total_cost_microusd"`
+	TotalCost                float64         `json:"total_cost"`
+	VerificationsCount       int64           `json:"verifications_count"`
 }
 
 type PublicClaimsView struct {
@@ -190,21 +209,26 @@ type Relationship struct {
 }
 
 type SemanticEvaluation struct {
-	ID                       string `json:"id"`
-	MonitoringCandidateID    string `json:"monitoring_candidate_id"`
-	Provider                 string `json:"provider"`
-	Model                    string `json:"model"`
-	SchemaVersion            string `json:"schema_version"`
-	IdentityMatch            int64  `json:"identity_match"`
-	ClaimSupported           int64  `json:"claim_supported"`
-	ClaimOverstatesSource    int64  `json:"claim_overstates_source"`
-	AttributionExplicit      int64  `json:"attribution_explicit"`
-	GradeCompatible          int64  `json:"grade_compatible"`
-	ContainsIllicitInference int64  `json:"contains_illicit_inference"`
-	Uncertainties            string `json:"uncertainties"`
-	RecommendedAction        string `json:"recommended_action"`
-	RawResponse              string `json:"raw_response"`
-	CreatedAt                string `json:"created_at"`
+	ID                       string  `json:"id"`
+	MonitoringCandidateID    string  `json:"monitoring_candidate_id"`
+	Provider                 string  `json:"provider"`
+	Model                    string  `json:"model"`
+	SchemaVersion            string  `json:"schema_version"`
+	IdentityMatch            int64   `json:"identity_match"`
+	ClaimSupported           int64   `json:"claim_supported"`
+	ClaimOverstatesSource    int64   `json:"claim_overstates_source"`
+	AttributionExplicit      int64   `json:"attribution_explicit"`
+	GradeCompatible          int64   `json:"grade_compatible"`
+	ContainsIllicitInference int64   `json:"contains_illicit_inference"`
+	Uncertainties            string  `json:"uncertainties"`
+	RecommendedAction        string  `json:"recommended_action"`
+	RawResponse              string  `json:"raw_response"`
+	CreatedAt                string  `json:"created_at"`
+	PromptTokens             int64   `json:"prompt_tokens"`
+	CompletionTokens         int64   `json:"completion_tokens"`
+	TotalTokens              int64   `json:"total_tokens"`
+	CostMicrousd             int64   `json:"cost_microusd"`
+	Cost                     float64 `json:"cost"`
 }
 
 type Source struct {

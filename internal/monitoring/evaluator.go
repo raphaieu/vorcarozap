@@ -85,6 +85,12 @@ type EvaluationResult struct {
 	EditorialStatus   string              `json:"editorial_status"`
 	PublishedClaimID  string              `json:"published_claim_id,omitempty"`
 	Published         bool                `json:"published"`
+	Model             string              `json:"model,omitempty"`
+	PromptTokens      int                 `json:"prompt_tokens,omitempty"`
+	CompletionTokens  int                 `json:"completion_tokens,omitempty"`
+	TotalTokens       int                 `json:"total_tokens,omitempty"`
+	Cost              float64             `json:"cost,omitempty"`
+	CostMicros        int64               `json:"cost_micros,omitempty"`
 	Error             error               `json:"error,omitempty"`
 }
 
@@ -399,11 +405,18 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 			uncertaintiesBytes, _ := json.Marshal(verifyResult.Uncertainties)
 			rawRespBytes, _ := json.Marshal(verifyResult)
 
+			modelUsed := verifyResult.Model
+			if modelUsed == "" {
+				modelUsed = e.verificationModel
+			}
+
+			costMicros := verifyResult.CostMicros
+
 			_, err = txQ.CreateSemanticEvaluation(ctx, sqlc.CreateSemanticEvaluationParams{
 				ID:                       uuid.NewString(),
 				MonitoringCandidateID:    cand.ID,
 				Provider:                 "openrouter",
-				Model:                    e.verificationModel,
+				Model:                    modelUsed,
 				SchemaVersion:            "v1",
 				IdentityMatch:            boolToInt(verifyResult.IdentityMatch),
 				ClaimSupported:           boolToInt(verifyResult.ClaimSupported),
@@ -414,10 +427,29 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 				Uncertainties:            string(uncertaintiesBytes),
 				RecommendedAction:        verifyResult.RecommendedAction,
 				RawResponse:              string(rawRespBytes),
+				PromptTokens:             int64(verifyResult.PromptTokens),
+				CompletionTokens:         int64(verifyResult.CompletionTokens),
+				TotalTokens:              int64(verifyResult.TotalTokens),
+				CostMicrousd:             costMicros,
 				CreatedAt:                nowStr,
 			})
 			if err != nil {
 				return fmt.Errorf("monitoring: falha ao persistir semantic_evaluations: %w", err)
+			}
+
+			// Atualização atômica do consumo acumulado na monitoring_run dentro da mesma transação
+			if cand.MonitoringRunID != "" {
+				_, err = txQ.IncrementMonitoringRunUsage(ctx, sqlc.IncrementMonitoringRunUsageParams{
+					PromptTokens:       int64(verifyResult.PromptTokens),
+					CompletionTokens:   int64(verifyResult.CompletionTokens),
+					TotalTokens:        int64(verifyResult.TotalTokens),
+					VerificationTokens: int64(verifyResult.TotalTokens),
+					CostMicrousd:       costMicros,
+					ID:                 cand.MonitoringRunID,
+				})
+				if err != nil {
+					return fmt.Errorf("monitoring: falha ao atualizar consumo acumulado da run na transação: %w", err)
+				}
 			}
 
 			// 5. Montagem dos dados reais retornados pelo sourcecheck
@@ -603,11 +635,18 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 		uncertaintiesBytes, _ := json.Marshal(verifyResult.Uncertainties)
 		rawRespBytes, _ := json.Marshal(verifyResult)
 
+		modelUsed := verifyResult.Model
+		if modelUsed == "" {
+			modelUsed = e.verificationModel
+		}
+
+		costMicros := verifyResult.CostMicros
+
 		_, err := txQ.CreateSemanticEvaluation(ctx, sqlc.CreateSemanticEvaluationParams{
 			ID:                       uuid.NewString(),
 			MonitoringCandidateID:    cand.ID,
 			Provider:                 "openrouter",
-			Model:                    e.verificationModel,
+			Model:                    modelUsed,
 			SchemaVersion:            "v1",
 			IdentityMatch:            boolToInt(verifyResult.IdentityMatch),
 			ClaimSupported:           boolToInt(verifyResult.ClaimSupported),
@@ -618,10 +657,29 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 			Uncertainties:            string(uncertaintiesBytes),
 			RecommendedAction:        verifyResult.RecommendedAction,
 			RawResponse:              string(rawRespBytes),
+			PromptTokens:             int64(verifyResult.PromptTokens),
+			CompletionTokens:         int64(verifyResult.CompletionTokens),
+			TotalTokens:              int64(verifyResult.TotalTokens),
+			CostMicrousd:             costMicros,
 			CreatedAt:                nowStr,
 		})
 		if err != nil {
 			return fmt.Errorf("monitoring: falha ao persistir semantic_evaluations: %w", err)
+		}
+
+		// Atualização atômica do consumo acumulado na monitoring_run dentro da mesma transação
+		if cand.MonitoringRunID != "" {
+			_, err = txQ.IncrementMonitoringRunUsage(ctx, sqlc.IncrementMonitoringRunUsageParams{
+				PromptTokens:       int64(verifyResult.PromptTokens),
+				CompletionTokens:   int64(verifyResult.CompletionTokens),
+				TotalTokens:        int64(verifyResult.TotalTokens),
+				VerificationTokens: int64(verifyResult.TotalTokens),
+				CostMicrousd:       costMicros,
+				ID:                 cand.MonitoringRunID,
+			})
+			if err != nil {
+				return fmt.Errorf("monitoring: falha ao atualizar consumo acumulado da run na transação: %w", err)
+			}
 		}
 
 		// Se a política determinou quarentena:
@@ -657,6 +715,8 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 		edStatus = string(domain.ClaimStatusPublished)
 	}
 
+	costMicros := verifyResult.CostMicros
+
 	return &EvaluationResult{
 		CandidateID:       cand.ID,
 		StructuralPassed:  true,
@@ -668,6 +728,12 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 		EditorialStatus:   edStatus,
 		PublishedClaimID:  publishedClaimID,
 		Published:         isPub,
+		Model:             verifyResult.Model,
+		PromptTokens:      verifyResult.PromptTokens,
+		CompletionTokens:  verifyResult.CompletionTokens,
+		TotalTokens:       verifyResult.TotalTokens,
+		Cost:              research.MicroUSDToFloat(costMicros),
+		CostMicros:        costMicros,
 	}, nil
 }
 

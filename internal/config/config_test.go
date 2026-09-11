@@ -29,6 +29,12 @@ func TestConfigLoadDefaults(t *testing.T) {
 	_ = os.Unsetenv("OPENROUTER_WEB_SEARCH_MAX_TOTAL_RESULTS")
 	_ = os.Unsetenv("OPENROUTER_WEB_SEARCH_MAX_USES")
 	_ = os.Unsetenv("OPENROUTER_MAX_TOOL_CALLS")
+	_ = os.Unsetenv("MONITOR_WINDOW")
+	_ = os.Unsetenv("MONITOR_MAX_CANDIDATES_PER_RUN")
+	_ = os.Unsetenv("MONITOR_MAX_VERIFICATIONS_PER_RUN")
+	_ = os.Unsetenv("MONITOR_MAX_COST_PER_RUN_USD")
+	_ = os.Unsetenv("MONITOR_MAX_COST_PER_DAY_USD")
+	_ = os.Unsetenv("MONITOR_LOCK_TTL")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -94,6 +100,24 @@ func TestConfigLoadDefaults(t *testing.T) {
 	}
 	if cfg.OpenRouterMaxToolCalls != 5 {
 		t.Errorf("OpenRouterMaxToolCalls: esperado 5, obtido %d", cfg.OpenRouterMaxToolCalls)
+	}
+	if cfg.MonitorWindow != 24*time.Hour {
+		t.Errorf("MonitorWindow: esperado 24h, obtido %v", cfg.MonitorWindow)
+	}
+	if cfg.MonitorMaxCandidatesPerRun != 10 {
+		t.Errorf("MonitorMaxCandidatesPerRun: esperado 10, obtido %d", cfg.MonitorMaxCandidatesPerRun)
+	}
+	if cfg.MonitorMaxVerificationsPerRun != 10 {
+		t.Errorf("MonitorMaxVerificationsPerRun: esperado 10, obtido %d", cfg.MonitorMaxVerificationsPerRun)
+	}
+	if cfg.MonitorMaxCostPerRunUSD != 0.25 {
+		t.Errorf("MonitorMaxCostPerRunUSD: esperado 0.25, obtido %v", cfg.MonitorMaxCostPerRunUSD)
+	}
+	if cfg.MonitorMaxCostPerDayUSD != 1.00 {
+		t.Errorf("MonitorMaxCostPerDayUSD: esperado 1.00, obtido %v", cfg.MonitorMaxCostPerDayUSD)
+	}
+	if cfg.MonitorLockTTL != 10*time.Minute {
+		t.Errorf("MonitorLockTTL: esperado 10m, obtido %v", cfg.MonitorLockTTL)
 	}
 }
 
@@ -355,6 +379,77 @@ func TestConfigTimeoutsTableDriven(t *testing.T) {
 			t.Setenv("APP_READ_TIMEOUT", "")
 			t.Setenv("APP_WRITE_TIMEOUT", "")
 			t.Setenv("APP_IDLE_TIMEOUT", "")
+
+			t.Setenv(tt.envKey, tt.envVal)
+			_, err := config.Load()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("config.Load() com %s=%q: esperado erro=%v, obtido err=%v", tt.envKey, tt.envVal, tt.expectErr, err)
+			}
+		})
+	}
+}
+
+func TestConfigMonitorVariables(t *testing.T) {
+	tests := []struct {
+		name      string
+		envKey    string
+		envVal    string
+		expectErr bool
+	}{
+		// MONITOR_WINDOW
+		{"monitor window invalid string", "MONITOR_WINDOW", "invalid", true},
+		{"monitor window zero duration", "MONITOR_WINDOW", "0s", true},
+		{"monitor window negative", "MONITOR_WINDOW", "-1h", true},
+		{"monitor window too small (<1m)", "MONITOR_WINDOW", "30s", true},
+		{"monitor window too large (>720h)", "MONITOR_WINDOW", "750h", true},
+		{"monitor window valid 12h", "MONITOR_WINDOW", "12h", false},
+		{"monitor window valid 48h", "MONITOR_WINDOW", "48h", false},
+
+		// MONITOR_MAX_CANDIDATES_PER_RUN
+		{"max candidates non-integer", "MONITOR_MAX_CANDIDATES_PER_RUN", "abc", true},
+		{"max candidates zero", "MONITOR_MAX_CANDIDATES_PER_RUN", "0", true},
+		{"max candidates negative", "MONITOR_MAX_CANDIDATES_PER_RUN", "-5", true},
+		{"max candidates too high (>100)", "MONITOR_MAX_CANDIDATES_PER_RUN", "101", true},
+		{"max candidates valid 25", "MONITOR_MAX_CANDIDATES_PER_RUN", "25", false},
+
+		// MONITOR_MAX_VERIFICATIONS_PER_RUN
+		{"max verifications non-integer", "MONITOR_MAX_VERIFICATIONS_PER_RUN", "xyz", true},
+		{"max verifications zero", "MONITOR_MAX_VERIFICATIONS_PER_RUN", "0", true},
+		{"max verifications negative", "MONITOR_MAX_VERIFICATIONS_PER_RUN", "-1", true},
+		{"max verifications too high (>100)", "MONITOR_MAX_VERIFICATIONS_PER_RUN", "150", true},
+		{"max verifications valid 5", "MONITOR_MAX_VERIFICATIONS_PER_RUN", "5", false},
+
+		// MONITOR_MAX_COST_PER_RUN_USD
+		{"max cost per run invalid string", "MONITOR_MAX_COST_PER_RUN_USD", "not-a-number", true},
+		{"max cost per run zero", "MONITOR_MAX_COST_PER_RUN_USD", "0.0", true},
+		{"max cost per run negative", "MONITOR_MAX_COST_PER_RUN_USD", "-0.10", true},
+		{"max cost per run too high (>1000)", "MONITOR_MAX_COST_PER_RUN_USD", "1500.0", true},
+		{"max cost per run valid 0.50", "MONITOR_MAX_COST_PER_RUN_USD", "0.50", false},
+
+		// MONITOR_MAX_COST_PER_DAY_USD
+		{"max cost per day invalid string", "MONITOR_MAX_COST_PER_DAY_USD", "invalid", true},
+		{"max cost per day zero", "MONITOR_MAX_COST_PER_DAY_USD", "0.0", true},
+		{"max cost per day negative", "MONITOR_MAX_COST_PER_DAY_USD", "-1.00", true},
+		{"max cost per day too high (>10000)", "MONITOR_MAX_COST_PER_DAY_USD", "15000.0", true},
+		{"max cost per day valid 2.50", "MONITOR_MAX_COST_PER_DAY_USD", "2.50", false},
+
+		// MONITOR_LOCK_TTL
+		{"lock ttl invalid string", "MONITOR_LOCK_TTL", "invalid", true},
+		{"lock ttl zero duration", "MONITOR_LOCK_TTL", "0s", true},
+		{"lock ttl negative", "MONITOR_LOCK_TTL", "-10s", true},
+		{"lock ttl too small (<5s)", "MONITOR_LOCK_TTL", "2s", true},
+		{"lock ttl too large (>24h)", "MONITOR_LOCK_TTL", "30h", true},
+		{"lock ttl valid 5m", "MONITOR_LOCK_TTL", "5m", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MONITOR_WINDOW", "")
+			t.Setenv("MONITOR_MAX_CANDIDATES_PER_RUN", "")
+			t.Setenv("MONITOR_MAX_VERIFICATIONS_PER_RUN", "")
+			t.Setenv("MONITOR_MAX_COST_PER_RUN_USD", "")
+			t.Setenv("MONITOR_MAX_COST_PER_DAY_USD", "")
+			t.Setenv("MONITOR_LOCK_TTL", "")
 
 			t.Setenv(tt.envKey, tt.envVal)
 			_, err := config.Load()

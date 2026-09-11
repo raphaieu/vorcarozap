@@ -68,6 +68,7 @@ func TestClientDiscoverSuccessWithStructuredCandidates(t *testing.T) {
 				"prompt_tokens": 120,
 				"completion_tokens": 85,
 				"total_tokens": 205,
+				"cost": 0.00125,
 				"server_tool_use": {
 					"web_search_requests": 2
 				}
@@ -609,7 +610,7 @@ func TestClientFallbackCitationsParsing(t *testing.T) {
 					}
 				}
 			],
-			"usage": {"total_tokens": 50}
+			"usage": {"total_tokens": 50, "cost": 0.0005}
 		}`
 		_, _ = w.Write([]byte(respJSON))
 	}))
@@ -681,7 +682,8 @@ func TestClientVerifySuccess(t *testing.T) {
 			"usage": {
 				"prompt_tokens": 150,
 				"completion_tokens": 40,
-				"total_tokens": 190
+				"total_tokens": 190,
+				"cost": 0.002
 			}
 		}`
 
@@ -784,7 +786,7 @@ func TestClientVerifyWithUncertaintiesAndQuarantine(t *testing.T) {
 					"finish_reason": "stop"
 				}
 			],
-			"usage": {"total_tokens": 100}
+			"usage": {"total_tokens": 100, "cost": 0.001}
 		}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -1208,5 +1210,171 @@ func TestClientVerifyContextCancellation(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 		t.Errorf("esperava DeadlineExceeded ou Canceled, obtido %v", err)
+	}
+}
+
+func TestClientCostFailClosedAndExactScenarios(t *testing.T) {
+	testCases := []struct {
+		name         string
+		costJSON     string
+		expectErr    bool
+		expectedCost int64
+	}{
+		{
+			name:      "custo ausente em usage",
+			costJSON:  `"usage": {"total_tokens": 50}`,
+			expectErr: true,
+		},
+		{
+			name:      "usage ausente",
+			costJSON:  `"id": "1"`,
+			expectErr: true,
+		},
+		{
+			name:      "custo null",
+			costJSON:  `"usage": {"total_tokens": 50, "cost": null}`,
+			expectErr: true,
+		},
+		{
+			name:      "custo string",
+			costJSON:  `"usage": {"total_tokens": 50, "cost": "0.05"}`,
+			expectErr: true,
+		},
+		{
+			name:      "custo negativo",
+			costJSON:  `"usage": {"total_tokens": 50, "cost": -0.01}`,
+			expectErr: true,
+		},
+		{
+			name:         "custo zero inteiro",
+			costJSON:     `"usage": {"total_tokens": 50, "cost": 0}`,
+			expectErr:    false,
+			expectedCost: 0,
+		},
+		{
+			name:         "custo zero decimal",
+			costJSON:     `"usage": {"total_tokens": 50, "cost": 0.0}`,
+			expectErr:    false,
+			expectedCost: 0,
+		},
+		{
+			name:         "custo submicro 0.0000001 arredondado para cima",
+			costJSON:     `"usage": {"total_tokens": 50, "cost": 0.0000001}`,
+			expectErr:    false,
+			expectedCost: 1,
+		},
+		{
+			name:         "custo notacao cientifica 1.5e-7",
+			costJSON:     `"usage": {"total_tokens": 50, "cost": 1.5e-7}`,
+			expectErr:    false,
+			expectedCost: 1,
+		},
+		{
+			name:      "custo overflow",
+			costJSON:  `"usage": {"total_tokens": 50, "cost": 999999999999999999999999999999}`,
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run("Discover "+tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var resp string
+				if strings.Contains(tc.costJSON, `"usage"`) {
+					resp = `{
+						"id": "1",
+						"choices": [{"message": {"content": "{\"candidates\":[]}"}}],
+						` + tc.costJSON + `
+					}`
+				} else {
+					resp = `{
+						"id": "1",
+						"choices": [{"message": {"content": "{\"candidates\":[]}"}}]
+					}`
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(resp))
+			}))
+			defer server.Close()
+
+			client, err := openrouter.NewClient(openrouter.ClientConfig{
+				APIKey:  "sk-test",
+				BaseURL: server.URL,
+			})
+			if err != nil {
+				t.Fatalf("erro ao criar client: %v", err)
+			}
+
+			res, err := client.Discover(context.Background(), research.DiscoverInput{Query: "teste"})
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("esperava erro, obtido nil (res=%+v)", res)
+				}
+				if !errors.Is(err, research.ErrInvalidResponse) {
+					t.Errorf("esperava ErrInvalidResponse, obtido %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("esperava sucesso, obtido: %v", err)
+				}
+				if res.CostMicros != tc.expectedCost {
+					t.Errorf("esperado CostMicros=%d, obtido %d", tc.expectedCost, res.CostMicros)
+				}
+			}
+		})
+
+		t.Run("Verify "+tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var resp string
+				if strings.Contains(tc.costJSON, `"usage"`) {
+					resp = `{
+						"id": "1",
+						"choices": [{"message": {"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"}}],
+						` + tc.costJSON + `
+					}`
+				} else {
+					resp = `{
+						"id": "1",
+						"choices": [{"message": {"content": "{\"identity_match\":true,\"claim_supported\":true,\"claim_overstates_source\":false,\"attribution_explicit\":true,\"grade_compatible\":true,\"contains_illicit_inference\":false,\"uncertainties\":[],\"recommended_action\":\"publish\"}"}}]
+					}`
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(resp))
+			}))
+			defer server.Close()
+
+			client, err := openrouter.NewClient(openrouter.ClientConfig{
+				APIKey:  "sk-test",
+				BaseURL: server.URL,
+			})
+			if err != nil {
+				t.Fatalf("erro ao criar client: %v", err)
+			}
+
+			res, err := client.Verify(context.Background(), research.VerifyInput{
+				SubjectName: "Daniel Vorcaro",
+				Proposition: "Proposição",
+				Excerpt:     "Trecho",
+				SourceURL:   "https://exemplo.com",
+				Grade:       "A",
+			})
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("esperava erro, obtido nil (res=%+v)", res)
+				}
+				if !errors.Is(err, research.ErrInvalidResponse) {
+					t.Errorf("esperava ErrInvalidResponse, obtido %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("esperava sucesso, obtido: %v", err)
+				}
+				if res.CostMicros != tc.expectedCost {
+					t.Errorf("esperado CostMicros=%d, obtido %d", tc.expectedCost, res.CostMicros)
+				}
+			}
+		})
 	}
 }

@@ -149,7 +149,7 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 			},
 			{
 				Role:    "user",
-				Content: buildUserDiscoveryPrompt(query),
+				Content: buildUserDiscoveryPrompt(input),
 			},
 		},
 		ResponseFormat: &responseFormatDefinition{
@@ -261,14 +261,19 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 		}
 	}
 
+	if respPayload.Usage == nil || len(respPayload.Usage.Cost) == 0 {
+		return nil, fmt.Errorf("%w: campo 'usage.cost' ausente na resposta do OpenRouter", research.ErrInvalidResponse)
+	}
+
 	webSearchCalls := 0
 	if respPayload.Usage.ServerToolUse != nil {
 		webSearchCalls = respPayload.Usage.ServerToolUse.WebSearchRequests
 	}
 
 	modelUsed := respPayload.Model
-	if modelUsed == "" {
-		modelUsed = c.discoveryModel
+	costMicros, err := research.ParseCostJSONToMicroUSD(respPayload.Usage.Cost)
+	if err != nil {
+		return nil, fmt.Errorf("%w: custo de descoberta inválido: %v", research.ErrInvalidResponse, sanitizeError(err, c.apiKey))
 	}
 
 	return &research.DiscoverResult{
@@ -279,6 +284,8 @@ func (c *Client) Discover(ctx context.Context, input research.DiscoverInput) (*r
 		PromptTokens:     respPayload.Usage.PromptTokens,
 		CompletionTokens: respPayload.Usage.CompletionTokens,
 		TotalTokens:      respPayload.Usage.TotalTokens,
+		Cost:             research.MicroUSDToFloat(costMicros),
+		CostMicros:       costMicros,
 		WebSearchCalls:   webSearchCalls,
 	}, nil
 }
@@ -452,6 +459,15 @@ func (c *Client) Verify(ctx context.Context, input research.VerifyInput) (*resea
 		return nil, fmt.Errorf("%w: campo 'recommended_action' deve ser string: %v", research.ErrInvalidResponse, err)
 	}
 
+	if respPayload.Usage == nil || len(respPayload.Usage.Cost) == 0 {
+		return nil, fmt.Errorf("%w: campo 'usage.cost' ausente na resposta de verificação do OpenRouter", research.ErrInvalidResponse)
+	}
+
+	costMicros, err := research.ParseCostJSONToMicroUSD(respPayload.Usage.Cost)
+	if err != nil {
+		return nil, fmt.Errorf("%w: custo de verificação inválido: %v", research.ErrInvalidResponse, sanitizeError(err, c.apiKey))
+	}
+
 	verifyRes := research.VerifyResult{
 		IdentityMatch:            identityMatch,
 		ClaimSupported:           claimSupported,
@@ -461,6 +477,12 @@ func (c *Client) Verify(ctx context.Context, input research.VerifyInput) (*resea
 		ContainsIllicitInference: containsIllicitInference,
 		Uncertainties:            uncertainties,
 		RecommendedAction:        recommendedAction,
+		Model:                    c.verificationModel,
+		PromptTokens:             respPayload.Usage.PromptTokens,
+		CompletionTokens:         respPayload.Usage.CompletionTokens,
+		TotalTokens:              respPayload.Usage.TotalTokens,
+		Cost:                     research.MicroUSDToFloat(costMicros),
+		CostMicros:               costMicros,
 	}
 
 	if err := verifyRes.Validate(); err != nil {
@@ -730,7 +752,7 @@ type chatCompletionResponse struct {
 	ID      string   `json:"id"`
 	Model   string   `json:"model"`
 	Choices []choice `json:"choices"`
-	Usage   usage    `json:"usage"`
+	Usage   *usage   `json:"usage"`
 }
 
 type choice struct {
@@ -760,10 +782,11 @@ type urlCitation struct {
 }
 
 type usage struct {
-	PromptTokens     int            `json:"prompt_tokens"`
-	CompletionTokens int            `json:"completion_tokens"`
-	TotalTokens      int            `json:"total_tokens"`
-	ServerToolUse    *serverToolUse `json:"server_tool_use,omitempty"`
+	PromptTokens     int             `json:"prompt_tokens"`
+	CompletionTokens int             `json:"completion_tokens"`
+	TotalTokens      int             `json:"total_tokens"`
+	Cost             json.RawMessage `json:"cost"`
+	ServerToolUse    *serverToolUse  `json:"server_tool_use,omitempty"`
 }
 
 type serverToolUse struct {

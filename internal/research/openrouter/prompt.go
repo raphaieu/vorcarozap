@@ -28,8 +28,18 @@ DIRETRIZES MANDATÓRIAS DE SEGURANÇA E NEUTRALIDADE:
    - E: menção indireta, pista ou referência periférica.
 7. CONFIANÇA TÉCNICA (technical_confidence): Atribua um valor numérico de 0.0 a 1.0 refletindo a clareza e fidelidade com que a fonte comprova a proposição extraída.`
 
-func buildUserDiscoveryPrompt(query string) string {
-	return fmt.Sprintf("Realize uma pesquisa documental na web sobre o seguinte tema:\n\n%s\n\nExtraia todas as alegações e fatos documentados relevantes com suas respectivas fontes e trechos comprobatórios conforme o schema JSON solicitado.", query)
+func buildUserDiscoveryPrompt(input research.DiscoverInput) string {
+	query := strings.TrimSpace(input.Query)
+	var sb strings.Builder
+	sb.WriteString("Realize uma pesquisa documental na web sobre o seguinte tema:\n\n")
+	sb.WriteString(query)
+	if input.WindowStart != "" && input.WindowEnd != "" {
+		sb.WriteString(fmt.Sprintf("\n\nJanela temporal de busca (UTC): publicações entre %s e %s.", input.WindowStart, input.WindowEnd))
+	} else if input.WindowStart != "" {
+		sb.WriteString(fmt.Sprintf("\n\nJanela temporal de busca (UTC): publicações a partir de %s.", input.WindowStart))
+	}
+	sb.WriteString("\n\nExtraia todas as alegações e fatos documentados relevantes com suas respectivas fontes e trechos comprobatórios conforme o schema JSON solicitado.")
+	return sb.String()
 }
 
 // SystemVerificationPrompt define as diretrizes defensivas do gate semântico via OpenRouter.

@@ -335,15 +335,26 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 			}
 		}
 
+		costMicros := discoverRes.CostMicros
+		_, err = txQ.RecordDiscoveryUsage(ctx, sqlc.RecordDiscoveryUsageParams{
+			PromptTokens:          int64(discoverRes.PromptTokens),
+			CompletionTokens:      int64(discoverRes.CompletionTokens),
+			TotalTokens:           int64(discoverRes.TotalTokens),
+			DiscoveryTokens:       int64(discoverRes.TotalTokens),
+			DiscoveryCostMicrousd: costMicros,
+			TotalCostMicrousd:     costMicros,
+			WebSearchCalls:        int64(discoverRes.WebSearchCalls),
+			ID:                    runID,
+		})
+		if err != nil {
+			return fmt.Errorf("monitoring: falha ao registrar uso da descoberta: %w", err)
+		}
+
 		_, err = txQ.UpdateMonitoringRunStatus(ctx, sqlc.UpdateMonitoringRunStatusParams{
 			ID:               runID,
 			Status:           "completed",
 			SummaryCounts:    string(summaryCountsBytes),
 			TechnicalSummary: technicalSummary,
-			PromptTokens:     int64(discoverRes.PromptTokens),
-			CompletionTokens: int64(discoverRes.CompletionTokens),
-			TotalTokens:      int64(discoverRes.TotalTokens),
-			WebSearchCalls:   int64(discoverRes.WebSearchCalls),
 			CompletedAt:      sql.NullString{String: completedNow, Valid: true},
 		})
 		if err != nil {

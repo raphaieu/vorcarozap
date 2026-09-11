@@ -10,6 +10,45 @@ import (
 	"database/sql"
 )
 
+const acquireMonitoringLock = `-- name: AcquireMonitoringLock :one
+INSERT INTO monitoring_locks (name, holder, acquired_at, expires_at, updated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (name) DO UPDATE
+SET holder = excluded.holder,
+    acquired_at = excluded.acquired_at,
+    expires_at = excluded.expires_at,
+    updated_at = excluded.updated_at
+WHERE monitoring_locks.expires_at < excluded.acquired_at
+RETURNING name, holder, acquired_at, expires_at, updated_at
+`
+
+type AcquireMonitoringLockParams struct {
+	Name       string `json:"name"`
+	Holder     string `json:"holder"`
+	AcquiredAt string `json:"acquired_at"`
+	ExpiresAt  string `json:"expires_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+func (q *Queries) AcquireMonitoringLock(ctx context.Context, arg AcquireMonitoringLockParams) (MonitoringLock, error) {
+	row := q.db.QueryRowContext(ctx, acquireMonitoringLock,
+		arg.Name,
+		arg.Holder,
+		arg.AcquiredAt,
+		arg.ExpiresAt,
+		arg.UpdatedAt,
+	)
+	var i MonitoringLock
+	err := row.Scan(
+		&i.Name,
+		&i.Holder,
+		&i.AcquiredAt,
+		&i.ExpiresAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const claimQuarantinedCandidateForPublication = `-- name: ClaimQuarantinedCandidateForPublication :one
 UPDATE monitoring_candidates
 SET updated_at = ?
@@ -68,6 +107,69 @@ func (q *Queries) ClaimQuarantinedCandidateForPublication(ctx context.Context, a
 		&i.PolicyReasons,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const completeMonitoringRun = `-- name: CompleteMonitoringRun :one
+UPDATE monitoring_runs
+SET status = ?,
+    error_message = ?,
+    summary_counts = ?,
+    technical_summary = ?,
+    completed_at = ?
+WHERE id = ?
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
+`
+
+type CompleteMonitoringRunParams struct {
+	Status           string         `json:"status"`
+	ErrorMessage     sql.NullString `json:"error_message"`
+	SummaryCounts    string         `json:"summary_counts"`
+	TechnicalSummary string         `json:"technical_summary"`
+	CompletedAt      sql.NullString `json:"completed_at"`
+	ID               string         `json:"id"`
+}
+
+func (q *Queries) CompleteMonitoringRun(ctx context.Context, arg CompleteMonitoringRunParams) (MonitoringRun, error) {
+	row := q.db.QueryRowContext(ctx, completeMonitoringRun,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.SummaryCounts,
+		arg.TechnicalSummary,
+		arg.CompletedAt,
+		arg.ID,
+	)
+	var i MonitoringRun
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Query,
+		&i.DiscoveryProvider,
+		&i.DiscoveryModel,
+		&i.VerificationProvider,
+		&i.VerificationModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.EstimatedCost,
+		&i.WebSearchCalls,
+		&i.ErrorMessage,
+		&i.SummaryCounts,
+		&i.TechnicalSummary,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
 	)
 	return i, err
 }
@@ -248,33 +350,40 @@ func (q *Queries) CreateMonitoringCandidate(ctx context.Context, arg CreateMonit
 
 const createMonitoringRun = `-- name: CreateMonitoringRun :one
 INSERT INTO monitoring_runs (
-    id, status, query, discovery_provider, discovery_model, verification_provider, verification_model,
-    prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message,
-    summary_counts, technical_summary, created_at, completed_at
+    id, status, query, window_start, window_end,
+    discovery_provider, discovery_model, verification_provider, verification_model,
+    prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls,
+    discovery_tokens, discovery_cost_microusd, discovery_cost,
+    verification_tokens, verification_cost_microusd, verification_cost,
+    total_cost_microusd, total_cost, verifications_count,
+    error_message, summary_counts, technical_summary, created_at, completed_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    0, 0, 0, 0.0, 0,
+    0, 0, 0.0,
+    0, 0, 0.0,
+    0, 0.0, 0,
+    ?, ?, ?, ?, ?
 )
-RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
 `
 
 type CreateMonitoringRunParams struct {
-	ID                   string          `json:"id"`
-	Status               string          `json:"status"`
-	Query                string          `json:"query"`
-	DiscoveryProvider    string          `json:"discovery_provider"`
-	DiscoveryModel       string          `json:"discovery_model"`
-	VerificationProvider string          `json:"verification_provider"`
-	VerificationModel    string          `json:"verification_model"`
-	PromptTokens         int64           `json:"prompt_tokens"`
-	CompletionTokens     int64           `json:"completion_tokens"`
-	TotalTokens          int64           `json:"total_tokens"`
-	EstimatedCost        sql.NullFloat64 `json:"estimated_cost"`
-	WebSearchCalls       int64           `json:"web_search_calls"`
-	ErrorMessage         sql.NullString  `json:"error_message"`
-	SummaryCounts        string          `json:"summary_counts"`
-	TechnicalSummary     string          `json:"technical_summary"`
-	CreatedAt            string          `json:"created_at"`
-	CompletedAt          sql.NullString  `json:"completed_at"`
+	ID                   string         `json:"id"`
+	Status               string         `json:"status"`
+	Query                string         `json:"query"`
+	WindowStart          sql.NullString `json:"window_start"`
+	WindowEnd            sql.NullString `json:"window_end"`
+	DiscoveryProvider    string         `json:"discovery_provider"`
+	DiscoveryModel       string         `json:"discovery_model"`
+	VerificationProvider string         `json:"verification_provider"`
+	VerificationModel    string         `json:"verification_model"`
+	ErrorMessage         sql.NullString `json:"error_message"`
+	SummaryCounts        string         `json:"summary_counts"`
+	TechnicalSummary     string         `json:"technical_summary"`
+	CreatedAt            string         `json:"created_at"`
+	CompletedAt          sql.NullString `json:"completed_at"`
 }
 
 func (q *Queries) CreateMonitoringRun(ctx context.Context, arg CreateMonitoringRunParams) (MonitoringRun, error) {
@@ -282,15 +391,12 @@ func (q *Queries) CreateMonitoringRun(ctx context.Context, arg CreateMonitoringR
 		arg.ID,
 		arg.Status,
 		arg.Query,
+		arg.WindowStart,
+		arg.WindowEnd,
 		arg.DiscoveryProvider,
 		arg.DiscoveryModel,
 		arg.VerificationProvider,
 		arg.VerificationModel,
-		arg.PromptTokens,
-		arg.CompletionTokens,
-		arg.TotalTokens,
-		arg.EstimatedCost,
-		arg.WebSearchCalls,
 		arg.ErrorMessage,
 		arg.SummaryCounts,
 		arg.TechnicalSummary,
@@ -316,6 +422,17 @@ func (q *Queries) CreateMonitoringRun(ctx context.Context, arg CreateMonitoringR
 		&i.TechnicalSummary,
 		&i.CreatedAt,
 		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
 	)
 	return i, err
 }
@@ -325,14 +442,30 @@ INSERT INTO semantic_evaluations (
     id, monitoring_candidate_id, provider, model, schema_version,
     identity_match, claim_supported, claim_overstates_source, attribution_explicit,
     grade_compatible, contains_illicit_inference, uncertainties, recommended_action,
-    raw_response, created_at
+    raw_response, prompt_tokens, completion_tokens, total_tokens, cost_microusd, cost, created_at
 ) VALUES (
-    ?, ?, ?, ?, ?,
-    ?, ?, ?, ?,
-    ?, ?, ?, ?,
-    ?, ?
+    ?1,
+    ?2,
+    ?3,
+    ?4,
+    ?5,
+    ?6,
+    ?7,
+    ?8,
+    ?9,
+    ?10,
+    ?11,
+    ?12,
+    ?13,
+    ?14,
+    ?15,
+    ?16,
+    ?17,
+    ?18,
+    CAST(?18 AS REAL) / 1000000.0,
+    ?19
 )
-RETURNING id, monitoring_candidate_id, provider, model, schema_version, identity_match, claim_supported, claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference, uncertainties, recommended_action, raw_response, created_at
+RETURNING id, monitoring_candidate_id, provider, model, schema_version, identity_match, claim_supported, claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference, uncertainties, recommended_action, raw_response, created_at, prompt_tokens, completion_tokens, total_tokens, cost_microusd, cost
 `
 
 type CreateSemanticEvaluationParams struct {
@@ -350,6 +483,10 @@ type CreateSemanticEvaluationParams struct {
 	Uncertainties            string `json:"uncertainties"`
 	RecommendedAction        string `json:"recommended_action"`
 	RawResponse              string `json:"raw_response"`
+	PromptTokens             int64  `json:"prompt_tokens"`
+	CompletionTokens         int64  `json:"completion_tokens"`
+	TotalTokens              int64  `json:"total_tokens"`
+	CostMicrousd             int64  `json:"cost_microusd"`
 	CreatedAt                string `json:"created_at"`
 }
 
@@ -369,6 +506,10 @@ func (q *Queries) CreateSemanticEvaluation(ctx context.Context, arg CreateSemant
 		arg.Uncertainties,
 		arg.RecommendedAction,
 		arg.RawResponse,
+		arg.PromptTokens,
+		arg.CompletionTokens,
+		arg.TotalTokens,
+		arg.CostMicrousd,
 		arg.CreatedAt,
 	)
 	var i SemanticEvaluation
@@ -388,6 +529,69 @@ func (q *Queries) CreateSemanticEvaluation(ctx context.Context, arg CreateSemant
 		&i.RecommendedAction,
 		&i.RawResponse,
 		&i.CreatedAt,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.CostMicrousd,
+		&i.Cost,
+	)
+	return i, err
+}
+
+const failMonitoringRun = `-- name: FailMonitoringRun :one
+UPDATE monitoring_runs
+SET status = 'failed',
+    error_message = ?,
+    technical_summary = ?,
+    completed_at = ?
+WHERE id = ?
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
+`
+
+type FailMonitoringRunParams struct {
+	ErrorMessage     sql.NullString `json:"error_message"`
+	TechnicalSummary string         `json:"technical_summary"`
+	CompletedAt      sql.NullString `json:"completed_at"`
+	ID               string         `json:"id"`
+}
+
+func (q *Queries) FailMonitoringRun(ctx context.Context, arg FailMonitoringRunParams) (MonitoringRun, error) {
+	row := q.db.QueryRowContext(ctx, failMonitoringRun,
+		arg.ErrorMessage,
+		arg.TechnicalSummary,
+		arg.CompletedAt,
+		arg.ID,
+	)
+	var i MonitoringRun
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Query,
+		&i.DiscoveryProvider,
+		&i.DiscoveryModel,
+		&i.VerificationProvider,
+		&i.VerificationModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.EstimatedCost,
+		&i.WebSearchCalls,
+		&i.ErrorMessage,
+		&i.SummaryCounts,
+		&i.TechnicalSummary,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
 	)
 	return i, err
 }
@@ -446,6 +650,64 @@ func (q *Queries) GetCanonicalCandidateByFingerprint(ctx context.Context, finger
 	return i, err
 }
 
+const getDailyMonitoringCostMicroUSD = `-- name: GetDailyMonitoringCostMicroUSD :one
+SELECT CAST(coalesce(sum(total_cost_microusd), 0) AS INTEGER) AS daily_cost_microusd
+FROM monitoring_runs
+WHERE created_at >= ?
+`
+
+func (q *Queries) GetDailyMonitoringCostMicroUSD(ctx context.Context, createdAt string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getDailyMonitoringCostMicroUSD, createdAt)
+	var daily_cost_microusd int64
+	err := row.Scan(&daily_cost_microusd)
+	return daily_cost_microusd, err
+}
+
+const getLastSuccessfulMonitoringRunByQuery = `-- name: GetLastSuccessfulMonitoringRunByQuery :one
+SELECT id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count FROM monitoring_runs
+WHERE query = ?
+  AND status = 'completed'
+  AND window_end IS NOT NULL
+ORDER BY window_end DESC, created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLastSuccessfulMonitoringRunByQuery(ctx context.Context, query string) (MonitoringRun, error) {
+	row := q.db.QueryRowContext(ctx, getLastSuccessfulMonitoringRunByQuery, query)
+	var i MonitoringRun
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Query,
+		&i.DiscoveryProvider,
+		&i.DiscoveryModel,
+		&i.VerificationProvider,
+		&i.VerificationModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.EstimatedCost,
+		&i.WebSearchCalls,
+		&i.ErrorMessage,
+		&i.SummaryCounts,
+		&i.TechnicalSummary,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
+	)
+	return i, err
+}
+
 const getMonitoringCandidateByID = `-- name: GetMonitoringCandidateByID :one
 SELECT id, monitoring_run_id, fingerprint, fingerprint_version, entity_name, normalized_entity_name, target_entity_name, normalized_target_entity_name, case_name, normalized_case_name, relationship_type, proposition, suggested_grade, source_url, canonical_url, source_title, publisher_or_author, published_at, excerpt, locator, context_limits, technical_confidence, raw_payload, editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_target_entity_id, resolved_case_id, published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed, semantic_gate_reasons, policy_action, policy_reasons, created_at, updated_at FROM monitoring_candidates
 WHERE id = ? LIMIT 1
@@ -498,8 +760,26 @@ func (q *Queries) GetMonitoringCandidateByID(ctx context.Context, id string) (Mo
 	return i, err
 }
 
+const getMonitoringLock = `-- name: GetMonitoringLock :one
+SELECT name, holder, acquired_at, expires_at, updated_at FROM monitoring_locks
+WHERE name = ? LIMIT 1
+`
+
+func (q *Queries) GetMonitoringLock(ctx context.Context, name string) (MonitoringLock, error) {
+	row := q.db.QueryRowContext(ctx, getMonitoringLock, name)
+	var i MonitoringLock
+	err := row.Scan(
+		&i.Name,
+		&i.Holder,
+		&i.AcquiredAt,
+		&i.ExpiresAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getMonitoringRunByID = `-- name: GetMonitoringRunByID :one
-SELECT id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at FROM monitoring_runs
+SELECT id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count FROM monitoring_runs
 WHERE id = ? LIMIT 1
 `
 
@@ -524,6 +804,17 @@ func (q *Queries) GetMonitoringRunByID(ctx context.Context, id string) (Monitori
 		&i.TechnicalSummary,
 		&i.CreatedAt,
 		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
 	)
 	return i, err
 }
@@ -540,6 +831,73 @@ func (q *Queries) HasRejectedCandidateByFingerprint(ctx context.Context, fingerp
 	var is_rejected bool
 	err := row.Scan(&is_rejected)
 	return is_rejected, err
+}
+
+const incrementMonitoringRunUsage = `-- name: IncrementMonitoringRunUsage :one
+UPDATE monitoring_runs
+SET prompt_tokens = prompt_tokens + ?1,
+    completion_tokens = completion_tokens + ?2,
+    total_tokens = total_tokens + ?3,
+    verification_tokens = verification_tokens + ?4,
+    verification_cost_microusd = verification_cost_microusd + ?5,
+    verification_cost = CAST((verification_cost_microusd + ?5) AS REAL) / 1000000.0,
+    total_cost_microusd = total_cost_microusd + ?5,
+    total_cost = CAST((total_cost_microusd + ?5) AS REAL) / 1000000.0,
+    verifications_count = verifications_count + 1
+WHERE id = ?6
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
+`
+
+type IncrementMonitoringRunUsageParams struct {
+	PromptTokens       int64  `json:"prompt_tokens"`
+	CompletionTokens   int64  `json:"completion_tokens"`
+	TotalTokens        int64  `json:"total_tokens"`
+	VerificationTokens int64  `json:"verification_tokens"`
+	CostMicrousd       int64  `json:"cost_microusd"`
+	ID                 string `json:"id"`
+}
+
+func (q *Queries) IncrementMonitoringRunUsage(ctx context.Context, arg IncrementMonitoringRunUsageParams) (MonitoringRun, error) {
+	row := q.db.QueryRowContext(ctx, incrementMonitoringRunUsage,
+		arg.PromptTokens,
+		arg.CompletionTokens,
+		arg.TotalTokens,
+		arg.VerificationTokens,
+		arg.CostMicrousd,
+		arg.ID,
+	)
+	var i MonitoringRun
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Query,
+		&i.DiscoveryProvider,
+		&i.DiscoveryModel,
+		&i.VerificationProvider,
+		&i.VerificationModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.EstimatedCost,
+		&i.WebSearchCalls,
+		&i.ErrorMessage,
+		&i.SummaryCounts,
+		&i.TechnicalSummary,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
+	)
+	return i, err
 }
 
 const listCandidatesByRunID = `-- name: ListCandidatesByRunID :many
@@ -612,7 +970,7 @@ func (q *Queries) ListCandidatesByRunID(ctx context.Context, monitoringRunID str
 }
 
 const listMonitoringRuns = `-- name: ListMonitoringRuns :many
-SELECT id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at FROM monitoring_runs
+SELECT id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count FROM monitoring_runs
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?
 `
@@ -649,6 +1007,17 @@ func (q *Queries) ListMonitoringRuns(ctx context.Context, arg ListMonitoringRuns
 			&i.TechnicalSummary,
 			&i.CreatedAt,
 			&i.CompletedAt,
+			&i.WindowStart,
+			&i.WindowEnd,
+			&i.DiscoveryTokens,
+			&i.DiscoveryCostMicrousd,
+			&i.DiscoveryCost,
+			&i.VerificationTokens,
+			&i.VerificationCostMicrousd,
+			&i.VerificationCost,
+			&i.TotalCostMicrousd,
+			&i.TotalCost,
+			&i.VerificationsCount,
 		); err != nil {
 			return nil, err
 		}
@@ -735,7 +1104,7 @@ func (q *Queries) ListQuarantinedCandidatesForEvaluation(ctx context.Context, li
 }
 
 const listSemanticEvaluationsByCandidateID = `-- name: ListSemanticEvaluationsByCandidateID :many
-SELECT id, monitoring_candidate_id, provider, model, schema_version, identity_match, claim_supported, claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference, uncertainties, recommended_action, raw_response, created_at FROM semantic_evaluations
+SELECT id, monitoring_candidate_id, provider, model, schema_version, identity_match, claim_supported, claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference, uncertainties, recommended_action, raw_response, created_at, prompt_tokens, completion_tokens, total_tokens, cost_microusd, cost FROM semantic_evaluations
 WHERE monitoring_candidate_id = ?
 ORDER BY created_at ASC
 `
@@ -765,6 +1134,11 @@ func (q *Queries) ListSemanticEvaluationsByCandidateID(ctx context.Context, moni
 			&i.RecommendedAction,
 			&i.RawResponse,
 			&i.CreatedAt,
+			&i.PromptTokens,
+			&i.CompletionTokens,
+			&i.TotalTokens,
+			&i.CostMicrousd,
+			&i.Cost,
 		); err != nil {
 			return nil, err
 		}
@@ -777,6 +1151,127 @@ func (q *Queries) ListSemanticEvaluationsByCandidateID(ctx context.Context, moni
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordDiscoveryUsage = `-- name: RecordDiscoveryUsage :one
+UPDATE monitoring_runs
+SET prompt_tokens = ?1,
+    completion_tokens = ?2,
+    total_tokens = ?3,
+    discovery_tokens = ?4,
+    discovery_cost_microusd = ?5,
+    discovery_cost = CAST(?5 AS REAL) / 1000000.0,
+    total_cost_microusd = ?6,
+    total_cost = CAST(?6 AS REAL) / 1000000.0,
+    web_search_calls = ?7
+WHERE id = ?8
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
+`
+
+type RecordDiscoveryUsageParams struct {
+	PromptTokens          int64  `json:"prompt_tokens"`
+	CompletionTokens      int64  `json:"completion_tokens"`
+	TotalTokens           int64  `json:"total_tokens"`
+	DiscoveryTokens       int64  `json:"discovery_tokens"`
+	DiscoveryCostMicrousd int64  `json:"discovery_cost_microusd"`
+	TotalCostMicrousd     int64  `json:"total_cost_microusd"`
+	WebSearchCalls        int64  `json:"web_search_calls"`
+	ID                    string `json:"id"`
+}
+
+func (q *Queries) RecordDiscoveryUsage(ctx context.Context, arg RecordDiscoveryUsageParams) (MonitoringRun, error) {
+	row := q.db.QueryRowContext(ctx, recordDiscoveryUsage,
+		arg.PromptTokens,
+		arg.CompletionTokens,
+		arg.TotalTokens,
+		arg.DiscoveryTokens,
+		arg.DiscoveryCostMicrousd,
+		arg.TotalCostMicrousd,
+		arg.WebSearchCalls,
+		arg.ID,
+	)
+	var i MonitoringRun
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Query,
+		&i.DiscoveryProvider,
+		&i.DiscoveryModel,
+		&i.VerificationProvider,
+		&i.VerificationModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.EstimatedCost,
+		&i.WebSearchCalls,
+		&i.ErrorMessage,
+		&i.SummaryCounts,
+		&i.TechnicalSummary,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
+	)
+	return i, err
+}
+
+const releaseMonitoringLock = `-- name: ReleaseMonitoringLock :execrows
+DELETE FROM monitoring_locks
+WHERE name = ? AND holder = ?
+`
+
+type ReleaseMonitoringLockParams struct {
+	Name   string `json:"name"`
+	Holder string `json:"holder"`
+}
+
+func (q *Queries) ReleaseMonitoringLock(ctx context.Context, arg ReleaseMonitoringLockParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, releaseMonitoringLock, arg.Name, arg.Holder)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const renewMonitoringLock = `-- name: RenewMonitoringLock :one
+UPDATE monitoring_locks
+SET expires_at = ?, updated_at = ?
+WHERE name = ? AND holder = ?
+RETURNING name, holder, acquired_at, expires_at, updated_at
+`
+
+type RenewMonitoringLockParams struct {
+	ExpiresAt string `json:"expires_at"`
+	UpdatedAt string `json:"updated_at"`
+	Name      string `json:"name"`
+	Holder    string `json:"holder"`
+}
+
+func (q *Queries) RenewMonitoringLock(ctx context.Context, arg RenewMonitoringLockParams) (MonitoringLock, error) {
+	row := q.db.QueryRowContext(ctx, renewMonitoringLock,
+		arg.ExpiresAt,
+		arg.UpdatedAt,
+		arg.Name,
+		arg.Holder,
+	)
+	var i MonitoringLock
+	err := row.Scan(
+		&i.Name,
+		&i.Holder,
+		&i.AcquiredAt,
+		&i.ExpiresAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateMonitoringCandidateGates = `-- name: UpdateMonitoringCandidateGates :one
@@ -876,25 +1371,22 @@ func (q *Queries) UpdateMonitoringCandidateGates(ctx context.Context, arg Update
 
 const updateMonitoringRunStatus = `-- name: UpdateMonitoringRunStatus :one
 UPDATE monitoring_runs
-SET status = ?, error_message = ?, summary_counts = ?, technical_summary = ?,
-    prompt_tokens = ?, completion_tokens = ?, total_tokens = ?, estimated_cost = ?,
-    web_search_calls = ?, completed_at = ?
+SET status = ?,
+    error_message = ?,
+    summary_counts = ?,
+    technical_summary = ?,
+    completed_at = ?
 WHERE id = ?
-RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
 `
 
 type UpdateMonitoringRunStatusParams struct {
-	Status           string          `json:"status"`
-	ErrorMessage     sql.NullString  `json:"error_message"`
-	SummaryCounts    string          `json:"summary_counts"`
-	TechnicalSummary string          `json:"technical_summary"`
-	PromptTokens     int64           `json:"prompt_tokens"`
-	CompletionTokens int64           `json:"completion_tokens"`
-	TotalTokens      int64           `json:"total_tokens"`
-	EstimatedCost    sql.NullFloat64 `json:"estimated_cost"`
-	WebSearchCalls   int64           `json:"web_search_calls"`
-	CompletedAt      sql.NullString  `json:"completed_at"`
-	ID               string          `json:"id"`
+	Status           string         `json:"status"`
+	ErrorMessage     sql.NullString `json:"error_message"`
+	SummaryCounts    string         `json:"summary_counts"`
+	TechnicalSummary string         `json:"technical_summary"`
+	CompletedAt      sql.NullString `json:"completed_at"`
+	ID               string         `json:"id"`
 }
 
 func (q *Queries) UpdateMonitoringRunStatus(ctx context.Context, arg UpdateMonitoringRunStatusParams) (MonitoringRun, error) {
@@ -903,11 +1395,6 @@ func (q *Queries) UpdateMonitoringRunStatus(ctx context.Context, arg UpdateMonit
 		arg.ErrorMessage,
 		arg.SummaryCounts,
 		arg.TechnicalSummary,
-		arg.PromptTokens,
-		arg.CompletionTokens,
-		arg.TotalTokens,
-		arg.EstimatedCost,
-		arg.WebSearchCalls,
 		arg.CompletedAt,
 		arg.ID,
 	)
@@ -930,6 +1417,107 @@ func (q *Queries) UpdateMonitoringRunStatus(ctx context.Context, arg UpdateMonit
 		&i.TechnicalSummary,
 		&i.CreatedAt,
 		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
+	)
+	return i, err
+}
+
+const updateMonitoringRunUsage = `-- name: UpdateMonitoringRunUsage :one
+UPDATE monitoring_runs
+SET prompt_tokens = ?,
+    completion_tokens = ?,
+    total_tokens = ?,
+    estimated_cost = ?,
+    web_search_calls = ?,
+    discovery_tokens = ?,
+    discovery_cost_microusd = ?,
+    discovery_cost = ?,
+    verification_tokens = ?,
+    verification_cost_microusd = ?,
+    verification_cost = ?,
+    total_cost_microusd = ?,
+    total_cost = ?,
+    verifications_count = ?
+WHERE id = ?
+RETURNING id, status, "query", discovery_provider, discovery_model, verification_provider, verification_model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, web_search_calls, error_message, summary_counts, technical_summary, created_at, completed_at, window_start, window_end, discovery_tokens, discovery_cost_microusd, discovery_cost, verification_tokens, verification_cost_microusd, verification_cost, total_cost_microusd, total_cost, verifications_count
+`
+
+type UpdateMonitoringRunUsageParams struct {
+	PromptTokens             int64           `json:"prompt_tokens"`
+	CompletionTokens         int64           `json:"completion_tokens"`
+	TotalTokens              int64           `json:"total_tokens"`
+	EstimatedCost            sql.NullFloat64 `json:"estimated_cost"`
+	WebSearchCalls           int64           `json:"web_search_calls"`
+	DiscoveryTokens          int64           `json:"discovery_tokens"`
+	DiscoveryCostMicrousd    int64           `json:"discovery_cost_microusd"`
+	DiscoveryCost            float64         `json:"discovery_cost"`
+	VerificationTokens       int64           `json:"verification_tokens"`
+	VerificationCostMicrousd int64           `json:"verification_cost_microusd"`
+	VerificationCost         float64         `json:"verification_cost"`
+	TotalCostMicrousd        int64           `json:"total_cost_microusd"`
+	TotalCost                float64         `json:"total_cost"`
+	VerificationsCount       int64           `json:"verifications_count"`
+	ID                       string          `json:"id"`
+}
+
+func (q *Queries) UpdateMonitoringRunUsage(ctx context.Context, arg UpdateMonitoringRunUsageParams) (MonitoringRun, error) {
+	row := q.db.QueryRowContext(ctx, updateMonitoringRunUsage,
+		arg.PromptTokens,
+		arg.CompletionTokens,
+		arg.TotalTokens,
+		arg.EstimatedCost,
+		arg.WebSearchCalls,
+		arg.DiscoveryTokens,
+		arg.DiscoveryCostMicrousd,
+		arg.DiscoveryCost,
+		arg.VerificationTokens,
+		arg.VerificationCostMicrousd,
+		arg.VerificationCost,
+		arg.TotalCostMicrousd,
+		arg.TotalCost,
+		arg.VerificationsCount,
+		arg.ID,
+	)
+	var i MonitoringRun
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Query,
+		&i.DiscoveryProvider,
+		&i.DiscoveryModel,
+		&i.VerificationProvider,
+		&i.VerificationModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.TotalTokens,
+		&i.EstimatedCost,
+		&i.WebSearchCalls,
+		&i.ErrorMessage,
+		&i.SummaryCounts,
+		&i.TechnicalSummary,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.DiscoveryTokens,
+		&i.DiscoveryCostMicrousd,
+		&i.DiscoveryCost,
+		&i.VerificationTokens,
+		&i.VerificationCostMicrousd,
+		&i.VerificationCost,
+		&i.TotalCostMicrousd,
+		&i.TotalCost,
+		&i.VerificationsCount,
 	)
 	return i, err
 }

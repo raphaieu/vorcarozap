@@ -41,6 +41,11 @@ func TestMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao consultar entities após migrate: %v", err)
 	}
 
+	// Executa rollback da migration 00008
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00008: %v", err)
+	}
+
 	// Executa rollback da migration 00007
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00007: %v", err)
@@ -730,7 +735,10 @@ func TestMigration00004_SeedFidelity(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// 2. Reverte 00007, 00006, 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	// 2. Reverte 00008, 00007, 00006, 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00008: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00007: %v", err)
 	}
@@ -826,7 +834,10 @@ func TestMigration00003_DownFailsOnIncompatibleData(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// Reverte 00007, 00006, 00005 e 00004 para ficar exatamente na 00003
+	// Reverte 00008, 00007, 00006, 00005 e 00004 para ficar exatamente na 00003
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00008: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00007: %v", err)
 	}
@@ -878,6 +889,11 @@ func TestMigration00007_RollbackAndReapply(t *testing.T) {
 
 	if err := store.Migrate(ctx, db); err != nil {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
+	}
+
+	// Reverte migration 00008 antes de testar a 00007
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00008: %v", err)
 	}
 
 	// Insere registro de candidate com campos v2
@@ -952,5 +968,60 @@ func TestMigration00007_RollbackAndReapply(t *testing.T) {
 	// semantic_evaluations deve existir novamente
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM semantic_evaluations").Scan(&evalCount); err != nil {
 		t.Fatalf("falha ao consultar semantic_evaluations após re-migrate: %v", err)
+	}
+}
+
+func TestMigration00008_RollbackAndReapply(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_mig_00008_rollback.db")
+	ctx := context.Background()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	defer db.Close()
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao aplicar migrations: %v", err)
+	}
+
+	// Insere registro de lock e run com colunas de micro-USD
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO monitoring_locks (name, holder, acquired_at, expires_at, updated_at)
+		VALUES ('test_lock', 'owner-1', ?, ?, ?);
+	`, now, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir lock: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO monitoring_runs (id, status, query, discovery_model, total_cost_microusd, total_cost, created_at)
+		VALUES ('run-mig-8', 'completed', 'query', 'openai/gpt-4.1-mini', 12345, 0.012345, ?);
+	`, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir run com cost_microusd: %v", err)
+	}
+
+	// Reverte migration 00008 (Rollback)
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00008: %v", err)
+	}
+
+	// Tabela monitoring_locks deve ter sido removida
+	var lockCount int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM monitoring_locks").Scan(&lockCount); err == nil {
+		t.Fatal("esperava erro ao consultar monitoring_locks após rollback da 00008, mas tabela ainda existe")
+	}
+
+	// Re-aplica as migrations
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao re-aplicar migrations após rollback 00008: %v", err)
+	}
+
+	// monitoring_locks deve existir novamente
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM monitoring_locks").Scan(&lockCount); err != nil {
+		t.Fatalf("falha ao consultar monitoring_locks após re-migrate: %v", err)
 	}
 }
