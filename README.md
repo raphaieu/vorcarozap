@@ -20,7 +20,8 @@ Aplicação pública, investigativa e documental para organizar informações pu
   - **VZ-010 — `ResearchProvider`/OpenRouter e descoberta via `openrouter:web_search` concluído.** Pacote `internal/research` com fronteira abstrata e adaptador concreto `internal/research/openrouter` usando biblioteca padrão `net/http`, suporte à server tool `openrouter:web_search` atual, limites conservadores de buscas/custos, instruções defensivas no prompt contra prompt injection (a política Go e gates futuros permanecem obrigatórios) e extração de citações técnicas e consumo de tokens.
   - **VZ-011 — Schema estruturado de candidatos, normalização e deduplicação concluído.** Migration `00006_monitoring_runs_and_candidates.sql`, Structured Outputs via JSON Schema estrito no OpenRouter, pacote puro de normalização `internal/normalize`, fingerprint SHA-256 versionado v1, serviço de ingestão e deduplicação auditável `internal/monitoring` e isolamento estrito contra a fronteira pública (`public_claims_view`), conforme [ADR-013](docs/adr/ADR-013-monitoring-runs-and-candidates-deduplication.md).
   - **VZ-012 — Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E concluído.** Migration `00007_monitoring_gates_and_verification.sql`, gate estrutural puro em Go (`internal/domain`), verificação semântica via OpenRouter com JSON Schema estrito (`Verify`), política Go determinística por Grau A–E, histórico imutável em `semantic_evaluations`, materialização editorial transacional curta em SQLite e integração à fronteira pública e métricas, conforme [ADR-014](docs/adr/ADR-014-gate-estrutural-gate-semantico-e-politica-de-publicacao-automatica.md).
-- **Próximo item:** VZ-013 — Lock de execução, janela incremental e limites de custo de LLM.
+  - **VZ-013 — Lock de execução, janela incremental e limites de custo de LLM concluído.** Migration `00008_monitoring_lock_and_budget.sql`, lock distribuído com lease SQLite (`monitoring_locks`) e renovação em background com cancelamento reativo, avanço determinístico de janela incremental UTC (`window_start` / `window_end`) ancorado na última run `completed`, gestão orçamentária estrita baseada no custo real retornado pelo OpenRouter (`usage.cost`) em micro-USD com pré-checagem diária e parada graciosa em `partial`, e comando CLI `vorcarozap monitor --query "..."`, conforme [ADR-015](docs/adr/ADR-015-lock-de-execucao-janela-incremental-e-limites-de-custo-llm.md).
+- **Próximo item:** VZ-014 — Proteção simples do `/admin` por autenticação HTTP.
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
@@ -117,19 +118,15 @@ make import
 
 # Subir com proxy Caddy reverso opcional (porta 8000)
 make compose-proxy
-```
+
+# Executar monitoramento automatizado de novas publicações (OpenRouter + Gates + Orçamento)
+vorcarozap monitor --query "<consulta de pesquisa>"
 
 # Exportar base pública ativa em planilha XLSX
 vorcarozap export [--out <caminho.xlsx>]
 
 # Download HTTP público da planilha
 GET /exportar/base.xlsx (ou /exportar)
-
-### Comandos planejados para fases posteriores
-
-```bash
-# Fase 4 (Monitoramento automatizado com OpenRouter):
-vorcarozap monitor
 ```
 
 ## Validação econômica

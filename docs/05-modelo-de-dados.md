@@ -106,6 +106,19 @@ A migration `00007_monitoring_gates_and_verification.sql` e a [ADR-014](adr/ADR-
 - **`semantic_evaluations`**: tabela imutável de histórico de validações pela LLM via OpenRouter Structured Outputs (JSON Schema estrito), contendo `monitoring_candidate_id`, `provider`, `model`, `schema_version`, os 6 critérios semânticos booleanos (`identity_match`, `claim_supported`, `claim_overstates_source`, `attribution_explicit`, `grade_compatible`, `contains_illicit_inference`), array JSON de `uncertainties`, `recommended_action` e payload bruto `raw_response`.
 - **Materialização editorial atômica:** publicação automática ocorre em transação SQLite curta apenas quando autorizada pela Política Go (Graus A e B aprovados nos 2 gates -> `supports_link`; Grau C aprovado nos 2 gates com limites e cautela -> `possible_link`), criando/reutilizando `sources` (atualizando `source_access_status`), `relationships`, `claims` (`status = 'published'`, `metric_eligible = 1`), `evidence` e `evidence_sources` (`role = 'supports'`), e vinculando o candidato ao `published_claim_id`.
 
+## Lock com lease SQLite, janela incremental e limites de custo de LLM (VZ-013)
+
+A migration `00008_monitoring_lock_and_budget.sql` e a [ADR-015](adr/ADR-015-lock-de-execucao-janela-incremental-e-limites-de-custo-llm.md) formalizam a proteção contra execuções concorrentes, o avanço temporal determinístico e o controle orçamentário granular baseado no custo real retornado pelo OpenRouter:
+- **`monitoring_locks`**: tabela de controle de concorrência com lease SQLite (`name PRIMARY KEY`, `holder`, `acquired_at`, `expires_at`, `updated_at` e índice em `expires_at`). Garante exclusividade mútua entre execuções manuais de CLI e jobs cron agendados com renovação periódica em segundo plano e expiração automática (*fail-safe* para processos interrompidos abruptamente).
+- **Extensão de `monitoring_runs`**:
+  - `window_start` / `window_end`: limites temporais UTC da janela examinada na descoberta, calculados deterministicamente a partir do `window_end` da última run bem-sucedida (`status = 'completed'`); runs `partial` ou `failed` não avançam o watermark;
+  - `discovery_tokens` / `discovery_cost_microusd` (`discovery_cost` decimal derivado): tokens e custo real faturado pelo OpenRouter na etapa de busca web e extração de candidatos;
+  - `verification_tokens` / `verification_cost_microusd` (`verification_cost` decimal derivado): tokens e custo real acumulados atomicamente nas chamadas individuais do gate semântico;
+  - `total_cost_microusd` (`total_cost` decimal derivado): soma consolidada em inteiros do custo da run (`discovery_cost_microusd + verification_cost_microusd`);
+  - `verifications_count`: contagem de verificações semânticas executadas.
+- **Extensão de `semantic_evaluations`**: colunas `prompt_tokens`, `completion_tokens`, `total_tokens` e `cost_microusd` (`cost` decimal derivado) para auditoria financeira precisa por avaliação documental individual gravada na mesma transação atômica.
+- **Persistência Segura em Inteiros:** todos os limites orçamentários (`MONITOR_MAX_COST_PER_RUN_USD`, `MONITOR_MAX_COST_PER_DAY_USD`) e custos reais são administrados e somados no SQLite em micro-USD inteiros (`int64`, arredondamento para cima via `math.Ceil(cost * 1_000_000)`), garantindo precisão absoluta e imunidade a subcontagem após reinício de processo.
+
 ## Futuro
 
 `users`, `sessions`, `publication_revisions`, `editorial_summaries`, `source_snapshots`, `source_relationships`, auditoria completa e contraditório estruturado entram quando painel/equipe amadurecerem.

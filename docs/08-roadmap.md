@@ -18,17 +18,18 @@ CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite
 
 - **Concluído:** Listagem com busca e filtros multifacetados (`/pessoas`), detalhes de perfis com segregação de fontes e defesas (`/pessoas/{slug}`), página canônica de metodologia e critérios (`/metodologia`), motor de métricas por estado ativo (`public_claims_view`), Home pública com indicadores e distribuições integrados (`/`), e exportação XLSX derivada do banco SQLite com subcomando CLI e download HTTP (`/exportar/base.xlsx`). (VZ-006, VZ-007, VZ-008, VZ-009).
 
-## Fase 4 — monitoramento OpenRouter (Em andamento)
+## Fase 4 — monitoramento OpenRouter (Concluída)
 
 - **Concluído:** Verificador GET seguro e limitado de integridade e acessibilidade de fontes externas (`internal/sourcecheck`), proteção rigorosa contra SSRF e DNS rebinding, conexão restrita a IP validado, limites conservadores de bytes, tempo e redirecionamentos, tabela de motivos técnicos, persistência isolada no SQLite e política editorial completa por procedência (`SOURCE_NOT_CHECKED_POLICY_*` no config) conforme ADR-006. (VZ-020).
 - **Concluído:** `ResearchProvider`/OpenRouter e fundação da descoberta via `openrouter:web_search` (`internal/research` e `internal/research/openrouter`), interface limpa desacoplada do domínio, cliente HTTP via `net/http` padrão, instruções defensivas no prompt contra prompt injection, parâmetros conservadores de busca/custos e extração de citações e uso de tokens. (VZ-010).
 - **Concluído:** Schema estruturado de candidatos (`monitoring_runs` e `monitoring_candidates`), Structured Outputs com JSON Schema estrito, normalização pura reutilizável (`internal/normalize`), fingerprint SHA-256 versionado v1, deduplicação auditável intra e cross-run e serviço de ingestão (`internal/monitoring`), conforme [ADR-013](adr/ADR-013-monitoring-runs-and-candidates-deduplication.md). (VZ-011).
 - **Concluído:** Gate estrutural puro em Go (`internal/domain`), gate semântico via OpenRouter (`Verify`) com JSON Schema estrito sem ferramentas externas, política determinística Go por Grau A–E, histórico imutável em `semantic_evaluations`, materialização transacional atômica curta em SQLite (`sources`, `relationships`, `claims`, `evidence`, `evidence_sources`) e integração comprovada à visualização pública (`public_claims_view`) e métricas, conforme [ADR-014](adr/ADR-014-gate-estrutural-gate-semantico-e-politica-de-publicacao-automatica.md). (VZ-012).
-- **Próximo item:** Lock de execução, janela incremental e limites de custo de LLM (VZ-013 — Fase 4).
+- **Concluído:** Lock distribuído com lease SQLite (`monitoring_locks`), renovação periódica com cancelamento reativo, cálculo determinístico de janela incremental UTC, contabilidade e gestão de orçamento baseada no custo real faturado pelo OpenRouter (`usage.cost`) em micro-USD, parada graciosa em `partial` e comando CLI `vorcarozap monitor --query "..."`, conforme [ADR-015](adr/ADR-015-lock-de-execucao-janela-incremental-e-limites-de-custo-llm.md). (VZ-013).
 
 ## Fase 5 — painel simples e moderação humana (Planejado no MVP)
 
-Proteção básica do `/admin`, listagem com filtros de moderação, detalhes de candidatos/evidências, moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-014, VZ-015, VZ-016, VZ-017, VZ-021).
+- **Próximo item:** Proteção simples do `/admin` por autenticação HTTP (VZ-014 — Fase 5).
+- Planejado: Listagem com filtros de moderação, detalhes de candidatos/evidências, moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-014, VZ-015, VZ-016, VZ-017, VZ-021).
 
 ## Fase 6 — deploy MVP e validação econômica (Planejado no MVP)
 

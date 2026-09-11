@@ -1,6 +1,6 @@
 # Backlog inicial priorizado
 
-O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-012 é **VZ-013**.
+O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-013 é **VZ-014**.
 
 ## P0 — Núcleo do MVP
 
@@ -19,7 +19,7 @@ O backlog distingue o que está **concluído**, o que está **planejado no MVP**
 | VZ-010 | P0 | ResearchProvider/OpenRouter e esteira de web search | Concluído (Fase 4) |
 | VZ-011 | P0 | Schema estruturado, normalização de dados e deduplicação | Concluído (Fase 4) |
 | VZ-012 | P0 | Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E | Concluído (Fase 4) |
-| VZ-013 | P0 | Lock de execução, janela incremental e limites de custo de LLM | Planejado no MVP |
+| VZ-013 | P0 | Lock de execução, janela incremental e limites de custo de LLM | Concluído (Fase 4) |
 | VZ-014 | P0 | Proteção simples do `/admin` por autenticação HTTP | Planejado no MVP |
 | VZ-015 | P0 | Painel simples para listagem e inspeção de fontes, evidências e candidatos | Planejado no MVP |
 | VZ-016 | P0 | Ações de moderação: desaprovar, restaurar e aprovar quarentena | Planejado no MVP |
