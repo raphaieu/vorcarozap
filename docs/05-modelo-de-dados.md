@@ -91,6 +91,14 @@ No MVP, defesa/contestação reutiliza `evidence_sources.role = contradicts`. A 
 
 `sources.source_access_status` aceita `cited_by_provider`, `reachable`, `unreachable` ou `not_checked`, acompanhado por `source_access_checked_at`, status HTTP final anulável e código de erro normalizado anulável. Citação do OpenRouter começa em `cited_by_provider`; source do `curated_seed` começa em `not_checked`. GET seguro pode promover ambas a `reachable`. Erro definitivo, como 404/410, vira `unreachable`; timeout, 429, 5xx ou bloqueio inconclusivo vira `not_checked`. `unreachable` põe o candidato/claim novo em quarentena; `not_checked` segue a política diferenciada por origem definida no [ADR-006](adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state para curated_seed).
 
+## Schema de monitoramento e candidatos estruturados (VZ-011)
+
+A migration `00006_monitoring_runs_and_candidates.sql` e a [ADR-013](adr/ADR-013-monitoring-runs-and-candidates-deduplication.md) formalizam a separação estrita entre o ciclo operacional de descoberta e os estados editoriais:
+- **`monitoring_runs`**: rastreabilidade operacional de cada execução de descoberta, persistindo janela/query de pesquisa, provider/modelo utilizado, contagem de tokens (`prompt_tokens`, `completion_tokens`, `total_tokens`), chamadas de busca (`web_search_calls`), custo estimado, resumo técnico e estado operacional (`pending`, `running`, `partial`, `completed`, `failed`).
+- **`monitoring_candidates`**: persistência de extrações factuais estruturadas via Structured Outputs (JSON Schema estrito), com normalização pura Unicode NFC/espaçamento, URL canônica, fingerprint SHA-256 versionado v1 (`v1:<sha256(canonical_url|normalized_entity_name|normalized_proposition|normalized_excerpt)>`), grau sugerido A–E, confiança técnica em `[0.0, 1.0]`, e colunas para suporte aos gates futuros (`structural_gate_passed`, `semantic_gate_passed`, `policy_action`).
+- **Deduplicação auditável:** repetições intra-run e cross-run são identificadas deterministicamente por fingerprint sem descarte de histórico: candidatos duplicados recebem `is_duplicate = 1`, `duplicate_reason` explícito e apontam para `canonical_candidate_id`.
+- **Isolamento da fronteira pública:** todo candidato inicia em estado editorial `quarantined`. A ingestão não cria claims, entidades, relacionamentos ou fontes, mantendo a view `public_claims_view` e as métricas públicas 100% blindadas.
+
 ## Futuro
 
 `users`, `sessions`, `publication_revisions`, `editorial_summaries`, `source_snapshots`, `source_relationships`, auditoria completa e contraditório estruturado entram quando painel/equipe amadurecerem.

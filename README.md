@@ -18,7 +18,8 @@ Aplicação pública, investigativa e documental para organizar informações pu
 - **Fase 4 — Monitoramento OpenRouter:**
   - **VZ-020 — Verificador GET seguro e limitado de fontes externas concluído.** Pacote `internal/sourcecheck` com proteção contra SSRF e DNS rebinding, conexão a IP validado, limites de bytes/tempo/redirecionamentos e política de acessibilidade conforme [ADR-006](docs/adr/ADR-006-fontes-e-rastreabilidade.md).
   - **VZ-010 — `ResearchProvider`/OpenRouter e descoberta via `openrouter:web_search` concluído.** Pacote `internal/research` com fronteira abstrata e adaptador concreto `internal/research/openrouter` usando biblioteca padrão `net/http`, suporte à server tool `openrouter:web_search` atual, limites conservadores de buscas/custos, instruções defensivas no prompt contra prompt injection (a política Go e gates futuros permanecem obrigatórios) e extração de citações técnicas e consumo de tokens.
-- **Próximo item:** VZ-011 — Schema estruturado de candidatos, normalização e deduplicação.
+  - **VZ-011 — Schema estruturado de candidatos, normalização e deduplicação concluído.** Migration `00006_monitoring_runs_and_candidates.sql`, Structured Outputs via JSON Schema estrito no OpenRouter, pacote puro de normalização `internal/normalize`, fingerprint SHA-256 versionado v1, serviço de ingestão e deduplicação auditável `internal/monitoring` e isolamento estrito contra a fronteira pública (`public_claims_view`), conforme [ADR-013](docs/adr/ADR-013-monitoring-runs-and-candidates-deduplication.md).
+- **Próximo item:** VZ-012 — Gate estrutural Go, gate semântico LLM e política automática A/B/C versus D/E.
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
