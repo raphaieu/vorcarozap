@@ -21,7 +21,8 @@ CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite
 ## Fase 4 — monitoramento OpenRouter (Em andamento)
 
 - **Concluído:** Verificador GET seguro e limitado de integridade e acessibilidade de fontes externas (`internal/sourcecheck`), proteção rigorosa contra SSRF e DNS rebinding, conexão restrita a IP validado, limites conservadores de bytes, tempo e redirecionamentos, tabela de motivos técnicos, persistência isolada no SQLite e política editorial completa por procedência (`SOURCE_NOT_CHECKED_POLICY_*` no config) conforme ADR-006. (VZ-020).
-- **Próximo item:** ResearchProvider/OpenRouter e esteira de web search (VZ-010 — Fase 4).
+- **Concluído:** `ResearchProvider`/OpenRouter e fundação da descoberta via `openrouter:web_search` (`internal/research` e `internal/research/openrouter`), interface limpa desacoplada do domínio, cliente HTTP via `net/http` padrão, instruções defensivas no prompt contra prompt injection, parâmetros conservadores de busca/custos e extração de citações e uso de tokens. (VZ-010).
+- **Próximo item:** Schema estruturado de candidatos, normalização e deduplicação (VZ-011 — Fase 4).
 
 ResearchProvider, web search, schema estruturado, normalização, deduplicação, gate estrutural em Go, segunda avaliação semântica via LLM, política Go A/B/C versus D/E, publicação/quarentena, estados operacionais, idempotência e limites de custo. (VZ-010, VZ-011, VZ-012, VZ-013).
 
