@@ -50,7 +50,7 @@ Consultas SQL de rede agregam somente claims `published` e `metric_eligible = tr
 
 ## Admin
 
-SSR/HTMX, uma credencial administrativa e ações pequenas: listar, detalhar, moderar claim ou uso específico de fonte, restaurar/aprovar quarentena e disparar monitor. Uma source não é rejeitada globalmente. Não é CMS completo.
+SSR/HTMX protegido por HTTP Basic Authentication e hash bcrypt (`ADMIN_USER`, `ADMIN_PASSWORD_HASH`, [ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md)). Comportamento fail-closed (desabilitado responde 404 sem desafio) e ações pequenas: listar, detalhar, moderar claim ou uso específico de fonte, restaurar/aprovar quarentena e disparar monitor. Uma source não é rejeitada globalmente. Não é CMS completo.
 
 ## Verificação de fonte
 

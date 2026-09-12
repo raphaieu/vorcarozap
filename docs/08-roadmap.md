@@ -26,10 +26,11 @@ CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite
 - **Concluído:** Gate estrutural puro em Go (`internal/domain`), gate semântico via OpenRouter (`Verify`) com JSON Schema estrito sem ferramentas externas, política determinística Go por Grau A–E, histórico imutável em `semantic_evaluations`, materialização transacional atômica curta em SQLite (`sources`, `relationships`, `claims`, `evidence`, `evidence_sources`) e integração comprovada à visualização pública (`public_claims_view`) e métricas, conforme [ADR-014](adr/ADR-014-gate-estrutural-gate-semantico-e-politica-de-publicacao-automatica.md). (VZ-012).
 - **Concluído:** Lock distribuído com lease SQLite (`monitoring_locks`), renovação periódica com cancelamento reativo, cálculo determinístico de janela incremental UTC, contabilidade e gestão de orçamento baseada no custo real faturado pelo OpenRouter (`usage.cost`) em micro-USD, parada graciosa em `partial` e comando CLI `vorcarozap monitor --query "..."`, conforme [ADR-015](adr/ADR-015-lock-de-execucao-janela-incremental-e-limites-de-custo-llm.md). (VZ-013).
 
-## Fase 5 — painel simples e moderação humana (Planejado no MVP)
+## Fase 5 — painel simples e moderação humana (Em andamento no MVP)
 
-- **Próximo item:** Proteção simples do `/admin` por autenticação HTTP (VZ-014 — Fase 5).
-- Planejado: Listagem com filtros de moderação, detalhes de candidatos/evidências, moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-014, VZ-015, VZ-016, VZ-017, VZ-021).
+- **Concluído:** Proteção simples do `/admin` por HTTP Basic Authentication nativa no monólito Go (`ADMIN_USER` e `ADMIN_PASSWORD_HASH`), validação rigorosa de hash bcrypt sem suporte a senha em texto puro, mitigação de timing attacks via constante temporal e execução incondicional de bcrypt, cabeçalhos restritivos de cache (`Cache-Control: no-store`, `Vary: Authorization`), comportamento fail-closed (desabilitado responde 404 sem desafio) e página SSR mínima de confirmação, conforme [ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md). (VZ-014).
+- **Próximo item:** Painel simples para listagem e inspeção de fontes, evidências e candidatos (VZ-015 — Fase 5).
+- **Planejado:** Ações de moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-015, VZ-016, VZ-017, VZ-021).
 
 ## Fase 6 — deploy MVP e validação econômica (Planejado no MVP)
 

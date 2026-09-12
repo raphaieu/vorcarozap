@@ -5,8 +5,8 @@
 O MVP possui painel e OpenRouter, portanto aplica controles pequenos e proporcionais:
 
 - HTTPS por Caddy;
-- `/admin` protegido por uma credencial forte configurada fora do Git;
-- cookie/sessão ou Basic Auth protegida, com verificação de Origin/CSRF nas mutações;
+- `/admin` protegido por HTTP Basic Authentication no monólito Go com hash bcrypt obrigatório (`ADMIN_PASSWORD_HASH`), mitigação de timing attacks, cabeçalhos restritivos de cache (`Cache-Control: no-store`, `Vary: Authorization`) e comportamento fail-closed ([ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md));
+- verificação de Origin/CSRF nas mutações (prevista para as etapas de moderação);
 - queries parametrizadas e templates escapados;
 - API key do OpenRouter somente no ambiente;
 - limites de tempo, resultados, tokens e custo por monitoramento;
