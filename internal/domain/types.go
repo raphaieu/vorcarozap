@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 )
 
 // EntityType define a natureza de uma entidade registrada.
@@ -200,4 +201,90 @@ func ValidateRelevance(r int) (Relevance, error) {
 		return 0, fmt.Errorf("domain: relevância inválida %d: deve estar entre 1 e 5", r)
 	}
 	return rel, nil
+}
+
+// ModerationAction define uma ação humana deliberada de moderação editorial (VZ-016).
+type ModerationAction string
+
+const (
+	ModerationActionApprove ModerationAction = "approve"
+	ModerationActionReject  ModerationAction = "reject"
+	ModerationActionRestore ModerationAction = "restore"
+)
+
+func (a ModerationAction) IsValid() bool {
+	switch a {
+	case ModerationActionApprove, ModerationActionReject, ModerationActionRestore:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateClaimTransition valida se a transição de estado solicitada para uma alegação é permitida pelo modelo editorial.
+// Retorna o novo ClaimStatus resultante ou erro caso a transição seja proibida.
+func ValidateClaimTransition(current ClaimStatus, action ModerationAction) (ClaimStatus, error) {
+	if !current.IsValid() {
+		return "", fmt.Errorf("domain: estado atual do claim inválido %q", current)
+	}
+	if !action.IsValid() {
+		return "", fmt.Errorf("domain: ação de moderação inválida %q", action)
+	}
+
+	switch action {
+	case ModerationActionApprove:
+		if current == ClaimStatusQuarantined {
+			return ClaimStatusPublished, nil
+		}
+		return "", fmt.Errorf("domain: ação 'approve' não é permitida para claim com status %q (permitida apenas para %q)", current, ClaimStatusQuarantined)
+
+	case ModerationActionReject:
+		if current == ClaimStatusPublished || current == ClaimStatusQuarantined {
+			return ClaimStatusRejected, nil
+		}
+		return "", fmt.Errorf("domain: ação 'reject' não é permitida para claim com status %q (permitida apenas para %q e %q)", current, ClaimStatusPublished, ClaimStatusQuarantined)
+
+	case ModerationActionRestore:
+		if current == ClaimStatusRejected || current == ClaimStatusArchived {
+			return ClaimStatusQuarantined, nil
+		}
+		return "", fmt.Errorf("domain: ação 'restore' não é permitida para claim com status %q (permitida apenas para %q e %q)", current, ClaimStatusRejected, ClaimStatusArchived)
+
+	default:
+		return "", fmt.Errorf("domain: transição não implementada para a ação %q", action)
+	}
+}
+
+const (
+	MaxModerationReasonLength = 1000
+)
+
+// ValidateModerationReason valida e normaliza o motivo da decisão de moderação.
+// O motivo é obrigatório, não pode ser vazio após trim, não pode exceder MaxModerationReasonLength caracteres
+// e não pode conter tags HTML.
+func ValidateModerationReason(rawReason string) (string, error) {
+	trimmed := strings.TrimSpace(rawReason)
+	if trimmed == "" {
+		return "", fmt.Errorf("domain: motivo da moderação é obrigatório e não pode ser vazio")
+	}
+	if len(trimmed) > MaxModerationReasonLength {
+		return "", fmt.Errorf("domain: motivo da moderação excede o limite de %d caracteres (obtido: %d)", MaxModerationReasonLength, len(trimmed))
+	}
+	// Bloqueio de tags HTML básicas para integridade editorial
+	if strings.Contains(trimmed, "<") || strings.Contains(trimmed, ">") {
+		return "", fmt.Errorf("domain: motivo da moderação não pode conter tags ou caracteres '<' e '>'")
+	}
+	return trimmed, nil
+}
+
+// ValidateModerationActor valida e normaliza o identificador do operador de moderação.
+func ValidateModerationActor(rawActor string) (string, error) {
+	trimmed := strings.TrimSpace(rawActor)
+	if trimmed == "" {
+		return "", fmt.Errorf("domain: identificador do operador (actor) é obrigatório e não pode ser vazio")
+	}
+	if len(trimmed) > 128 {
+		return "", fmt.Errorf("domain: identificador do operador (actor) excede o limite de 128 caracteres")
+	}
+	return trimmed, nil
 }

@@ -725,3 +725,238 @@ func ToAdminSourceItemVM(s sqlc.ListAdminSourcesRow) AdminSourceItemVM {
 		ActiveUses:              s.ActiveUses,
 	}
 }
+
+func FormatModerationAction(action string) string {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "approve":
+		return "Aprovação (Publicação)"
+	case "reject":
+		return "Rejeição"
+	case "restore":
+		return "Restauração (Quarentena)"
+	case "archive":
+		return "Arquivamento"
+	default:
+		return action
+	}
+}
+
+// AdminClaimActionOptionVM define uma ação de moderação permitida para o claim no estado atual.
+type AdminClaimActionOptionVM struct {
+	Action         string
+	Label          string
+	ButtonClass    string
+	HelpText       string
+	Disabled       bool
+	DisabledReason string
+}
+
+// GetAllowedClaimActions calcula as transições editoriais válidas a partir do estado atual da alegação.
+func GetAllowedClaimActions(status string, activeSupportsCount int64) []AdminClaimActionOptionVM {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "quarantined":
+		approveDisabled := activeSupportsCount < 1
+		approveDisabledReason := ""
+		if approveDisabled {
+			approveDisabledReason = "Aprovação bloqueada: a alegação não possui nenhum uso de evidência ativo com papel 'Sustenta vínculo' (supports)."
+		}
+		return []AdminClaimActionOptionVM{
+			{
+				Action:         "approve",
+				Label:          "Aprovar e Publicar",
+				ButtonClass:    "btn-primary",
+				HelpText:       "Publica a alegação imediatamente na área pública e inclui nas métricas de rede.",
+				Disabled:       approveDisabled,
+				DisabledReason: approveDisabledReason,
+			},
+			{
+				Action:      "reject",
+				Label:       "Rejeitar",
+				ButtonClass: "btn-danger",
+				HelpText:    "Rejeita a alegação editorialmente e bloqueia o fingerprint do candidato associado contra republicações automáticas.",
+			},
+		}
+	case "published":
+		return []AdminClaimActionOptionVM{
+			{
+				Action:      "reject",
+				Label:       "Desaprovar / Rejeitar",
+				ButtonClass: "btn-danger",
+				HelpText:    "Remove a alegação da área pública, das métricas de rede e bloqueia o fingerprint do candidato associado contra republicações automáticas.",
+			},
+		}
+	case "rejected", "archived":
+		return []AdminClaimActionOptionVM{
+			{
+				Action:      "restore",
+				Label:       "Restaurar para Quarentena",
+				ButtonClass: "btn-secondary",
+				HelpText:    "Restaura a alegação exclusivamente para Quarentena. Não publica diretamente na área pública.",
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+// AdminModerationDecisionItemVM representa uma linha no histórico de auditoria de moderação.
+type AdminModerationDecisionItemVM struct {
+	ID                   string
+	Action               string
+	ActionHuman          string
+	Reason               string
+	Actor                string
+	CandidateFingerprint string
+	CreatedAtHuman       string
+}
+
+// AdminClaimEvidenceItemVM representa um uso de evidência associado a um claim.
+type AdminClaimEvidenceItemVM struct {
+	EvidenceSourceID           string
+	Excerpt                    string
+	Locator                    string
+	Role                       string
+	RoleHuman                  string
+	EvidenceSourceStatus       string
+	EvidenceSourceStatusHuman  string
+	EvidenceSummary            string
+	EvidenceType               string
+	SourceID                   string
+	SourceTitle                string
+	SourcePublisher            string
+	SourceOriginalURL          ExternalLinkVM
+	SourceCanonicalURL         ExternalLinkVM
+	SourceType                 string
+	SourceAccessStatus         string
+	SourceAccessStatusHuman    string
+	SourceCheckedAtHuman       string
+	SourceHTTPStatus           sql.NullInt64
+	SourceErrorCode            string
+	EvidenceSourceCreatedHuman string
+}
+
+// AdminClaimDetailVM contém todos os dados necessários para renderizar a página de detalhe e moderação do claim.
+type AdminClaimDetailVM struct {
+	ID                        string
+	Proposition               string
+	Attribution               string
+	Origin                    string
+	OriginHuman               string
+	Grade                     string
+	GradeHuman                string
+	Disposition               string
+	DispositionHuman          string
+	MetricEligible            bool
+	Status                    string
+	StatusHuman               string
+	ContextStatus             string
+	CreatedAtHuman            string
+	UpdatedAtHuman            string
+	UpdatedAtRaw              string
+	RelationshipID            string
+	RelationshipType          string
+	RelationshipSummary       string
+	RelationshipContextLimits string
+	SubjectEntityID           string
+	SubjectEntityName         string
+	SubjectEntitySlug         string
+	TargetEntityID            string
+	TargetEntityName          string
+	TargetEntitySlug          string
+	CaseID                    string
+	CaseName                  string
+	CaseSlug                  string
+	CandidateID               string
+	ActiveSupportsCount       int64
+	EvidenceSources           []AdminClaimEvidenceItemVM
+	Decisions                 []AdminModerationDecisionItemVM
+	AllowedActions            []AdminClaimActionOptionVM
+	FlashMessage              string
+	FlashError                string
+}
+
+// ToAdminClaimDetailVM monta o ViewModel a partir da estrutura store.AdminClaimDetail.
+func ToAdminClaimDetailVM(detail *store.AdminClaimDetail, flashMsg, flashErr string) AdminClaimDetailVM {
+	if detail == nil {
+		return AdminClaimDetailVM{FlashMessage: flashMsg, FlashError: flashErr}
+	}
+	c := detail.Claim
+	var evList []AdminClaimEvidenceItemVM
+	for _, es := range detail.EvidenceSources {
+		evList = append(evList, AdminClaimEvidenceItemVM{
+			EvidenceSourceID:           es.EvidenceSourceID,
+			Excerpt:                    es.Excerpt,
+			Locator:                    es.Locator,
+			Role:                       es.Role,
+			RoleHuman:                  FormatEvidenceRole(es.Role),
+			EvidenceSourceStatus:       es.EvidenceSourceStatus,
+			EvidenceSourceStatusHuman:  FormatEvidenceSourceStatus(es.EvidenceSourceStatus),
+			EvidenceSummary:            es.EvidenceSummary,
+			EvidenceType:               es.EvidenceType,
+			SourceID:                   es.SourceID,
+			SourceTitle:                es.SourceTitle,
+			SourcePublisher:            es.SourcePublisherOrAuthor,
+			SourceOriginalURL:          SanitizeExternalLink(es.SourceOriginalUrl),
+			SourceCanonicalURL:         SanitizeExternalLink(es.SourceCanonicalUrl),
+			SourceType:                 es.SourceType,
+			SourceAccessStatus:         es.SourceAccessStatus,
+			SourceAccessStatusHuman:    FormatSourceAccessStatus(es.SourceAccessStatus),
+			SourceCheckedAtHuman:       FormatDate(es.SourceAccessCheckedAt),
+			SourceHTTPStatus:           es.SourceHttpStatus,
+			SourceErrorCode:            es.SourceNormalizedErrorCode,
+			EvidenceSourceCreatedHuman: FormatDate(es.EvidenceSourceCreatedAt),
+		})
+	}
+
+	var decList []AdminModerationDecisionItemVM
+	for _, d := range detail.Decisions {
+		decList = append(decList, AdminModerationDecisionItemVM{
+			ID:                   d.ID,
+			Action:               d.Action,
+			ActionHuman:          FormatModerationAction(d.Action),
+			Reason:               d.Reason,
+			Actor:                d.Actor,
+			CandidateFingerprint: d.CandidateFingerprint,
+			CreatedAtHuman:       FormatDate(d.CreatedAt),
+		})
+	}
+
+	return AdminClaimDetailVM{
+		ID:                        c.ID,
+		Proposition:               c.Proposition,
+		Attribution:               c.Attribution,
+		Origin:                    c.Origin,
+		OriginHuman:               FormatClaimOrigin(c.Origin),
+		Grade:                     c.Grade,
+		GradeHuman:                FormatGradeShort(c.Grade),
+		Disposition:               c.Disposition,
+		DispositionHuman:          FormatDisposition(c.Disposition),
+		MetricEligible:            c.MetricEligible == 1,
+		Status:                    c.Status,
+		StatusHuman:               FormatEditorialStatus(c.Status),
+		ContextStatus:             "",
+		CreatedAtHuman:            FormatDate(c.CreatedAt),
+		UpdatedAtHuman:            FormatDate(c.UpdatedAt),
+		UpdatedAtRaw:              c.UpdatedAt,
+		RelationshipID:            c.RelationshipID,
+		RelationshipType:          c.RelationshipType,
+		RelationshipSummary:       c.RelationshipSummary,
+		RelationshipContextLimits: c.RelationshipContextLimits,
+		SubjectEntityID:           c.SubjectEntityID,
+		SubjectEntityName:         c.SubjectEntityName,
+		SubjectEntitySlug:         c.SubjectEntitySlug,
+		TargetEntityID:            c.TargetEntityID,
+		TargetEntityName:          c.TargetEntityName,
+		TargetEntitySlug:          c.TargetEntitySlug,
+		CaseID:                    c.CaseID,
+		CaseName:                  c.CaseName,
+		CaseSlug:                  c.CaseSlug,
+		CandidateID:               detail.CandidateID,
+		ActiveSupportsCount:       detail.ActiveSupportsCount,
+		EvidenceSources:           evList,
+		Decisions:                 decList,
+		AllowedActions:            GetAllowedClaimActions(c.Status, detail.ActiveSupportsCount),
+		FlashMessage:              flashMsg,
+		FlashError:                flashErr,
+	}
+}

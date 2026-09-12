@@ -166,6 +166,7 @@ templ AdminEvidences(vm AdminEvidenceListVM) {
 										</div>
 										<div class="admin-item-meta-row">
 											<span>Uso ID: <code>{ es.EvidenceSourceID }</code></span>
+											<span>Claim ID: <a href={ templ.SafeURL("/admin/claims/" + es.ClaimID) } class="dist-filter-link"><code>{ es.ClaimID }</code> &rarr;</a></span>
 											<span>Criado em: <strong>{ es.EvidenceSourceCreatedHuman }</strong></span>
 											<span>Origem: <strong>{ es.ClaimOriginHuman }</strong></span>
 										</div>

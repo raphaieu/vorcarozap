@@ -1,11 +1,28 @@
 package web
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+type authUserContextKey struct{}
+
+// WithAuthenticatedUser anexa o nome do usuário autenticado ao contexto.
+func WithAuthenticatedUser(ctx context.Context, username string) context.Context {
+	return context.WithValue(ctx, authUserContextKey{}, username)
+}
+
+// AuthenticatedUserFromContext recupera o nome do usuário autenticado a partir do contexto.
+func AuthenticatedUserFromContext(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(authUserContextKey{}).(string)
+	if !ok || val == "" {
+		return "", false
+	}
+	return val, true
+}
 
 // BasicAuthMiddleware cria um middleware HTTP que protege rotas com autenticação Basic Auth.
 // A comparação do usuário é feita em tempo constante e a verificação do hash bcrypt
@@ -38,7 +55,8 @@ func BasicAuthMiddleware(expectedUser, expectedPasswordHash string) func(http.Ha
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Vary", "Authorization")
 
-			next.ServeHTTP(w, r)
+			ctx := WithAuthenticatedUser(r.Context(), username)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

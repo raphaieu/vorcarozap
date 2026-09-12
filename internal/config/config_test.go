@@ -40,6 +40,7 @@ func TestConfigLoadDefaults(t *testing.T) {
 	_ = os.Unsetenv("MONITOR_LOCK_TTL")
 	_ = os.Unsetenv("ADMIN_USER")
 	_ = os.Unsetenv("ADMIN_PASSWORD_HASH")
+	_ = os.Unsetenv("ADMIN_ALLOWED_ORIGIN")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -507,6 +508,8 @@ func TestConfigAdminVariables(t *testing.T) {
 		name          string
 		adminUser     string
 		adminHash     string
+		adminOrigin   string
+		wantOrigin    string
 		expectErr     bool
 		errContains   string
 		expectEnabled bool
@@ -606,6 +609,8 @@ func TestConfigAdminVariables(t *testing.T) {
 			name:          "ADMIN_USER e ADMIN_PASSWORD_HASH validos com custo 12 habilitam admin",
 			adminUser:     "admin",
 			adminHash:     hashCost12,
+			adminOrigin:   "http://localhost:8090",
+			wantOrigin:    "http://localhost:8090",
 			expectErr:     false,
 			expectEnabled: true,
 		},
@@ -613,6 +618,8 @@ func TestConfigAdminVariables(t *testing.T) {
 			name:          "ADMIN_USER e ADMIN_PASSWORD_HASH validos com custo 13 habilitam admin",
 			adminUser:     "admin",
 			adminHash:     hashCost13,
+			adminOrigin:   "http://localhost:8090",
+			wantOrigin:    "http://localhost:8090",
 			expectErr:     false,
 			expectEnabled: true,
 		},
@@ -620,6 +627,8 @@ func TestConfigAdminVariables(t *testing.T) {
 			name:          "ADMIN_USER e ADMIN_PASSWORD_HASH validos com custo 14 habilitam admin",
 			adminUser:     "admin",
 			adminHash:     hashCost14,
+			adminOrigin:   "https://vorcaro.exemplo.org",
+			wantOrigin:    "https://vorcaro.exemplo.org",
 			expectErr:     false,
 			expectEnabled: true,
 		},
@@ -627,8 +636,238 @@ func TestConfigAdminVariables(t *testing.T) {
 			name:          "ADMIN_USER com espacos nas bordas e normalizado com sucesso",
 			adminUser:     "  admin_operator  ",
 			adminHash:     hashCost12,
+			adminOrigin:   "http://localhost:8090",
+			wantOrigin:    "http://localhost:8090",
 			expectErr:     false,
 			expectEnabled: true,
+		},
+		{
+			name:        "ADMIN habilitado sem ADMIN_ALLOWED_ORIGIN falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "",
+			expectErr:   true,
+			errContains: "ADMIN_ALLOWED_ORIGIN é obrigatório",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com esquema invalido (ftp) falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "ftp://localhost:8090",
+			expectErr:   true,
+			errContains: "esquema deve ser http ou https",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN sem host falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://",
+			expectErr:   true,
+			errContains: "host não pode ser vazio",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com userinfo falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://user:pass@localhost:8090",
+			expectErr:   true,
+			errContains: "não deve conter credenciais",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com path subrota falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://localhost:8090/admin",
+			expectErr:   true,
+			errContains: "deve conter apenas esquema e host",
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN com esquema/host em maiúsculas e barra final é normalizado canonicamente",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "HTTPS://EXAMPLE.COM/",
+			wantOrigin:    "https://example.com",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN com porta e maiúsculas e barra final é normalizado canonicamente",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "HTTP://LOCALHOST:8090/",
+			wantOrigin:    "http://localhost:8090",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN http com porta padrao 80 elimina a porta",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "http://EXAMPLE.COM:80/",
+			wantOrigin:    "http://example.com",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN https com porta padrao 443 elimina a porta",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "https://EXAMPLE.COM:443/",
+			wantOrigin:    "https://example.com",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN http preserva porta 443 como nao padrao",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "http://example.com:443/",
+			wantOrigin:    "http://example.com:443",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN https preserva porta 80 como nao padrao",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "https://example.com:80/",
+			wantOrigin:    "https://example.com:80",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN IPv6 sem porta normalizado canonicamente",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "http://[::1]/",
+			wantOrigin:    "http://[::1]",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN IPv6 longo sem porta normalizado canonicamente",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "https://[2001:DB8::1]/",
+			wantOrigin:    "https://[2001:db8::1]",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN IPv6 com porta padrao 80 elimina porta",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "http://[::1]:80/",
+			wantOrigin:    "http://[::1]",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN IPv6 com porta padrao 443 elimina porta",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "https://[2001:db8::1]:443/",
+			wantOrigin:    "https://[2001:db8::1]",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN IPv6 com porta nao padrao preserva porta",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "http://[::1]:8080/",
+			wantOrigin:    "http://[::1]:8080",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_ALLOWED_ORIGIN IPv6 longo com porta nao padrao preserva porta",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			adminOrigin:   "https://[2001:db8::1]:8443/",
+			wantOrigin:    "https://[2001:db8::1]:8443",
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com porta nao numerica falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://example.com:abc",
+			expectErr:   true,
+			errContains: "inválido",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com porta declarada vazia falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://example.com:/",
+			expectErr:   true,
+			errContains: "porta não pode ser vazia",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN IPv6 com porta declarada vazia falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://[::1]:",
+			expectErr:   true,
+			errContains: "porta não pode ser vazia",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com porta zero fora da faixa falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://example.com:0",
+			expectErr:   true,
+			errContains: "deve ser um número entre 1 e 65535",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com porta acima de 65535 falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://example.com:65536",
+			expectErr:   true,
+			errContains: "deve ser um número entre 1 e 65535",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com porta 99999 falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://example.com:99999",
+			expectErr:   true,
+			errContains: "deve ser um número entre 1 e 65535",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN IPv6 com conteudo invalido entre colchetes falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://[invalid_ipv6]/",
+			expectErr:   true,
+			errContains: "inválido",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN IPv6 sem colchetes falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://2001:db8::1/",
+			expectErr:   true,
+			errContains: "inválido",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com query string falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://localhost:8090?foo=bar",
+			expectErr:   true,
+			errContains: "deve conter apenas esquema e host",
+		},
+		{
+			name:        "ADMIN_ALLOWED_ORIGIN com fragment falha",
+			adminUser:   "admin",
+			adminHash:   hashCost12,
+			adminOrigin: "http://localhost:8090#section",
+			expectErr:   true,
+			errContains: "deve conter apenas esquema e host",
 		},
 	}
 
@@ -636,6 +875,7 @@ func TestConfigAdminVariables(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("ADMIN_USER", tt.adminUser)
 			t.Setenv("ADMIN_PASSWORD_HASH", tt.adminHash)
+			t.Setenv("ADMIN_ALLOWED_ORIGIN", tt.adminOrigin)
 
 			cfg, err := config.Load()
 			if (err != nil) != tt.expectErr {
@@ -668,6 +908,12 @@ func TestConfigAdminVariables(t *testing.T) {
 				trimmedExpectedHash := strings.TrimSpace(tt.adminHash)
 				if cfg.AdminPasswordHash != trimmedExpectedHash {
 					t.Errorf("AdminPasswordHash: esperado %q, obtido %q", trimmedExpectedHash, cfg.AdminPasswordHash)
+				}
+				if cfg.AdminAllowedOrigin == "" {
+					t.Errorf("AdminAllowedOrigin não deve ser vazio quando admin habilitado")
+				}
+				if tt.wantOrigin != "" && cfg.AdminAllowedOrigin != tt.wantOrigin {
+					t.Errorf("AdminAllowedOrigin: esperado %q, obtido %q", tt.wantOrigin, cfg.AdminAllowedOrigin)
 				}
 			}
 		})

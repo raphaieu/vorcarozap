@@ -33,6 +33,7 @@ services:
       MONITOR_LOCK_TTL: ${MONITOR_LOCK_TTL:-10m}
       ADMIN_USER: ${ADMIN_USER:-}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      ADMIN_ALLOWED_ORIGIN: ${ADMIN_ALLOWED_ORIGIN:-}
     volumes:
       - vorcarozap_data:/data
     healthcheck:
@@ -74,6 +75,7 @@ services:
       MONITOR_LOCK_TTL: ${MONITOR_LOCK_TTL:-10m}
       ADMIN_USER: ${ADMIN_USER:-}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      ADMIN_ALLOWED_ORIGIN: ${ADMIN_ALLOWED_ORIGIN:-}
     volumes:
       - .:/src
       - go_modules:/go/pkg/mod

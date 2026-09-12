@@ -94,6 +94,17 @@ type ImportRun struct {
 	CompletedAt    sql.NullString `json:"completed_at"`
 }
 
+type ModerationDecision struct {
+	ID                   string         `json:"id"`
+	ClaimID              sql.NullString `json:"claim_id"`
+	EvidenceSourceID     sql.NullString `json:"evidence_source_id"`
+	Action               string         `json:"action"`
+	Reason               string         `json:"reason"`
+	Actor                string         `json:"actor"`
+	CandidateFingerprint string         `json:"candidate_fingerprint"`
+	CreatedAt            string         `json:"created_at"`
+}
+
 type MonitoringCandidate struct {
 	ID                         string         `json:"id"`
 	MonitoringRunID            string         `json:"monitoring_run_id"`

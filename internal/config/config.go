@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -45,6 +47,7 @@ type Config struct {
 	MonitorLockTTL                     time.Duration
 	AdminUser                          string
 	AdminPasswordHash                  string
+	AdminAllowedOrigin                 string
 }
 
 // Constantes para validação de segurança de senha administrativa (VZ-014).
@@ -209,7 +212,7 @@ func Load() (*Config, error) {
 	adminUserRaw := os.Getenv("ADMIN_USER")
 	adminHashRaw := os.Getenv("ADMIN_PASSWORD_HASH")
 
-	var adminUser, adminPasswordHash string
+	var adminUser, adminPasswordHash, adminAllowedOrigin string
 	if adminUserRaw != "" || adminHashRaw != "" {
 		if adminUserRaw == "" || adminHashRaw == "" {
 			return nil, fmt.Errorf("config: ADMIN_USER e ADMIN_PASSWORD_HASH devem ser configurados em conjunto")
@@ -244,8 +247,15 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("config: ADMIN_PASSWORD_HASH inválido: custo bcrypt fora da faixa permitida (%d a %d)", AdminPasswordBcryptMinCost, AdminPasswordBcryptMaxCost)
 		}
 
+		originRaw := os.Getenv("ADMIN_ALLOWED_ORIGIN")
+		originCanonical, err := canonicalizeAllowedOrigin(originRaw)
+		if err != nil {
+			return nil, err
+		}
+
 		adminUser = user
 		adminPasswordHash = hash
+		adminAllowedOrigin = originCanonical
 	}
 
 	return &Config{
@@ -279,6 +289,7 @@ func Load() (*Config, error) {
 		MonitorLockTTL:                     monitorLockTTL,
 		AdminUser:                          adminUser,
 		AdminPasswordHash:                  adminPasswordHash,
+		AdminAllowedOrigin:                 adminAllowedOrigin,
 	}, nil
 }
 
@@ -336,4 +347,100 @@ func parseCostMicroUSD(envKey, val string, defaultMicros, minMicros, maxMicros i
 		return 0, fmt.Errorf("config: %s inválido %q: deve estar entre $%.4f e $%.4f", envKey, val, float64(minMicros)/1000000.0, float64(maxMicros)/1000000.0)
 	}
 	return micros, nil
+}
+
+func canonicalizeAllowedOrigin(originRaw string) (string, error) {
+	originTrimmed := strings.TrimSpace(originRaw)
+	if originTrimmed == "" {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN é obrigatório quando a área administrativa está habilitada")
+	}
+
+	u, err := url.Parse(originTrimmed)
+	if err != nil {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: %w", originRaw, err)
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: esquema deve ser http ou https", originRaw)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: não deve conter credenciais de usuário", originRaw)
+	}
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: deve conter apenas esquema e host (ex.: http://localhost:8090)", originRaw)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: host não pode ser vazio", originRaw)
+	}
+
+	var host string
+	var portNum int
+	var isIPv6 bool
+
+	h, p, err := net.SplitHostPort(u.Host)
+	if err == nil {
+		if p == "" {
+			return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: porta não pode ser vazia", originRaw)
+		}
+		pn, err := strconv.Atoi(p)
+		if err != nil || pn <= 0 || pn > 65535 || strconv.Itoa(pn) != p {
+			return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: porta %q deve ser um número entre 1 e 65535", originRaw, p)
+		}
+		portNum = pn
+		host = strings.ToLower(h)
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+		}
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.To4() == nil {
+				isIPv6 = true
+			}
+		} else if strings.Contains(host, ":") {
+			return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: endereço de host IPv6 inválido", originRaw)
+		}
+	} else {
+		if strings.HasSuffix(u.Host, ":") {
+			return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: porta não pode ser vazia", originRaw)
+		}
+		rawHost := strings.ToLower(u.Host)
+		if strings.HasPrefix(rawHost, "[") && strings.HasSuffix(rawHost, "]") {
+			host = rawHost[1 : len(rawHost)-1]
+			ip := net.ParseIP(host)
+			if ip == nil || ip.To4() != nil {
+				return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: endereço IPv6 inválido dentro de colchetes", originRaw)
+			}
+			isIPv6 = true
+		} else if strings.Contains(rawHost, ":") {
+			return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: host com dois-pontos deve especificar porta válida ou ser IPv6 entre colchetes", originRaw)
+		} else {
+			host = rawHost
+		}
+	}
+
+	if host == "" {
+		return "", fmt.Errorf("config: ADMIN_ALLOWED_ORIGIN inválido %q: host não pode ser vazio", originRaw)
+	}
+
+	// Elimina portas padrão durante a canonicalização
+	includePort := false
+	if portNum > 0 {
+		if (scheme == "http" && portNum == 80) || (scheme == "https" && portNum == 443) {
+			includePort = false
+		} else {
+			includePort = true
+		}
+	}
+
+	if isIPv6 {
+		if includePort {
+			return fmt.Sprintf("%s://[%s]:%d", scheme, host, portNum), nil
+		}
+		return fmt.Sprintf("%s://[%s]", scheme, host), nil
+	}
+
+	if includePort {
+		return fmt.Sprintf("%s://%s:%d", scheme, host, portNum), nil
+	}
+	return fmt.Sprintf("%s://%s", scheme, host), nil
 }

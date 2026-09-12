@@ -5,16 +5,20 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/exporter"
 	"github.com/raphaieu/vorcarozap/internal/metrics"
+	"github.com/raphaieu/vorcarozap/internal/moderation"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 	"github.com/raphaieu/vorcarozap/web/pages"
@@ -24,6 +28,7 @@ type Handlers struct {
 	db               *sql.DB
 	queries          *sqlc.Queries
 	publicDataCutoff string
+	moderation       *moderation.Service
 }
 
 func NewHandlers(db *sql.DB, cutoff string) *Handlers {
@@ -31,6 +36,7 @@ func NewHandlers(db *sql.DB, cutoff string) *Handlers {
 		db:               db,
 		queries:          sqlc.New(db),
 		publicDataCutoff: cutoff,
+		moderation:       moderation.NewService(db),
 	}
 }
 
@@ -425,4 +431,119 @@ func (h *Handlers) HandleAdminSources(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to render admin sources template", "error", err)
 		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
 	}
+}
+
+// HandleAdminClaimDetail renderiza a inspeção detalhada de um claim, suas evidências e o histórico de moderação.
+func (h *Handlers) HandleAdminClaimDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail, err := store.GetAdminClaimDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get admin claim detail", "id", id, "error", err)
+		http.Error(w, "Erro interno ao carregar detalhes da alegação", http.StatusInternalServerError)
+		return
+	}
+
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
+
+	vm := pages.ToAdminClaimDetailVM(detail, flashMsg, flashErr)
+	component := pages.AdminClaimDetail(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin claim detail template", "id", id, "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminModerateClaim processa a ação humana de moderação sobre uma alegação via POST.
+// Segue o padrão PRG (303 See Other), validação estrita de ator, concorrência atômica e proteção CSRF.
+func (h *Handlers) HandleAdminModerateClaim(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	actor, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || strings.TrimSpace(actor) == "" {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "Corpo da requisição excede o limite máximo permitido de 64 KiB", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "Requisição inválida: formulário corrompido", http.StatusBadRequest)
+		return
+	}
+
+	actionStr := strings.TrimSpace(r.FormValue("action"))
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	expectedUpdatedAt := strings.TrimSpace(r.FormValue("expected_updated_at"))
+
+	action := domain.ModerationAction(actionStr)
+	if !action.IsValid() {
+		http.Error(w, fmt.Sprintf("Ação de moderação inválida: %q", actionStr), http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.moderation.ModerateClaim(r.Context(), moderation.ModerateClaimParams{
+		ClaimID:           id,
+		ExpectedUpdatedAt: expectedUpdatedAt,
+		Action:            action,
+		Reason:            reason,
+		Actor:             actor,
+	})
+	if err != nil {
+		if errors.Is(err, moderation.ErrClaimNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, moderation.ErrConflict) {
+			http.Error(w, "Conflito de concorrência: o estado da alegação foi modificado por outra operação.", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, moderation.ErrMissingExpectedVersion) {
+			http.Error(w, "Versão esperada (expected_updated_at) é obrigatória para moderação.", http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, moderation.ErrInvalidTransition) {
+			http.Error(w, fmt.Sprintf("Transição de estado inválida: %v", err), http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, moderation.ErrNoActiveSupport) {
+			http.Error(w, "Aprovação negada: a alegação não possui nenhum uso de evidência ativo com papel 'supports'.", http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, moderation.ErrInvalidReason) || errors.Is(err, moderation.ErrInvalidAction) || errors.Is(err, moderation.ErrInvalidActor) {
+			http.Error(w, fmt.Sprintf("Dados de moderação inválidos: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		slog.Error("failed to moderate claim", "claim_id", id, "action", actionStr, "error", err)
+		http.Error(w, "Erro interno ao processar moderação", http.StatusInternalServerError)
+		return
+	}
+
+	successMsg := fmt.Sprintf("Alegação moderada com sucesso: ação '%s' aplicada (novo status: %s).", actionStr, res.NewStatus)
+	redirectURL := fmt.Sprintf("/admin/claims/%s?msg=%s", id, url.QueryEscape(successMsg))
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }

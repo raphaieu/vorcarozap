@@ -126,6 +126,15 @@ type AdminCandidateDetail struct {
 	Evaluations []sqlc.ListAdminSemanticEvaluationsByCandidateIDRow
 }
 
+// AdminClaimDetail agrega os dados de uma alegação, seus usos de evidência e o histórico de moderação.
+type AdminClaimDetail struct {
+	Claim               sqlc.GetAdminClaimByIDRow
+	EvidenceSources     []sqlc.ListAdminEvidenceSourcesByClaimIDRow
+	ActiveSupportsCount int64
+	Decisions           []sqlc.ModerationDecision
+	CandidateID         string
+}
+
 // SanitizeAdminCandidateFilter valida e normaliza parâmetros do filtro de candidatos usando o relógio atual.
 func SanitizeAdminCandidateFilter(f AdminCandidateFilter) AdminCandidateFilter {
 	return SanitizeAdminCandidateFilterWithClock(f, time.Now().UTC())
@@ -420,6 +429,53 @@ func GetAdminCandidateDetail(ctx context.Context, db *sql.DB, id string) (*Admin
 	return &AdminCandidateDetail{
 		Candidate:   candidate,
 		Evaluations: evals,
+	}, nil
+}
+
+// GetAdminClaimDetail carrega os detalhes completos de uma alegação, seus usos de evidência e o histórico de moderação.
+func GetAdminClaimDetail(ctx context.Context, db *sql.DB, id string) (*AdminClaimDetail, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrNotFound
+	}
+
+	q := sqlc.New(db)
+	claim, err := q.GetAdminClaimByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("store: falha ao carregar alegação %s: %w", id, err)
+	}
+
+	evidenceSources, err := q.ListAdminEvidenceSourcesByClaimID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao carregar evidências da alegação %s: %w", id, err)
+	}
+
+	decisions, err := q.ListAdminModerationDecisionsByClaimID(ctx, sql.NullString{String: id, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao carregar decisões de moderação da alegação %s: %w", id, err)
+	}
+
+	activeSupportsCount, err := q.CountActiveSupportsEvidenceSourcesByClaimID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao contar suportes ativos da alegação %s: %w", id, err)
+	}
+
+	candidateID := ""
+	cid, err := q.GetAdminCandidateIDByPublishedClaimID(ctx, sql.NullString{String: id, Valid: true})
+	if err == nil {
+		candidateID = cid
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("store: falha ao consultar candidato associado da alegação %s: %w", id, err)
+	}
+
+	return &AdminClaimDetail{
+		Claim:               claim,
+		EvidenceSources:     evidenceSources,
+		ActiveSupportsCount: activeSupportsCount,
+		Decisions:           decisions,
+		CandidateID:         candidateID,
 	}, nil
 }
 

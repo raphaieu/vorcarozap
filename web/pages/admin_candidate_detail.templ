@@ -205,8 +205,10 @@ templ AdminCandidateDetail(vm AdminCandidateDetailVM) {
 							<span class="fact-label">Alegação Publicada (Claim)</span>
 							<span class="fact-value">
 								if vm.PublishedClaimID != "" {
-									<span class="admin-status-badge status-published">ID: { vm.PublishedClaimID }</span>
-									<span style="font-size: 0.8rem; color: var(--color-text-muted); display: block;">
+									<a href={ templ.SafeURL("/admin/claims/" + vm.PublishedClaimID) } class="dist-filter-link">
+										<span class="admin-status-badge status-published">ID: { vm.PublishedClaimID } &rarr;</span>
+									</a>
+									<span style="font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-top: 0.25rem;">
 										Status: { vm.PublishedClaimStatusHuman } &bull; Disposição: { vm.PublishedClaimDispHuman }
 									</span>
 								} else {

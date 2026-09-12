@@ -113,6 +113,7 @@ Configuração via variáveis de ambiente:
   MONITOR_LOCK_TTL                        Tempo de vida do lease exclusivo no SQLite (padrão: 10m)
   ADMIN_USER                              Nome do usuário administrador para HTTP Basic Auth (sem default)
   ADMIN_PASSWORD_HASH                     Hash bcrypt da senha do administrador, custo 12..14 (sem default)
+  ADMIN_ALLOWED_ORIGIN                    Origem permitida para proteção CSRF no admin (ex: http://localhost:8090)
 `)
 }
 

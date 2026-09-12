@@ -10,6 +10,22 @@ import (
 	"database/sql"
 )
 
+const countActiveSupportsEvidenceSourcesByClaimID = `-- name: CountActiveSupportsEvidenceSourcesByClaimID :one
+SELECT count(*)
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+WHERE ev.claim_id = ?
+  AND es.role = 'supports'
+  AND es.status = 'active'
+`
+
+func (q *Queries) CountActiveSupportsEvidenceSourcesByClaimID(ctx context.Context, claimID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveSupportsEvidenceSourcesByClaimID, claimID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAdminCandidates = `-- name: CountAdminCandidates :one
 SELECT count(*)
 FROM monitoring_candidates c
@@ -142,6 +158,51 @@ func (q *Queries) CountAdminSources(ctx context.Context, arg CountAdminSourcesPa
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createModerationDecision = `-- name: CreateModerationDecision :one
+INSERT INTO moderation_decisions (
+    id, claim_id, evidence_source_id, action, reason, actor, candidate_fingerprint, created_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?
+)
+RETURNING id, claim_id, evidence_source_id, "action", reason, actor, candidate_fingerprint, created_at
+`
+
+type CreateModerationDecisionParams struct {
+	ID                   string         `json:"id"`
+	ClaimID              sql.NullString `json:"claim_id"`
+	EvidenceSourceID     sql.NullString `json:"evidence_source_id"`
+	Action               string         `json:"action"`
+	Reason               string         `json:"reason"`
+	Actor                string         `json:"actor"`
+	CandidateFingerprint string         `json:"candidate_fingerprint"`
+	CreatedAt            string         `json:"created_at"`
+}
+
+func (q *Queries) CreateModerationDecision(ctx context.Context, arg CreateModerationDecisionParams) (ModerationDecision, error) {
+	row := q.db.QueryRowContext(ctx, createModerationDecision,
+		arg.ID,
+		arg.ClaimID,
+		arg.EvidenceSourceID,
+		arg.Action,
+		arg.Reason,
+		arg.Actor,
+		arg.CandidateFingerprint,
+		arg.CreatedAt,
+	)
+	var i ModerationDecision
+	err := row.Scan(
+		&i.ID,
+		&i.ClaimID,
+		&i.EvidenceSourceID,
+		&i.Action,
+		&i.Reason,
+		&i.Actor,
+		&i.CandidateFingerprint,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getAdminCandidateByID = `-- name: GetAdminCandidateByID :one
@@ -329,6 +390,116 @@ func (q *Queries) GetAdminCandidateByID(ctx context.Context, id string) (GetAdmi
 	return i, err
 }
 
+const getAdminCandidateIDByPublishedClaimID = `-- name: GetAdminCandidateIDByPublishedClaimID :one
+SELECT id
+FROM monitoring_candidates
+WHERE published_claim_id = ?
+  AND is_duplicate = 0
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+func (q *Queries) GetAdminCandidateIDByPublishedClaimID(ctx context.Context, publishedClaimID sql.NullString) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAdminCandidateIDByPublishedClaimID, publishedClaimID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getAdminClaimByID = `-- name: GetAdminClaimByID :one
+SELECT
+    c.id,
+    c.relationship_id,
+    c.proposition,
+    c.attribution,
+    c.origin,
+    c.grade,
+    c.disposition,
+    c.metric_eligible,
+    c.status,
+    COALESCE(c.import_run_id, '') AS import_run_id,
+    c.created_at,
+    c.updated_at,
+    rel.relationship_type,
+    rel.summary AS relationship_summary,
+    rel.context_limits AS relationship_context_limits,
+    subj.id AS subject_entity_id,
+    subj.name AS subject_entity_name,
+    subj.slug AS subject_entity_slug,
+    COALESCE(tgt.id, '') AS target_entity_id,
+    COALESCE(tgt.name, '') AS target_entity_name,
+    COALESCE(tgt.slug, '') AS target_entity_slug,
+    COALESCE(cs.id, '') AS case_id,
+    COALESCE(cs.name, '') AS case_name,
+    COALESCE(cs.slug, '') AS case_slug
+FROM claims c
+JOIN relationships rel ON rel.id = c.relationship_id
+JOIN entities subj ON subj.id = rel.subject_entity_id
+LEFT JOIN entities tgt ON tgt.id = rel.target_entity_id
+LEFT JOIN cases cs ON cs.id = rel.case_id
+WHERE c.id = ?
+LIMIT 1
+`
+
+type GetAdminClaimByIDRow struct {
+	ID                        string `json:"id"`
+	RelationshipID            string `json:"relationship_id"`
+	Proposition               string `json:"proposition"`
+	Attribution               string `json:"attribution"`
+	Origin                    string `json:"origin"`
+	Grade                     string `json:"grade"`
+	Disposition               string `json:"disposition"`
+	MetricEligible            int64  `json:"metric_eligible"`
+	Status                    string `json:"status"`
+	ImportRunID               string `json:"import_run_id"`
+	CreatedAt                 string `json:"created_at"`
+	UpdatedAt                 string `json:"updated_at"`
+	RelationshipType          string `json:"relationship_type"`
+	RelationshipSummary       string `json:"relationship_summary"`
+	RelationshipContextLimits string `json:"relationship_context_limits"`
+	SubjectEntityID           string `json:"subject_entity_id"`
+	SubjectEntityName         string `json:"subject_entity_name"`
+	SubjectEntitySlug         string `json:"subject_entity_slug"`
+	TargetEntityID            string `json:"target_entity_id"`
+	TargetEntityName          string `json:"target_entity_name"`
+	TargetEntitySlug          string `json:"target_entity_slug"`
+	CaseID                    string `json:"case_id"`
+	CaseName                  string `json:"case_name"`
+	CaseSlug                  string `json:"case_slug"`
+}
+
+func (q *Queries) GetAdminClaimByID(ctx context.Context, id string) (GetAdminClaimByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getAdminClaimByID, id)
+	var i GetAdminClaimByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RelationshipID,
+		&i.Proposition,
+		&i.Attribution,
+		&i.Origin,
+		&i.Grade,
+		&i.Disposition,
+		&i.MetricEligible,
+		&i.Status,
+		&i.ImportRunID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RelationshipType,
+		&i.RelationshipSummary,
+		&i.RelationshipContextLimits,
+		&i.SubjectEntityID,
+		&i.SubjectEntityName,
+		&i.SubjectEntitySlug,
+		&i.TargetEntityID,
+		&i.TargetEntityName,
+		&i.TargetEntitySlug,
+		&i.CaseID,
+		&i.CaseName,
+		&i.CaseSlug,
+	)
+	return i, err
+}
+
 const getAdminOverviewCounts = `-- name: GetAdminOverviewCounts :one
 SELECT
     (SELECT count(*) FROM sources) AS total_sources,
@@ -424,6 +595,42 @@ func (q *Queries) GetAdminOverviewCounts(ctx context.Context) (GetAdminOverviewC
 		&i.RunsPending,
 		&i.TotalEntities,
 	)
+	return i, err
+}
+
+const getCandidateFingerprintByPublishedClaimID = `-- name: GetCandidateFingerprintByPublishedClaimID :one
+SELECT fingerprint
+FROM monitoring_candidates
+WHERE published_claim_id = ?
+  AND is_duplicate = 0
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+func (q *Queries) GetCandidateFingerprintByPublishedClaimID(ctx context.Context, publishedClaimID sql.NullString) (string, error) {
+	row := q.db.QueryRowContext(ctx, getCandidateFingerprintByPublishedClaimID, publishedClaimID)
+	var fingerprint string
+	err := row.Scan(&fingerprint)
+	return fingerprint, err
+}
+
+const getClaimByIDForModeration = `-- name: GetClaimByIDForModeration :one
+SELECT id, status, updated_at
+FROM claims
+WHERE id = ?
+LIMIT 1
+`
+
+type GetClaimByIDForModerationRow struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func (q *Queries) GetClaimByIDForModeration(ctx context.Context, id string) (GetClaimByIDForModerationRow, error) {
+	row := q.db.QueryRowContext(ctx, getClaimByIDForModeration, id)
+	var i GetClaimByIDForModerationRow
+	err := row.Scan(&i.ID, &i.Status, &i.UpdatedAt)
 	return i, err
 }
 
@@ -810,6 +1017,158 @@ func (q *Queries) ListAdminEvidenceSources(ctx context.Context, arg ListAdminEvi
 	return items, nil
 }
 
+const listAdminEvidenceSourcesByClaimID = `-- name: ListAdminEvidenceSourcesByClaimID :many
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.source_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    s.id AS source_id_canonical,
+    s.title AS source_title,
+    s.publisher_or_author AS source_publisher_or_author,
+    s.original_url AS source_original_url,
+    s.canonical_url AS source_canonical_url,
+    COALESCE(s.published_at, '') AS source_published_at,
+    COALESCE(s.accessed_at, '') AS source_accessed_at,
+    s.source_type,
+    s.source_access_status,
+    COALESCE(s.source_access_checked_at, '') AS source_access_checked_at,
+    s.http_status AS source_http_status,
+    COALESCE(s.normalized_error_code, '') AS source_normalized_error_code
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN sources s ON s.id = es.source_id
+WHERE ev.claim_id = ?
+ORDER BY es.created_at ASC, es.id ASC
+`
+
+type ListAdminEvidenceSourcesByClaimIDRow struct {
+	EvidenceSourceID          string        `json:"evidence_source_id"`
+	EvidenceID                string        `json:"evidence_id"`
+	SourceID                  string        `json:"source_id"`
+	Excerpt                   string        `json:"excerpt"`
+	Locator                   string        `json:"locator"`
+	Role                      string        `json:"role"`
+	EvidenceSourceStatus      string        `json:"evidence_source_status"`
+	EvidenceSourceCreatedAt   string        `json:"evidence_source_created_at"`
+	EvidenceSourceUpdatedAt   string        `json:"evidence_source_updated_at"`
+	EvidenceSummary           string        `json:"evidence_summary"`
+	EvidenceType              string        `json:"evidence_type"`
+	SourceIDCanonical         string        `json:"source_id_canonical"`
+	SourceTitle               string        `json:"source_title"`
+	SourcePublisherOrAuthor   string        `json:"source_publisher_or_author"`
+	SourceOriginalUrl         string        `json:"source_original_url"`
+	SourceCanonicalUrl        string        `json:"source_canonical_url"`
+	SourcePublishedAt         string        `json:"source_published_at"`
+	SourceAccessedAt          string        `json:"source_accessed_at"`
+	SourceType                string        `json:"source_type"`
+	SourceAccessStatus        string        `json:"source_access_status"`
+	SourceAccessCheckedAt     string        `json:"source_access_checked_at"`
+	SourceHttpStatus          sql.NullInt64 `json:"source_http_status"`
+	SourceNormalizedErrorCode string        `json:"source_normalized_error_code"`
+}
+
+func (q *Queries) ListAdminEvidenceSourcesByClaimID(ctx context.Context, claimID string) ([]ListAdminEvidenceSourcesByClaimIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAdminEvidenceSourcesByClaimID, claimID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminEvidenceSourcesByClaimIDRow
+	for rows.Next() {
+		var i ListAdminEvidenceSourcesByClaimIDRow
+		if err := rows.Scan(
+			&i.EvidenceSourceID,
+			&i.EvidenceID,
+			&i.SourceID,
+			&i.Excerpt,
+			&i.Locator,
+			&i.Role,
+			&i.EvidenceSourceStatus,
+			&i.EvidenceSourceCreatedAt,
+			&i.EvidenceSourceUpdatedAt,
+			&i.EvidenceSummary,
+			&i.EvidenceType,
+			&i.SourceIDCanonical,
+			&i.SourceTitle,
+			&i.SourcePublisherOrAuthor,
+			&i.SourceOriginalUrl,
+			&i.SourceCanonicalUrl,
+			&i.SourcePublishedAt,
+			&i.SourceAccessedAt,
+			&i.SourceType,
+			&i.SourceAccessStatus,
+			&i.SourceAccessCheckedAt,
+			&i.SourceHttpStatus,
+			&i.SourceNormalizedErrorCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAdminModerationDecisionsByClaimID = `-- name: ListAdminModerationDecisionsByClaimID :many
+SELECT
+    id,
+    claim_id,
+    evidence_source_id,
+    action,
+    reason,
+    actor,
+    candidate_fingerprint,
+    created_at
+FROM moderation_decisions
+WHERE claim_id = ?
+ORDER BY created_at DESC, id DESC
+`
+
+func (q *Queries) ListAdminModerationDecisionsByClaimID(ctx context.Context, claimID sql.NullString) ([]ModerationDecision, error) {
+	rows, err := q.db.QueryContext(ctx, listAdminModerationDecisionsByClaimID, claimID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ModerationDecision
+	for rows.Next() {
+		var i ModerationDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClaimID,
+			&i.EvidenceSourceID,
+			&i.Action,
+			&i.Reason,
+			&i.Actor,
+			&i.CandidateFingerprint,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAdminSemanticEvaluationsByCandidateID = `-- name: ListAdminSemanticEvaluationsByCandidateID :many
 SELECT
     se.id,
@@ -993,4 +1352,53 @@ func (q *Queries) ListAdminSources(ctx context.Context, arg ListAdminSourcesPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const rejectMonitoringCandidatesByPublishedClaimID = `-- name: RejectMonitoringCandidatesByPublishedClaimID :execrows
+UPDATE monitoring_candidates
+SET editorial_status = 'rejected',
+    updated_at = ?
+WHERE published_claim_id = ?
+  AND is_duplicate = 0
+`
+
+type RejectMonitoringCandidatesByPublishedClaimIDParams struct {
+	UpdatedAt        string         `json:"updated_at"`
+	PublishedClaimID sql.NullString `json:"published_claim_id"`
+}
+
+func (q *Queries) RejectMonitoringCandidatesByPublishedClaimID(ctx context.Context, arg RejectMonitoringCandidatesByPublishedClaimIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, rejectMonitoringCandidatesByPublishedClaimID, arg.UpdatedAt, arg.PublishedClaimID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateClaimStatusWithVersion = `-- name: UpdateClaimStatusWithVersion :execrows
+UPDATE claims
+SET status = ?1,
+    updated_at = ?2
+WHERE id = ?3
+  AND updated_at = ?4
+`
+
+type UpdateClaimStatusWithVersionParams struct {
+	NewStatus         string `json:"new_status"`
+	UpdatedAt         string `json:"updated_at"`
+	ID                string `json:"id"`
+	ExpectedUpdatedAt string `json:"expected_updated_at"`
+}
+
+func (q *Queries) UpdateClaimStatusWithVersion(ctx context.Context, arg UpdateClaimStatusWithVersionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateClaimStatusWithVersion,
+		arg.NewStatus,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.ExpectedUpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

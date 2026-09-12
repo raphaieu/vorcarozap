@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -503,5 +504,72 @@ func TestAdminSourceFilter_SourceTypeAllowlist(t *testing.T) {
 	}
 	if res.TotalCount != 2 {
 		t.Errorf("tipo desconhecido deve retornar todos os itens (filtro vazio seguro), esperado 2, obtido %d", res.TotalCount)
+	}
+}
+
+func TestGetAdminClaimDetail(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	insertEntity(t, db, "ent-sub-clm", "slug-sub-clm", "Sujeito Claim", "Politica", 5)
+	insertEntity(t, db, "ent-tgt-clm", "slug-tgt-clm", "Alvo Claim", "Empresarial", 4)
+	insertCase(t, db, "case-clm-1", "case-clm-slug-1", "Caso do Claim")
+	insertRel(t, db, "rel-clm-1", "ent-sub-clm", "ent-tgt-clm", "case-clm-1", "societario", "Resumo Relacao")
+	insertSource(t, db, "src-clm-1", "Fonte do Claim")
+
+	insertClaim(t, db, "clm-detail-1", "rel-clm-1", "A", "supports_link", 1, "published", now)
+	insertEvidenceAndSource(t, db, "ev-clm-1", "clm-detail-1", "es-clm-1", "src-clm-1", "supports", "active")
+	insertEvidenceAndSource(t, db, "ev-clm-2", "clm-detail-1", "es-clm-2", "src-clm-1", "contradicts", "active")
+
+	// Inserir decisão prévia
+	q := sqlc.New(db)
+	_, err := q.CreateModerationDecision(ctx, sqlc.CreateModerationDecisionParams{
+		ID:                   "dec-clm-1",
+		ClaimID:              sql.NullString{String: "clm-detail-1", Valid: true},
+		EvidenceSourceID:     sql.NullString{Valid: false},
+		Action:               "approve",
+		Reason:               "Aprovação prévia auditada.",
+		Actor:                "admin_seed",
+		CandidateFingerprint: "v1:fp-clm-1",
+		CreatedAt:            now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar decisão de teste: %v", err)
+	}
+
+	detail, err := store.GetAdminClaimDetail(ctx, db, "clm-detail-1")
+	if err != nil {
+		t.Fatalf("GetAdminClaimDetail falhou: %v", err)
+	}
+
+	if detail.Claim.ID != "clm-detail-1" {
+		t.Errorf("Claim.ID = %q, esperado 'clm-detail-1'", detail.Claim.ID)
+	}
+	if detail.Claim.SubjectEntityName != "Sujeito Claim" {
+		t.Errorf("SubjectEntityName = %q, esperado 'Sujeito Claim'", detail.Claim.SubjectEntityName)
+	}
+	if detail.Claim.TargetEntityName != "Alvo Claim" {
+		t.Errorf("TargetEntityName = %q, esperado 'Alvo Claim'", detail.Claim.TargetEntityName)
+	}
+	if len(detail.EvidenceSources) != 2 {
+		t.Errorf("EvidenceSources = %d, esperado 2", len(detail.EvidenceSources))
+	}
+	if len(detail.Decisions) != 1 {
+		t.Errorf("Decisions = %d, esperado 1", len(detail.Decisions))
+	}
+	if detail.Decisions[0].Action != "approve" || detail.Decisions[0].Actor != "admin_seed" {
+		t.Errorf("Decisão inesperada: %+v", detail.Decisions[0])
+	}
+
+	// Claim inexistente retorna ErrNotFound
+	_, err = store.GetAdminClaimDetail(ctx, db, "inexistente")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("esperava ErrNotFound para claim inexistente, obtido %v", err)
+	}
+
+	// ID vazio retorna ErrNotFound
+	_, err = store.GetAdminClaimDetail(ctx, db, "   ")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("esperava ErrNotFound para id vazio, obtido %v", err)
 	}
 }

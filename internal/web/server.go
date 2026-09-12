@@ -51,10 +51,11 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
-	// Área administrativa protegida (VZ-014)
+	// Área administrativa protegida (VZ-014, VZ-016)
 	if cfg.IsAdminEnabled() {
 		authMiddleware := BasicAuthMiddleware(cfg.AdminUser, cfg.AdminPasswordHash)
-		r.Mount("/admin", newAdminRouter(authMiddleware, handlers))
+		csrfMiddleware := AdminCSRFMiddleware(cfg.AdminAllowedOrigin)
+		r.Mount("/admin", newAdminRouter(authMiddleware, csrfMiddleware, handlers))
 	}
 
 	// Arquivos estáticos embutidos (/static/*)
@@ -79,7 +80,7 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 // O middleware de autenticação é executado incondicionalmente no topo de toda a árvore /admin,
 // garantindo que qualquer requisição (qualquer método HTTP ou subrota) seja autenticada antes
 // de qualquer decisão de handler, 404 ou 405.
-func newAdminRouter(authMiddleware func(http.Handler) http.Handler, handlers *Handlers) http.Handler {
+func newAdminRouter(authMiddleware func(http.Handler) http.Handler, csrfMiddleware func(http.Handler) http.Handler, handlers *Handlers) http.Handler {
 	adminRouter := chi.NewRouter()
 	adminRouter.Use(authMiddleware)
 
@@ -88,6 +89,10 @@ func newAdminRouter(authMiddleware func(http.Handler) http.Handler, handlers *Ha
 	adminRouter.Get("/candidatos/{id}", handlers.HandleAdminCandidateDetail)
 	adminRouter.Get("/evidencias", handlers.HandleAdminEvidences)
 	adminRouter.Get("/fontes", handlers.HandleAdminSources)
+
+	// Rotas de alegações e moderação editorial (VZ-016)
+	adminRouter.Get("/claims/{id}", handlers.HandleAdminClaimDetail)
+	adminRouter.With(csrfMiddleware).Post("/claims/{id}/moderate", handlers.HandleAdminModerateClaim)
 
 	adminRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

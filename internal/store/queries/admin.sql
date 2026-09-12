@@ -348,3 +348,134 @@ WHERE
     )
 ORDER BY s.created_at DESC, s.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: GetAdminClaimByID :one
+SELECT
+    c.id,
+    c.relationship_id,
+    c.proposition,
+    c.attribution,
+    c.origin,
+    c.grade,
+    c.disposition,
+    c.metric_eligible,
+    c.status,
+    COALESCE(c.import_run_id, '') AS import_run_id,
+    c.created_at,
+    c.updated_at,
+    rel.relationship_type,
+    rel.summary AS relationship_summary,
+    rel.context_limits AS relationship_context_limits,
+    subj.id AS subject_entity_id,
+    subj.name AS subject_entity_name,
+    subj.slug AS subject_entity_slug,
+    COALESCE(tgt.id, '') AS target_entity_id,
+    COALESCE(tgt.name, '') AS target_entity_name,
+    COALESCE(tgt.slug, '') AS target_entity_slug,
+    COALESCE(cs.id, '') AS case_id,
+    COALESCE(cs.name, '') AS case_name,
+    COALESCE(cs.slug, '') AS case_slug
+FROM claims c
+JOIN relationships rel ON rel.id = c.relationship_id
+JOIN entities subj ON subj.id = rel.subject_entity_id
+LEFT JOIN entities tgt ON tgt.id = rel.target_entity_id
+LEFT JOIN cases cs ON cs.id = rel.case_id
+WHERE c.id = ?
+LIMIT 1;
+
+-- name: ListAdminEvidenceSourcesByClaimID :many
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.source_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    s.id AS source_id_canonical,
+    s.title AS source_title,
+    s.publisher_or_author AS source_publisher_or_author,
+    s.original_url AS source_original_url,
+    s.canonical_url AS source_canonical_url,
+    COALESCE(s.published_at, '') AS source_published_at,
+    COALESCE(s.accessed_at, '') AS source_accessed_at,
+    s.source_type,
+    s.source_access_status,
+    COALESCE(s.source_access_checked_at, '') AS source_access_checked_at,
+    s.http_status AS source_http_status,
+    COALESCE(s.normalized_error_code, '') AS source_normalized_error_code
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN sources s ON s.id = es.source_id
+WHERE ev.claim_id = ?
+ORDER BY es.created_at ASC, es.id ASC;
+
+-- name: CountActiveSupportsEvidenceSourcesByClaimID :one
+SELECT count(*)
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+WHERE ev.claim_id = ?
+  AND es.role = 'supports'
+  AND es.status = 'active';
+
+-- name: GetClaimByIDForModeration :one
+SELECT id, status, updated_at
+FROM claims
+WHERE id = ?
+LIMIT 1;
+
+-- name: UpdateClaimStatusWithVersion :execrows
+UPDATE claims
+SET status = @new_status,
+    updated_at = @updated_at
+WHERE id = @id
+  AND updated_at = @expected_updated_at;
+
+-- name: RejectMonitoringCandidatesByPublishedClaimID :execrows
+UPDATE monitoring_candidates
+SET editorial_status = 'rejected',
+    updated_at = ?
+WHERE published_claim_id = ?
+  AND is_duplicate = 0;
+
+-- name: GetCandidateFingerprintByPublishedClaimID :one
+SELECT fingerprint
+FROM monitoring_candidates
+WHERE published_claim_id = ?
+  AND is_duplicate = 0
+ORDER BY created_at ASC
+LIMIT 1;
+
+-- name: GetAdminCandidateIDByPublishedClaimID :one
+SELECT id
+FROM monitoring_candidates
+WHERE published_claim_id = ?
+  AND is_duplicate = 0
+ORDER BY created_at ASC
+LIMIT 1;
+
+-- name: CreateModerationDecision :one
+INSERT INTO moderation_decisions (
+    id, claim_id, evidence_source_id, action, reason, actor, candidate_fingerprint, created_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?
+)
+RETURNING *;
+
+-- name: ListAdminModerationDecisionsByClaimID :many
+SELECT
+    id,
+    claim_id,
+    evidence_source_id,
+    action,
+    reason,
+    actor,
+    candidate_fingerprint,
+    created_at
+FROM moderation_decisions
+WHERE claim_id = ?
+ORDER BY created_at DESC, id DESC;

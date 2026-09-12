@@ -1009,15 +1009,16 @@ func setupAdminTestServer(t *testing.T, user string) (*http.Server, string) {
 	passwordHash := getTestAdminHashCost12(t)
 
 	cfg := &config.Config{
-		Port:              8080,
-		Env:               "test",
-		DBPath:            dbPath,
-		PublicDataCutoff:  "2026-09-03",
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		AdminUser:         user,
-		AdminPasswordHash: passwordHash,
+		Port:               8080,
+		Env:                "test",
+		DBPath:             dbPath,
+		PublicDataCutoff:   "2026-09-03",
+		ReadTimeout:        5 * time.Second,
+		WriteTimeout:       10 * time.Second,
+		IdleTimeout:        60 * time.Second,
+		AdminUser:          user,
+		AdminPasswordHash:  passwordHash,
+		AdminAllowedOrigin: "http://example.com",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -1467,15 +1468,16 @@ func setupAdminTestServerWithData(t *testing.T, user string) (*http.Server, *sql
 	passwordHash := getTestAdminHashCost12(t)
 
 	cfg := &config.Config{
-		Port:              8080,
-		Env:               "test",
-		DBPath:            dbPath,
-		PublicDataCutoff:  "2026-09-03",
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		AdminUser:         user,
-		AdminPasswordHash: passwordHash,
+		Port:               8080,
+		Env:                "test",
+		DBPath:             dbPath,
+		PublicDataCutoff:   "2026-09-03",
+		ReadTimeout:        5 * time.Second,
+		WriteTimeout:       10 * time.Second,
+		IdleTimeout:        60 * time.Second,
+		AdminUser:          user,
+		AdminPasswordHash:  passwordHash,
+		AdminAllowedOrigin: "http://example.com",
 	}
 
 	srv, err := web.NewServer(cfg, db)
