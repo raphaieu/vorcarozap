@@ -31,6 +31,8 @@ services:
       MONITOR_MAX_COST_PER_RUN_USD: ${MONITOR_MAX_COST_PER_RUN_USD:-0.25}
       MONITOR_MAX_COST_PER_DAY_USD: ${MONITOR_MAX_COST_PER_DAY_USD:-1.00}
       MONITOR_LOCK_TTL: ${MONITOR_LOCK_TTL:-10m}
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
     volumes:
       - vorcarozap_data:/data
     healthcheck:
@@ -70,6 +72,8 @@ services:
       MONITOR_MAX_COST_PER_RUN_USD: ${MONITOR_MAX_COST_PER_RUN_USD:-0.25}
       MONITOR_MAX_COST_PER_DAY_USD: ${MONITOR_MAX_COST_PER_DAY_USD:-1.00}
       MONITOR_LOCK_TTL: ${MONITOR_LOCK_TTL:-10m}
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
     volumes:
       - .:/src
       - go_modules:/go/pkg/mod

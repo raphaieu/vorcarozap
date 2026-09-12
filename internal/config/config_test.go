@@ -2,8 +2,11 @@ package config_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
 )
@@ -35,10 +38,22 @@ func TestConfigLoadDefaults(t *testing.T) {
 	_ = os.Unsetenv("MONITOR_MAX_COST_PER_RUN_USD")
 	_ = os.Unsetenv("MONITOR_MAX_COST_PER_DAY_USD")
 	_ = os.Unsetenv("MONITOR_LOCK_TTL")
+	_ = os.Unsetenv("ADMIN_USER")
+	_ = os.Unsetenv("ADMIN_PASSWORD_HASH")
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("esperava sucesso ao carregar defaults, erro: %v", err)
+	}
+
+	if cfg.AdminUser != "" {
+		t.Errorf("AdminUser: esperado '', obtido %q", cfg.AdminUser)
+	}
+	if cfg.AdminPasswordHash != "" {
+		t.Errorf("AdminPasswordHash: esperado '', obtido %q", cfg.AdminPasswordHash)
+	}
+	if cfg.IsAdminEnabled() {
+		t.Errorf("IsAdminEnabled: esperado false quando desabilitado, obtido true")
 	}
 
 	if cfg.Port != 8080 {
@@ -455,6 +470,205 @@ func TestConfigMonitorVariables(t *testing.T) {
 			_, err := config.Load()
 			if (err != nil) != tt.expectErr {
 				t.Errorf("config.Load() com %s=%q: esperado erro=%v, obtido err=%v", tt.envKey, tt.envVal, tt.expectErr, err)
+			}
+		})
+	}
+}
+
+func TestConfigAdminVariables(t *testing.T) {
+	hashCost11Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 11)
+	if err != nil {
+		t.Fatalf("falha ao gerar hash de teste custo 11: %v", err)
+	}
+	hashCost12Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 12)
+	if err != nil {
+		t.Fatalf("falha ao gerar hash de teste custo 12: %v", err)
+	}
+	hashCost13Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 13)
+	if err != nil {
+		t.Fatalf("falha ao gerar hash de teste custo 13: %v", err)
+	}
+	hashCost14Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 14)
+	if err != nil {
+		t.Fatalf("falha ao gerar hash de teste custo 14: %v", err)
+	}
+	hashCost15Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 15)
+	if err != nil {
+		t.Fatalf("falha ao gerar hash de teste custo 15: %v", err)
+	}
+
+	hashCost11 := string(hashCost11Bytes)
+	hashCost12 := string(hashCost12Bytes)
+	hashCost13 := string(hashCost13Bytes)
+	hashCost14 := string(hashCost14Bytes)
+	hashCost15 := string(hashCost15Bytes)
+
+	tests := []struct {
+		name          string
+		adminUser     string
+		adminHash     string
+		expectErr     bool
+		errContains   string
+		expectEnabled bool
+	}{
+		{
+			name:          "ambos ausentes desabilitam admin sem erro",
+			adminUser:     "",
+			adminHash:     "",
+			expectErr:     false,
+			expectEnabled: false,
+		},
+		{
+			name:        "somente ADMIN_USER configurado falha",
+			adminUser:   "admin",
+			adminHash:   "",
+			expectErr:   true,
+			errContains: "devem ser configurados em conjunto",
+		},
+		{
+			name:        "somente ADMIN_PASSWORD_HASH configurado falha",
+			adminUser:   "",
+			adminHash:   hashCost12,
+			expectErr:   true,
+			errContains: "devem ser configurados em conjunto",
+		},
+		{
+			name:        "ADMIN_USER vazio apos trim falha",
+			adminUser:   "   ",
+			adminHash:   hashCost12,
+			expectErr:   true,
+			errContains: "não pode ser vazio",
+		},
+		{
+			name:        "ADMIN_USER com dois pontos falha",
+			adminUser:   "admin:root",
+			adminHash:   hashCost12,
+			expectErr:   true,
+			errContains: "não pode conter o caractere ':'",
+		},
+		{
+			name:        "ADMIN_USER com quebra de linha falha",
+			adminUser:   "admin\nuser",
+			adminHash:   hashCost12,
+			expectErr:   true,
+			errContains: "não pode conter caracteres de controle",
+		},
+		{
+			name:        "ADMIN_USER com caractere de controle tabulacao falha",
+			adminUser:   "admin\tuser",
+			adminHash:   hashCost12,
+			expectErr:   true,
+			errContains: "não pode conter caracteres de controle",
+		},
+		{
+			name:        "ADMIN_USER excessivamente longo (>128) falha",
+			adminUser:   strings.Repeat("a", 129),
+			adminHash:   hashCost12,
+			expectErr:   true,
+			errContains: "excede limite de 128 caracteres",
+		},
+		{
+			name:        "ADMIN_PASSWORD_HASH com texto puro falha",
+			adminUser:   "admin",
+			adminHash:   "senha_em_texto_puro_123",
+			expectErr:   true,
+			errContains: "deve conter um hash bcrypt válido",
+		},
+		{
+			name:        "ADMIN_PASSWORD_HASH vazio apos trim falha",
+			adminUser:   "admin",
+			adminHash:   "   ",
+			expectErr:   true,
+			errContains: "não pode ser vazio",
+		},
+		{
+			name:        "ADMIN_PASSWORD_HASH com prefixo invalido falha",
+			adminUser:   "admin",
+			adminHash:   "$1$abcdef1234567890",
+			expectErr:   true,
+			errContains: "deve conter um hash bcrypt válido",
+		},
+		{
+			name:        "ADMIN_PASSWORD_HASH com custo 11 abaixo do minimo (12) falha",
+			adminUser:   "admin",
+			adminHash:   hashCost11,
+			expectErr:   true,
+			errContains: "custo bcrypt fora da faixa permitida",
+		},
+		{
+			name:        "ADMIN_PASSWORD_HASH com custo 15 acima do maximo (14) falha",
+			adminUser:   "admin",
+			adminHash:   hashCost15,
+			expectErr:   true,
+			errContains: "custo bcrypt fora da faixa permitida",
+		},
+		{
+			name:          "ADMIN_USER e ADMIN_PASSWORD_HASH validos com custo 12 habilitam admin",
+			adminUser:     "admin",
+			adminHash:     hashCost12,
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_USER e ADMIN_PASSWORD_HASH validos com custo 13 habilitam admin",
+			adminUser:     "admin",
+			adminHash:     hashCost13,
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_USER e ADMIN_PASSWORD_HASH validos com custo 14 habilitam admin",
+			adminUser:     "admin",
+			adminHash:     hashCost14,
+			expectErr:     false,
+			expectEnabled: true,
+		},
+		{
+			name:          "ADMIN_USER com espacos nas bordas e normalizado com sucesso",
+			adminUser:     "  admin_operator  ",
+			adminHash:     hashCost12,
+			expectErr:     false,
+			expectEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ADMIN_USER", tt.adminUser)
+			t.Setenv("ADMIN_PASSWORD_HASH", tt.adminHash)
+
+			cfg, err := config.Load()
+			if (err != nil) != tt.expectErr {
+				t.Fatalf("config.Load(): esperado erro=%v, obtido err=%v", tt.expectErr, err)
+			}
+
+			if tt.expectErr {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("erro %q não contém %q", err.Error(), tt.errContains)
+				}
+				// Garante que o hash ou senha nunca vazam na mensagem de erro
+				if tt.adminHash != "" && strings.Contains(err.Error(), tt.adminHash) {
+					t.Errorf("vazamento de segurança: mensagem de erro contém o hash da senha: %q", err.Error())
+				}
+				if tt.adminUser != "" && strings.Contains(tt.adminUser, ":") && strings.Contains(err.Error(), tt.adminUser) {
+					t.Errorf("vazamento de segurança: mensagem de erro contém o usuário inválido com senha/separador: %q", err.Error())
+				}
+				return
+			}
+
+			if cfg.IsAdminEnabled() != tt.expectEnabled {
+				t.Errorf("IsAdminEnabled(): esperado %v, obtido %v", tt.expectEnabled, cfg.IsAdminEnabled())
+			}
+
+			if tt.expectEnabled {
+				trimmedExpectedUser := strings.TrimSpace(tt.adminUser)
+				if cfg.AdminUser != trimmedExpectedUser {
+					t.Errorf("AdminUser: esperado %q, obtido %q", trimmedExpectedUser, cfg.AdminUser)
+				}
+				trimmedExpectedHash := strings.TrimSpace(tt.adminHash)
+				if cfg.AdminPasswordHash != trimmedExpectedHash {
+					t.Errorf("AdminPasswordHash: esperado %q, obtido %q", trimmedExpectedHash, cfg.AdminPasswordHash)
+				}
 			}
 		})
 	}

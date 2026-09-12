@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/raphaieu/vorcarozap/internal/research"
 )
@@ -39,6 +43,19 @@ type Config struct {
 	MonitorMaxCostPerDayUSD            float64
 	MonitorMaxCostPerDayMicroUSD       int64
 	MonitorLockTTL                     time.Duration
+	AdminUser                          string
+	AdminPasswordHash                  string
+}
+
+// Constantes para validação de segurança de senha administrativa (VZ-014).
+const (
+	AdminPasswordBcryptMinCost = 12
+	AdminPasswordBcryptMaxCost = 14
+)
+
+// IsAdminEnabled retorna true se a área administrativa estiver configurada e habilitada.
+func (c *Config) IsAdminEnabled() bool {
+	return c.AdminUser != "" && c.AdminPasswordHash != ""
 }
 
 // Load carrega a configuração a partir de variáveis de ambiente com defaults seguros.
@@ -189,6 +206,48 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	adminUserRaw := os.Getenv("ADMIN_USER")
+	adminHashRaw := os.Getenv("ADMIN_PASSWORD_HASH")
+
+	var adminUser, adminPasswordHash string
+	if adminUserRaw != "" || adminHashRaw != "" {
+		if adminUserRaw == "" || adminHashRaw == "" {
+			return nil, fmt.Errorf("config: ADMIN_USER e ADMIN_PASSWORD_HASH devem ser configurados em conjunto")
+		}
+
+		user := strings.TrimSpace(adminUserRaw)
+		if user == "" {
+			return nil, fmt.Errorf("config: ADMIN_USER inválido: não pode ser vazio após remoção de espaços")
+		}
+		if len(user) > 128 {
+			return nil, fmt.Errorf("config: ADMIN_USER inválido: comprimento excede limite de 128 caracteres")
+		}
+		if strings.Contains(user, ":") {
+			return nil, fmt.Errorf("config: ADMIN_USER inválido: não pode conter o caractere ':'")
+		}
+		for _, r := range user {
+			if unicode.IsControl(r) {
+				return nil, fmt.Errorf("config: ADMIN_USER inválido: não pode conter caracteres de controle")
+			}
+		}
+
+		hash := strings.TrimSpace(adminHashRaw)
+		if hash == "" {
+			return nil, fmt.Errorf("config: ADMIN_PASSWORD_HASH inválido: não pode ser vazio")
+		}
+
+		cost, err := bcrypt.Cost([]byte(hash))
+		if err != nil {
+			return nil, fmt.Errorf("config: ADMIN_PASSWORD_HASH inválido: deve conter um hash bcrypt válido")
+		}
+		if cost < AdminPasswordBcryptMinCost || cost > AdminPasswordBcryptMaxCost {
+			return nil, fmt.Errorf("config: ADMIN_PASSWORD_HASH inválido: custo bcrypt fora da faixa permitida (%d a %d)", AdminPasswordBcryptMinCost, AdminPasswordBcryptMaxCost)
+		}
+
+		adminUser = user
+		adminPasswordHash = hash
+	}
+
 	return &Config{
 		Port:                               port,
 		Env:                                env,
@@ -218,6 +277,8 @@ func Load() (*Config, error) {
 		MonitorMaxCostPerDayUSD:            research.MicroUSDToFloat(monitorMaxCostPerDayMicros),
 		MonitorMaxCostPerDayMicroUSD:       monitorMaxCostPerDayMicros,
 		MonitorLockTTL:                     monitorLockTTL,
+		AdminUser:                          adminUser,
+		AdminPasswordHash:                  adminPasswordHash,
 	}, nil
 }
 

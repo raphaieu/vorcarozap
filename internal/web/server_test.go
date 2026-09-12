@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/store"
@@ -964,5 +968,411 @@ func TestExportEndpoint_ErrorHandling(t *testing.T) {
 	// Valida mensagem de erro no corpo
 	if !strings.Contains(w.Body.String(), "Erro interno ao gerar planilha de exportação") {
 		t.Errorf("corpo da resposta de erro inesperado: %s", w.Body.String())
+	}
+}
+
+var (
+	testAdminHashCost12Once sync.Once
+	testAdminHashCost12     string
+)
+
+func getTestAdminHashCost12(t *testing.T) string {
+	t.Helper()
+	testAdminHashCost12Once.Do(func() {
+		h, err := bcrypt.GenerateFromPassword([]byte("password"), 12)
+		if err != nil {
+			panic(fmt.Sprintf("falha ao gerar hash bcrypt no teste: %v", err))
+		}
+		testAdminHashCost12 = string(h)
+	})
+	return testAdminHashCost12
+}
+
+func setupAdminTestServer(t *testing.T, user string) (*http.Server, string) {
+	t.Helper()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "web_admin_test.db")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha nas migrations: %v", err)
+	}
+
+	passwordHash := getTestAdminHashCost12(t)
+
+	cfg := &config.Config{
+		Port:              8080,
+		Env:               "test",
+		DBPath:            dbPath,
+		PublicDataCutoff:  "2026-09-03",
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		AdminUser:         user,
+		AdminPasswordHash: passwordHash,
+	}
+
+	srv, err := web.NewServer(cfg, db)
+	if err != nil {
+		t.Fatalf("falha ao criar servidor web com admin: %v", err)
+	}
+
+	return srv, passwordHash
+}
+
+func TestAdminDisabled_Returns404(t *testing.T) {
+	// Servidor padrão sem AdminUser e AdminPasswordHash configurados
+	srv := setupTestServer(t)
+
+	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
+	paths := []string{"/admin", "/admin/", "/admin/inexistente"}
+
+	for _, method := range methods {
+		for _, p := range paths {
+			t.Run(method+" "+p, func(t *testing.T) {
+				req := httptest.NewRequest(method, p, nil)
+				w := httptest.NewRecorder()
+				srv.Handler.ServeHTTP(w, req)
+
+				if w.Code != http.StatusNotFound {
+					t.Errorf("rota %s %s com admin desabilitado: esperado status 404, obtido %d", method, p, w.Code)
+				}
+				// Não deve emitir cabeçalho WWW-Authenticate quando a rota administrativa está desabilitada
+				if auth := w.Header().Get("WWW-Authenticate"); auth != "" {
+					t.Errorf("WWW-Authenticate não deve estar presente quando admin está desabilitado, obtido %q", auth)
+				}
+			})
+		}
+	}
+
+	// Rotas públicas continuam funcionando normalmente
+	reqHome := httptest.NewRequest(http.MethodGet, "/", nil)
+	wHome := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wHome, reqHome)
+	if wHome.Code != http.StatusOK {
+		t.Errorf("status / público: esperado 200, obtido %d", wHome.Code)
+	}
+}
+
+func TestAdminEnabled_BasicAuth_Unauthenticated_AllMethodsAndPaths(t *testing.T) {
+	srv, _ := setupAdminTestServer(t, "admin")
+
+	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
+	paths := []string{"/admin", "/admin/", "/admin/rota-inexistente"}
+
+	for _, method := range methods {
+		for _, p := range paths {
+			t.Run(method+" "+p, func(t *testing.T) {
+				req := httptest.NewRequest(method, p, nil)
+				w := httptest.NewRecorder()
+				srv.Handler.ServeHTTP(w, req)
+
+				if w.Code != http.StatusUnauthorized {
+					t.Errorf("status para %s %s sem credenciais: esperado 401, obtido %d", method, p, w.Code)
+				}
+
+				expectedWWWAuth := `Basic realm="VorcaroZAP admin", charset="UTF-8"`
+				if auth := w.Header().Get("WWW-Authenticate"); auth != expectedWWWAuth {
+					t.Errorf("WWW-Authenticate: esperado %q, obtido %q", expectedWWWAuth, auth)
+				}
+
+				if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+					t.Errorf("Cache-Control: esperado 'no-store', obtido %q", cc)
+				}
+
+				if vary := w.Header().Get("Vary"); vary != "Authorization" {
+					t.Errorf("Vary: esperado 'Authorization', obtido %q", vary)
+				}
+
+				if !strings.Contains(w.Body.String(), "Unauthorized") {
+					t.Errorf("corpo da resposta de não autorizado deve conter 'Unauthorized', obtido %q", w.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestAdminEnabled_BasicAuth_EqualityBetweenFailures(t *testing.T) {
+	srv, _ := setupAdminTestServer(t, "admin")
+
+	// 1. Falha por usuário incorreto
+	reqWrongUser := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	reqWrongUser.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("wronguser:password")))
+	wWrongUser := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wWrongUser, reqWrongUser)
+
+	// 2. Falha por senha incorreta
+	reqWrongPass := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	reqWrongPass.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:wrongpassword")))
+	wWrongPass := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wWrongPass, reqWrongPass)
+
+	// 3. Falha por ambos incorretos
+	reqBothWrong := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	reqBothWrong.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("wronguser:wrongpassword")))
+	wBothWrong := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wBothWrong, reqBothWrong)
+
+	// Validação de paridade estrita: status, corpo e cabeçalhos idênticos
+	if wWrongUser.Code != http.StatusUnauthorized || wWrongPass.Code != http.StatusUnauthorized || wBothWrong.Code != http.StatusUnauthorized {
+		t.Fatalf("todos devem retornar 401: obtidos %d, %d, %d", wWrongUser.Code, wWrongPass.Code, wBothWrong.Code)
+	}
+
+	if wWrongUser.Body.String() != wWrongPass.Body.String() || wWrongUser.Body.String() != wBothWrong.Body.String() {
+		t.Errorf("corpo da resposta difere entre falhas de autenticação: wrongUser=%q, wrongPass=%q, bothWrong=%q",
+			wWrongUser.Body.String(), wWrongPass.Body.String(), wBothWrong.Body.String())
+	}
+
+	if wWrongUser.Header().Get("WWW-Authenticate") != wWrongPass.Header().Get("WWW-Authenticate") {
+		t.Errorf("cabeçalho WWW-Authenticate difere entre usuário errado (%q) e senha errada (%q)",
+			wWrongUser.Header().Get("WWW-Authenticate"), wWrongPass.Header().Get("WWW-Authenticate"))
+	}
+	if wWrongUser.Header().Get("Cache-Control") != wWrongPass.Header().Get("Cache-Control") {
+		t.Errorf("cabeçalho Cache-Control difere")
+	}
+	if wWrongUser.Header().Get("Vary") != wWrongPass.Header().Get("Vary") {
+		t.Errorf("cabeçalho Vary difere")
+	}
+
+	// 4. Testes com outros formatos malformados
+	malformedHeaders := []struct {
+		name       string
+		authHeader string
+	}{
+		{"esquema Bearer não permitido", "Bearer secret-token"},
+		{"base64 malformado", "Basic !!!invalid_base64!!!"},
+		{"base64 sem separador de dois pontos", "Basic " + base64.StdEncoding.EncodeToString([]byte("adminpassword"))},
+		{"usuário vazio", "Basic " + base64.StdEncoding.EncodeToString([]byte(":password"))},
+	}
+
+	for _, tt := range malformedHeaders {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+			req.Header.Set("Authorization", tt.authHeader)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("status para %s: esperado 401, obtido %d", tt.name, w.Code)
+			}
+			if auth := w.Header().Get("WWW-Authenticate"); auth != `Basic realm="VorcaroZAP admin", charset="UTF-8"` {
+				t.Errorf("WWW-Authenticate incorreto: %q", auth)
+			}
+			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+				t.Errorf("Cache-Control: esperado 'no-store', obtido %q", cc)
+			}
+			if vary := w.Header().Get("Vary"); vary != "Authorization" {
+				t.Errorf("Vary: esperado 'Authorization', obtido %q", vary)
+			}
+		})
+	}
+}
+
+func TestAdminEnabled_BasicAuth_ValidCredentials(t *testing.T) {
+	srv, validHash := setupAdminTestServer(t, "admin")
+
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. Testa GET /admin
+	reqAdmin := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	reqAdmin.Header.Set("Authorization", authHeader)
+	wAdmin := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAdmin, reqAdmin)
+
+	if wAdmin.Code != http.StatusOK {
+		t.Fatalf("status /admin com credencial válida: esperado 200, obtido %d", wAdmin.Code)
+	}
+
+	if cc := wAdmin.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control em resposta autenticada: esperado 'no-store', obtido %q", cc)
+	}
+	if vary := wAdmin.Header().Get("Vary"); vary != "Authorization" {
+		t.Errorf("Vary em resposta autenticada: esperado 'Authorization', obtido %q", vary)
+	}
+	if ct := wAdmin.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type: esperado 'text/html', obtido %q", ct)
+	}
+
+	body := wAdmin.Body.String()
+	if !strings.Contains(body, "Painel Administrativo") {
+		t.Errorf("HTML deve conter 'Painel Administrativo', obtido: %s", body)
+	}
+	if !strings.Contains(body, "Autenticado") {
+		t.Errorf("HTML deve conter 'Autenticado', obtido: %s", body)
+	}
+	if !strings.Contains(body, "VZ-015") || !strings.Contains(body, "VZ-016") {
+		t.Errorf("HTML deve mencionar as fases VZ-015 e VZ-016, obtido: %s", body)
+	}
+
+	// Garante que nenhum hash ou dado sensível aparece no corpo
+	if strings.Contains(body, validHash) {
+		t.Errorf("vazamento de segurança: hash da senha encontrado no corpo da resposta HTML")
+	}
+	if strings.Contains(body, "password") {
+		t.Errorf("vazamento de segurança: senha encontrada no corpo da resposta HTML")
+	}
+
+	// 2. Testa GET /admin/
+	reqAdminSlash := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	reqAdminSlash.Header.Set("Authorization", authHeader)
+	wAdminSlash := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAdminSlash, reqAdminSlash)
+
+	if wAdminSlash.Code != http.StatusOK {
+		t.Fatalf("status /admin/ com credencial válida: esperado 200, obtido %d", wAdminSlash.Code)
+	}
+
+	// 3. Testa subrota inexistente autenticada /admin/inexistente -> 404 protegido
+	reqInexistente := httptest.NewRequest(http.MethodGet, "/admin/inexistente", nil)
+	reqInexistente.Header.Set("Authorization", authHeader)
+	wInexistente := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wInexistente, reqInexistente)
+
+	if wInexistente.Code != http.StatusNotFound {
+		t.Errorf("status /admin/inexistente autenticado: esperado 404, obtido %d", wInexistente.Code)
+	}
+	if cc := wInexistente.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control em subrota 404 autenticada: esperado 'no-store', obtido %q", cc)
+	}
+	if vary := wInexistente.Header().Get("Vary"); vary != "Authorization" {
+		t.Errorf("Vary em subrota 404 autenticada: esperado 'Authorization', obtido %q", vary)
+	}
+
+	// 4. Testa métodos não implementados autenticados (POST, PUT, PATCH, DELETE, OPTIONS)
+	unimplementedMethods := []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
+	for _, m := range unimplementedMethods {
+		t.Run("autenticado "+m+" /admin", func(t *testing.T) {
+			reqM := httptest.NewRequest(m, "/admin", nil)
+			reqM.Header.Set("Authorization", authHeader)
+			wM := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(wM, reqM)
+
+			if wM.Code != http.StatusNotFound && wM.Code != http.StatusMethodNotAllowed {
+				t.Errorf("status para %s /admin autenticado: esperado 404/405, obtido %d", m, wM.Code)
+			}
+			if cc := wM.Header().Get("Cache-Control"); cc != "no-store" {
+				t.Errorf("Cache-Control: esperado 'no-store', obtido %q", cc)
+			}
+			if vary := wM.Header().Get("Vary"); vary != "Authorization" {
+				t.Errorf("Vary: esperado 'Authorization', obtido %q", vary)
+			}
+			// Não pode retornar o HTML do painel administrativo
+			if strings.Contains(wM.Body.String(), "Painel Administrativo") {
+				t.Errorf("método %s não implementado não pode renderizar o painel administrativo", m)
+			}
+		})
+	}
+}
+
+func TestAdminEnabled_NoBypass(t *testing.T) {
+	srv, _ := setupAdminTestServer(t, "admin")
+
+	tests := []struct {
+		name    string
+		method  string
+		url     string
+		headers map[string]string
+	}{
+		{
+			name:   "bypass por cabeçalho X-Forwarded-For",
+			method: http.MethodGet,
+			url:    "/admin",
+			headers: map[string]string{
+				"X-Forwarded-For": "127.0.0.1",
+			},
+		},
+		{
+			name:   "bypass por cabeçalho X-Real-IP",
+			method: http.MethodGet,
+			url:    "/admin",
+			headers: map[string]string{
+				"X-Real-IP": "127.0.0.1",
+			},
+		},
+		{
+			name:   "bypass por cabeçalho X-Remote-User",
+			method: http.MethodGet,
+			url:    "/admin",
+			headers: map[string]string{
+				"X-Remote-User": "admin",
+			},
+		},
+		{
+			name:   "bypass por cabeçalho X-Forwarded-User",
+			method: http.MethodGet,
+			url:    "/admin",
+			headers: map[string]string{
+				"X-Forwarded-User": "admin",
+			},
+		},
+		{
+			name:   "bypass por cabeçalho X-Admin",
+			method: http.MethodGet,
+			url:    "/admin",
+			headers: map[string]string{
+				"X-Admin": "true",
+			},
+		},
+		{
+			name:   "bypass por query params",
+			method: http.MethodGet,
+			url:    "/admin?user=admin&pass=password",
+		},
+		{
+			name:   "método POST não autenticado",
+			method: http.MethodPost,
+			url:    "/admin",
+		},
+		{
+			name:   "método PUT não autenticado",
+			method: http.MethodPut,
+			url:    "/admin",
+		},
+		{
+			name:   "método PATCH não autenticado",
+			method: http.MethodPatch,
+			url:    "/admin",
+		},
+		{
+			name:   "método DELETE não autenticado",
+			method: http.MethodDelete,
+			url:    "/admin",
+		},
+		{
+			name:   "método OPTIONS não autenticado",
+			method: http.MethodOptions,
+			url:    "/admin",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.url, nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+
+			// Nunca deve autorizar (status != 200)
+			if w.Code == http.StatusOK {
+				t.Errorf("vulnerabilidade de segurança: bypass bem-sucedido em %s (status 200 retornado)", tt.name)
+			}
+			// Todas as requisições sob /admin sem auth devem receber 401
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("status esperado 401 em tentativa de bypass %s: obtido %d", tt.name, w.Code)
+			}
+			if auth := w.Header().Get("WWW-Authenticate"); auth != `Basic realm="VorcaroZAP admin", charset="UTF-8"` {
+				t.Errorf("WWW-Authenticate esperado em tentativa de bypass: obtido %q", auth)
+			}
+		})
 	}
 }

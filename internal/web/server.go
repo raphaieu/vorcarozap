@@ -51,6 +51,12 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
+	// Área administrativa protegida (VZ-014)
+	if cfg.IsAdminEnabled() {
+		authMiddleware := BasicAuthMiddleware(cfg.AdminUser, cfg.AdminPasswordHash)
+		r.Mount("/admin", newAdminRouter(authMiddleware, handlers))
+	}
+
 	// Arquivos estáticos embutidos (/static/*)
 	staticSubFS, err := fs.Sub(static.FS, ".")
 	if err != nil {
@@ -67,4 +73,25 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	}
 
 	return srv, nil
+}
+
+// newAdminRouter cria o roteador dedicado à área administrativa.
+// O middleware de autenticação é executado incondicionalmente no topo de toda a árvore /admin,
+// garantindo que qualquer requisição (qualquer método HTTP ou subrota) seja autenticada antes
+// de qualquer decisão de handler, 404 ou 405.
+func newAdminRouter(authMiddleware func(http.Handler) http.Handler, handlers *Handlers) http.Handler {
+	adminRouter := chi.NewRouter()
+	adminRouter.Use(authMiddleware)
+	adminRouter.Get("/", handlers.HandleAdmin)
+	adminRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Vary", "Authorization")
+		http.NotFound(w, r)
+	})
+	adminRouter.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Vary", "Authorization")
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	})
+	return adminRouter
 }

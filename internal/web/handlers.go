@@ -203,3 +203,16 @@ func (h *Handlers) HandleExportXLSX(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
 }
+
+// HandleAdmin renderiza a página administrativa mínima protegida SSR via templ.
+func (h *Handlers) HandleAdmin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	component := pages.Admin()
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}

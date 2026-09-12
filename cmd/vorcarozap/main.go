@@ -111,6 +111,8 @@ Configuração via variáveis de ambiente:
   MONITOR_MAX_COST_PER_RUN_USD            Teto orçamentário máximo por execução em USD (padrão: 0.25)
   MONITOR_MAX_COST_PER_DAY_USD            Teto orçamentário máximo acumulado por dia em USD (padrão: 1.00)
   MONITOR_LOCK_TTL                        Tempo de vida do lease exclusivo no SQLite (padrão: 10m)
+  ADMIN_USER                              Nome do usuário administrador para HTTP Basic Auth (sem default)
+  ADMIN_PASSWORD_HASH                     Hash bcrypt da senha do administrador, custo 12..14 (sem default)
 `)
 }
 
