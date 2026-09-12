@@ -16,13 +16,14 @@ import (
 
 var (
 	ErrClaimNotFound          = errors.New("moderation: alegação não encontrada")
+	ErrEvidenceSourceNotFound = errors.New("moderation: uso de evidência não encontrado")
 	ErrMissingExpectedVersion = errors.New("moderation: versão esperada (expected_updated_at) é obrigatória")
 	ErrInvalidTransition      = errors.New("moderation: transição de estado não permitida")
 	ErrInvalidReason          = errors.New("moderation: motivo de moderação inválido")
 	ErrInvalidActor           = errors.New("moderation: operador de moderação inválido")
 	ErrInvalidAction          = errors.New("moderation: ação de moderação inválida")
 	ErrNoActiveSupport        = errors.New("moderation: alegação não possui evidência ativa com papel supports")
-	ErrConflict               = errors.New("moderation: conflito de concorrência na moderação da alegação")
+	ErrConflict               = errors.New("moderation: conflito de concorrência na moderação")
 )
 
 // ModerateClaimParams encapsula os parâmetros necessários para moderar uma alegação.
@@ -42,6 +43,29 @@ type ModerateClaimResult struct {
 	Action         domain.ModerationAction
 	DecisionID     string
 	UpdatedAt      string
+}
+
+// ModerateEvidenceSourceParams encapsula os parâmetros necessários para moderar um uso de evidência.
+type ModerateEvidenceSourceParams struct {
+	EvidenceSourceID  string
+	ExpectedUpdatedAt string
+	Action            domain.ModerationAction
+	Reason            string
+	Actor             string
+}
+
+// ModerateEvidenceSourceResult contém o resultado da deliberação de moderação sobre o uso de evidência.
+type ModerateEvidenceSourceResult struct {
+	EvidenceSourceID    string
+	ClaimID             string
+	PreviousStatus      domain.EvidenceSourceStatus
+	NewStatus           domain.EvidenceSourceStatus
+	Action              domain.ModerationAction
+	DecisionID          string
+	ClaimQuarantined    bool
+	PreviousClaimStatus domain.ClaimStatus
+	NewClaimStatus      domain.ClaimStatus
+	UpdatedAt           string
 }
 
 // Service implementa a lógica transacional e regras de pós-moderação humana.
@@ -167,6 +191,155 @@ func (s *Service) ModerateClaim(ctx context.Context, params ModerateClaimParams)
 			ID:                   decisionID,
 			ClaimID:              sql.NullString{String: claimID, Valid: true},
 			EvidenceSourceID:     sql.NullString{Valid: false},
+			Action:               string(params.Action),
+			Reason:               reason,
+			Actor:                actor,
+			CandidateFingerprint: fingerprint,
+			CreatedAt:            now,
+		})
+		if err != nil {
+			return fmt.Errorf("moderation: falha ao registrar decisão de moderação: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// ModerateEvidenceSource executa a moderação de um uso de evidência individual em uma transação SQLite atômica e curta.
+// Garante controle de versão otimista (OCC), revalidação de estado no banco, integridade XOR em moderation_decisions,
+// quarentena atômica do claim correspondente caso perca o último suporte ativo e preservação da integridade da source global.
+func (s *Service) ModerateEvidenceSource(ctx context.Context, params ModerateEvidenceSourceParams) (*ModerateEvidenceSourceResult, error) {
+	evidenceSourceID := strings.TrimSpace(params.EvidenceSourceID)
+	if evidenceSourceID == "" {
+		return nil, ErrEvidenceSourceNotFound
+	}
+
+	expectedUpdatedAt := strings.TrimSpace(params.ExpectedUpdatedAt)
+	if expectedUpdatedAt == "" {
+		return nil, ErrMissingExpectedVersion
+	}
+
+	actor, err := domain.ValidateModerationActor(params.Actor)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidActor, err)
+	}
+
+	reason, err := domain.ValidateModerationReason(params.Reason)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidReason, err)
+	}
+
+	if !params.Action.IsValid() {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidAction, params.Action)
+	}
+
+	var result ModerateEvidenceSourceResult
+
+	err = store.ExecTx(ctx, s.db, func(q *sqlc.Queries) error {
+		// 1. Ler e revalidar estado atual do evidence_source dentro da transação
+		es, err := q.GetEvidenceSourceByIDForModeration(ctx, evidenceSourceID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrEvidenceSourceNotFound
+			}
+			return fmt.Errorf("moderation: falha ao consultar uso de evidência: %w", err)
+		}
+
+		// Revalidar controle de versão otimista obrigatório
+		if es.UpdatedAt != expectedUpdatedAt {
+			return ErrConflict
+		}
+
+		currentESStatus := domain.EvidenceSourceStatus(es.Status)
+		result.PreviousStatus = currentESStatus
+
+		// 2. Validar transição permitida via domínio puro
+		nextESStatus, err := domain.ValidateEvidenceSourceTransition(currentESStatus, params.Action)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidTransition, err)
+		}
+		result.NewStatus = nextESStatus
+
+		claimID := es.ClaimID
+		currentClaimStatus := domain.ClaimStatus(es.ClaimStatus)
+		result.PreviousClaimStatus = currentClaimStatus
+		result.NewClaimStatus = currentClaimStatus
+		result.ClaimID = claimID
+
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		result.UpdatedAt = now
+		result.EvidenceSourceID = evidenceSourceID
+		result.Action = params.Action
+
+		// 3. Ao rejeitar um suporte: verificar se este era o último suporte ativo do claim
+		if params.Action == domain.ModerationActionReject && es.Role == string(domain.RoleSupports) {
+			otherActiveSupports, err := q.CountActiveSupportsEvidenceSourcesByClaimIDExcludingID(ctx, sqlc.CountActiveSupportsEvidenceSourcesByClaimIDExcludingIDParams{
+				ClaimID:                 claimID,
+				ExcludeEvidenceSourceID: evidenceSourceID,
+			})
+			if err != nil {
+				return fmt.Errorf("moderation: falha ao verificar outros suportes ativos: %w", err)
+			}
+
+			if otherActiveSupports == 0 {
+				// Perdeu o último suporte ativo!
+				// Se o claim estiver publicado, move para quarentena e zera elegibilidade métrica
+				if currentClaimStatus == domain.ClaimStatusPublished {
+					rowsAffected, err := q.QuarantineClaimDueToLostSupport(ctx, sqlc.QuarantineClaimDueToLostSupportParams{
+						ID:        claimID,
+						UpdatedAt: now,
+					})
+					if err != nil {
+						return fmt.Errorf("moderation: falha ao colocar alegação em quarentena: %w", err)
+					}
+					if rowsAffected == 0 {
+						return ErrConflict
+					}
+					result.ClaimQuarantined = true
+					result.NewClaimStatus = domain.ClaimStatusQuarantined
+				}
+			}
+		}
+
+		// 4. Ao restaurar: o claim NÃO é republicado automaticamente e permanece em seu estado atual
+
+		// 5. Atualizar status e timestamp do evidence_source condicionalmente por versão
+		rowsAffected, err := q.UpdateEvidenceSourceStatusWithVersion(ctx, sqlc.UpdateEvidenceSourceStatusWithVersionParams{
+			ID:                evidenceSourceID,
+			NewStatus:         string(nextESStatus),
+			UpdatedAt:         now,
+			ExpectedUpdatedAt: expectedUpdatedAt,
+		})
+		if err != nil {
+			return fmt.Errorf("moderation: falha ao atualizar status do uso de evidência: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ErrConflict
+		}
+
+		// 6. Consultar fingerprint do candidato associado ao claim, se houver
+		fingerprint, err := q.GetCandidateFingerprintByPublishedClaimID(ctx, sql.NullString{String: claimID, Valid: true})
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("moderation: falha ao consultar fingerprint do candidato associado: %w", err)
+			}
+			fingerprint = ""
+		}
+
+		// 7. Inserir registro auditável em moderation_decisions com restrição XOR (evidence_source_id preenchido, claim_id nulo)
+		decisionID := uuid.NewString()
+		result.DecisionID = decisionID
+
+		_, err = q.CreateModerationDecision(ctx, sqlc.CreateModerationDecisionParams{
+			ID:                   decisionID,
+			ClaimID:              sql.NullString{Valid: false},
+			EvidenceSourceID:     sql.NullString{String: evidenceSourceID, Valid: true},
 			Action:               string(params.Action),
 			Reason:               reason,
 			Actor:                actor,

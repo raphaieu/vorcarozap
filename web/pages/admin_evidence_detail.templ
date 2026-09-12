@@ -1,0 +1,388 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Inspeção e moderação detalhada de uso de evidência (evidence_source) no VorcaroZAP."/>
+			<title>{ "Moderação: Evidência " + vm.EvidenceSourceID } — Admin — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("evidencias")
+			<main class="container">
+				<!-- Navegação de Retorno -->
+				<div class="breadcrumb-nav">
+					<a href="/admin/evidencias" class="back-link">&larr; Voltar para listagem de evidências</a>
+					if vm.ClaimID != "" {
+						<span style="color: var(--color-text-muted); margin: 0 0.5rem;">|</span>
+						<a href={ templ.SafeURL("/admin/claims/" + vm.ClaimID) } class="back-link">Ver Alegação Associada ({ vm.ClaimID }) &rarr;</a>
+					}
+				</div>
+
+				<!-- Mensagens Flash -->
+				if vm.FlashMessage != "" {
+					<div class="alert alert-success" role="alert" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 6px; background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc;">
+						<strong>Sucesso:</strong> { vm.FlashMessage }
+					</div>
+				}
+				if vm.FlashError != "" {
+					<div class="alert alert-danger" role="alert" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 6px; background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7;">
+						<strong>Atenção:</strong> { vm.FlashError }
+					</div>
+				}
+
+				<!-- Alerta Editorial de Último Suporte Ativo -->
+				if vm.Role == "supports" && vm.IsLastActiveSupport && vm.EvidenceSourceStatus == "active" && vm.ClaimStatus == "published" {
+					<div class="alert alert-warning" role="alert" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 6px; background-color: #fff3cd; color: #664d03; border: 1px solid #ffecb5;" aria-label="Alerta de Último Suporte">
+						<strong>Aviso Editorial Crítico:</strong> Este uso de evidência é o <strong>ÚLTIMO suporte ativo</strong> da alegação associada. Rejeitá-lo moverá a alegação automaticamente para <strong>QUARENTENA</strong> e retirará seus vínculos das métricas públicas no mesmo commit atômico.
+					</div>
+				}
+
+				<!-- Cabeçalho do Uso de Evidência -->
+				<section class="card admin-detail-header-card" aria-label="Dados Principais do Uso de Evidência">
+					<div class="admin-detail-title-row">
+						<div>
+							<span class="category-badge" style="margin-bottom: 0.5rem; display: inline-block;">
+								Uso de Evidência
+							</span>
+							<h1 class="page-title" style="margin-bottom: 0.25rem; font-size: 1.5rem;">
+								ID: <code>{ vm.EvidenceSourceID }</code>
+							</h1>
+							<p class="page-subtitle" style="margin: 0;">
+								Criado em: <strong>{ vm.EvidenceSourceCreatedHuman }</strong> &bull; Atualizado em: <strong>{ vm.EvidenceSourceUpdatedHuman }</strong>
+							</p>
+						</div>
+						<div class="badge-cluster">
+							if vm.Role == "supports" {
+								<span class="admin-status-badge status-published">{ vm.RoleHuman }</span>
+							} else if vm.Role == "contradicts" {
+								<span class="admin-status-badge status-quarantined">{ vm.RoleHuman }</span>
+							} else {
+								<span class="admin-status-badge status-archived">{ vm.RoleHuman }</span>
+							}
+
+							if vm.EvidenceSourceStatus == "active" {
+								<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">Uso Ativo</span>
+							} else {
+								<span class="status-tag" style="background-color: #f8d7da; color: #842029;">Uso Desaprovado</span>
+							}
+						</div>
+					</div>
+
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item">
+							<span class="fact-label">Papel Probatório</span>
+							<span class="fact-value"><strong>{ vm.RoleHuman }</strong></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Status Editorial do Uso</span>
+							<span class="fact-value"><strong>{ vm.EvidenceSourceStatusHuman }</strong></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Tipo de Evidência</span>
+							<span class="fact-value">{ vm.EvidenceType }</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Suportes Ativos do Claim</span>
+							<span class="fact-value">
+								if vm.ActiveSupportsCount > 0 {
+									<strong style="color: #0f5132;">{ fmt.Sprintf("%d", vm.ActiveSupportsCount) } ativos</strong>
+									if vm.IsLastActiveSupport && vm.EvidenceSourceStatus == "active" {
+										<span style="font-size: 0.8rem; color: #842029; display: block;">(Último suporte ativo!)</span>
+									}
+								} else {
+									<strong style="color: #842029;">0 ativos (sem suporte)</strong>
+								}
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<!-- Trecho Literal e Localizador -->
+				<section class="card" aria-label="Citação Literal e Localizador">
+					<h2 class="card-title">Trecho Literal & Localizador Documental</h2>
+					if vm.Excerpt != "" {
+						<div class="source-excerpt" style="font-size: 1.05rem; line-height: 1.6; margin: 1rem 0;">
+							&ldquo;{ vm.Excerpt }&rdquo;
+							if vm.Locator != "" {
+								<span class="source-locator" style="margin-top: 0.5rem; display: inline-block;">
+									Localizador: <strong>{ vm.Locator }</strong>
+								</span>
+							}
+						</div>
+					} else {
+						<p class="admin-reasons-empty">Nenhum trecho literal registrado para esta citação (legado curated_seed).</p>
+					}
+
+					if vm.EvidenceSummary != "" {
+						<div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border);">
+							<span class="fact-label">Síntese da Evidência</span>
+							<p style="margin: 0.25rem 0 0 0;">{ vm.EvidenceSummary }</p>
+						</div>
+					}
+				</section>
+
+				<!-- Dados da Alegação Associada -->
+				<section class="card" aria-label="Alegação Associada">
+					<div class="admin-summary-header" style="margin-bottom: 0.75rem;">
+						<h2 class="card-title" style="margin: 0;">Alegação Associada (Claim)</h2>
+						<a href={ templ.SafeURL("/admin/claims/" + vm.ClaimID) } class="btn btn-subtle" style="font-size: 0.85rem;">
+							Abrir Painel do Claim &rarr;
+						</a>
+					</div>
+
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item" style="grid-column: 1 / -1;">
+							<span class="fact-label">Proposição da Alegação</span>
+							<span class="fact-value" style="font-size: 1.05rem;"><strong>{ vm.ClaimProposition }</strong></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Grau Probatório</span>
+							<span class="fact-value">
+								<span class={ "grade-badge", "grade-" + vm.ClaimGrade }>
+									{ vm.ClaimGradeHuman }
+								</span>
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Status Editorial do Claim</span>
+							<span class="fact-value">
+								if vm.ClaimStatus == "published" {
+									<span class="admin-status-badge status-published">Publicado</span>
+								} else if vm.ClaimStatus == "quarantined" {
+									<span class="admin-status-badge status-quarantined">Quarentena (Não público)</span>
+								} else if vm.ClaimStatus == "rejected" {
+									<span class="admin-status-badge status-rejected">Rejeitado</span>
+								} else {
+									<span class="admin-status-badge status-archived">Arquivado</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Elegibilidade Métrica</span>
+							<span class="fact-value">
+								if vm.ClaimMetricEligible {
+									<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">Conta em Métricas</span>
+								} else {
+									<span class="status-tag" style="background-color: #e2e3e5; color: #41464b;">Fora das Métricas</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Origem Editorial</span>
+							<span class="fact-value">{ vm.ClaimOriginHuman }</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Entidade Sujeito</span>
+							<span class="fact-value">
+								if vm.SubjectEntityName != "" {
+									<strong>{ vm.SubjectEntityName }</strong>
+								} else {
+									<span style="color: var(--color-text-muted);">&mdash;</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Entidade-Alvo / Caso</span>
+							<span class="fact-value">
+								if vm.TargetEntityName != "" {
+									<strong>{ vm.TargetEntityName }</strong>
+								} else if vm.CaseName != "" {
+									<strong>Caso: { vm.CaseName }</strong>
+								} else {
+									<span style="color: var(--color-text-muted);">Geral / Sem alvo</span>
+								}
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<!-- Dados da Fonte Documental -->
+				<section class="card" aria-label="Fonte Documental">
+					<h2 class="card-title">Fonte Documental (Global)</h2>
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item" style="grid-column: 1 / -1;">
+							<span class="fact-label">Título da Fonte</span>
+							<span class="fact-value"><strong>{ vm.SourceTitle }</strong></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Veículo / Autor</span>
+							<span class="fact-value">{ vm.SourcePublisher }</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Tipo de Documento</span>
+							<span class="fact-value">{ vm.SourceType }</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Acessibilidade</span>
+							<span class="fact-value"><strong>{ vm.SourceAccessStatusHuman }</strong></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Link Canônico da Fonte</span>
+							<span class="fact-value">
+								if vm.SourceCanonicalURL.IsValid {
+									<a
+										href={ templ.SafeURL(vm.SourceCanonicalURL.SafeURL) }
+										target="_blank"
+										rel="noopener noreferrer"
+										class="source-external-link"
+									>
+										Abrir Fonte Externa &nearr;
+									</a>
+								} else if vm.SourceCanonicalURL.RawURL != "" {
+									<span style="color: var(--color-text-muted); font-size: 0.85rem;">{ vm.SourceCanonicalURL.RawURL } (insegura)</span>
+								} else {
+									<span style="color: var(--color-text-muted);">&mdash;</span>
+								}
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<!-- Painel de Moderação Humana do Uso de Evidência -->
+				<section class="card" aria-label="Painel de Moderação do Uso de Evidência">
+					<h2 class="card-title">Deliberação Editorial sobre o Uso de Evidência</h2>
+
+					if len(vm.AllowedActions) == 0 {
+						<p class="admin-reasons-empty">
+							Nenhuma ação de transição permitida no momento para o estado <strong>{ vm.EvidenceSourceStatusHuman }</strong>.
+						</p>
+					} else {
+						<form method="POST" action={ templ.SafeURL("/admin/evidencias/" + vm.EvidenceSourceID + "/moderate") } style="margin-top: 1rem;">
+							<input type="hidden" name="expected_updated_at" value={ vm.EvidenceSourceUpdatedRaw }/>
+							<div class="form-group" style="margin-bottom: 1.25rem;">
+								<label for="moderation-reason" class="form-label">
+									<strong>Justificativa Fundamentada (Obrigatória) *</strong>
+								</label>
+								<textarea
+									id="moderation-reason"
+									name="reason"
+									class="form-control"
+									rows="3"
+									required
+									maxlength="1000"
+									placeholder="Descreva detalhadamente o motivo editorial desta deliberação sobre o uso da evidência (mínimo 1 caractere, máximo 1000 caracteres, sem tags HTML)..."
+									style="width: 100%; resize: vertical;"
+								></textarea>
+								<span style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem; display: block;">
+									A justificativa e o operador autenticado serão gravados permanentemente na tabela auditável de decisões de moderação.
+								</span>
+							</div>
+
+							<div style="display: flex; flex-direction: column; gap: 1rem;">
+								for _, act := range vm.AllowedActions {
+									<div style="display: flex; align-items: flex-start; gap: 1rem; padding: 1rem; border: 1px solid var(--color-border); border-radius: 6px; background-color: var(--color-bg-subtle, #fcfcfc);">
+										<div style="flex-shrink: 0;">
+											if act.Disabled {
+												<button
+													type="button"
+													class={ "btn", act.ButtonClass }
+													disabled
+													style="opacity: 0.6; cursor: not-allowed;"
+												>
+													{ act.Label }
+												</button>
+											} else {
+												<button
+													type="submit"
+													name="action"
+													value={ act.Action }
+													class={ "btn", act.ButtonClass }
+													onclick="return confirm('Confirma a execução desta ação de moderação editorial?');"
+												>
+													{ act.Label }
+												</button>
+											}
+										</div>
+										<div style="flex-grow: 1;">
+											<div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem;">
+												{ act.Label }
+											</div>
+											<div style="font-size: 0.85rem; color: var(--color-text-muted);">
+												{ act.HelpText }
+											</div>
+											if act.Disabled && act.DisabledReason != "" {
+												<div style="font-size: 0.85rem; color: #842029; margin-top: 0.25rem; font-weight: 600;">
+													&times; { act.DisabledReason }
+												</div>
+											}
+										</div>
+									</div>
+								}
+							</div>
+						</form>
+					}
+				</section>
+
+				<!-- Histórico de Decisões de Moderação deste Uso de Evidência -->
+				<section class="card" aria-label="Histórico de Auditoria de Moderação">
+					<div class="admin-summary-header" style="margin-bottom: 0.75rem;">
+						<h2 class="card-title" style="margin: 0;">
+							Histórico de Decisões de Moderação ({ fmt.Sprintf("%d", len(vm.Decisions)) })
+						</h2>
+						<span class="status-tag">Auditoria Imutável (XOR)</span>
+					</div>
+
+					if len(vm.Decisions) == 0 {
+						<p class="admin-reasons-empty">Nenhuma decisão de moderação registrada especificamente para este uso de evidência.</p>
+					} else {
+						<div class="table-responsive">
+							<table class="table admin-table">
+								<thead>
+									<tr>
+										<th>Data UTC</th>
+										<th>Ação</th>
+										<th>Operador (Actor)</th>
+										<th>Justificativa (Reason)</th>
+										<th>Fingerprint Preservado</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, d := range vm.Decisions {
+										<tr>
+											<td style="white-space: nowrap; font-size: 0.85rem;">
+												{ d.CreatedAtHuman }
+											</td>
+											<td>
+												if d.Action == "approve" {
+													<span class="admin-status-badge status-published">{ d.ActionHuman }</span>
+												} else if d.Action == "reject" {
+													<span class="admin-status-badge status-rejected">{ d.ActionHuman }</span>
+												} else if d.Action == "restore" {
+													<span class="admin-status-badge status-quarantined">{ d.ActionHuman }</span>
+												} else {
+													<span class="admin-status-badge status-archived">{ d.ActionHuman }</span>
+												}
+											</td>
+											<td>
+												<strong>{ d.Actor }</strong>
+											</td>
+											<td style="max-width: 400px; word-break: break-word;">
+												{ d.Reason }
+											</td>
+											<td>
+												if d.CandidateFingerprint != "" {
+													<code style="font-size: 0.75rem; word-break: break-all;">{ d.CandidateFingerprint }</code>
+												} else {
+													<span style="color: var(--color-text-muted);">&mdash;</span>
+												}
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					}
+				</section>
+			</main>
+		</body>
+	</html>
+}

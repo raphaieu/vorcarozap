@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -727,5 +728,477 @@ func TestModerationDecisions_TargetXORConstraint(t *testing.T) {
 	})
 	if err == nil {
 		t.Errorf("esperava erro de constraint XOR ao inserir decisão com dois alvos simultâneos")
+	}
+}
+
+func getTestEvidenceSourceUpdatedAt(t *testing.T, db *sql.DB, ctx context.Context, esID string) string {
+	t.Helper()
+	var updatedAt string
+	err := db.QueryRowContext(ctx, "SELECT updated_at FROM evidence_sources WHERE id = ?", esID).Scan(&updatedAt)
+	if err != nil {
+		t.Fatalf("falha ao obter updated_at do evidence_source %s: %v", esID, err)
+	}
+	return updatedAt
+}
+
+func TestModerateEvidenceSource_RejectLastSupport_QuarantinesClaim(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-last-support"
+	esID := "es-last-support"
+	insertTestClaim(t, db, ctx, claimID, relID, "published")
+	insertTestEvidenceSource(t, db, ctx, esID, claimID, "src-1", "supports", "active")
+	insertTestMonitoringCandidate(t, db, ctx, "cand-ls-1", claimID, "v1:fp-last-support", "published")
+
+	esUpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, esID)
+
+	res, err := svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  esID,
+		ExpectedUpdatedAt: esUpdatedAt,
+		Action:            domain.ModerationActionReject,
+		Reason:            "Trecho de evidência descontextualizado e desaprovado.",
+		Actor:             "admin_editor",
+	})
+	if err != nil {
+		t.Fatalf("ModerateEvidenceSource falhou: %v", err)
+	}
+
+	if res.PreviousStatus != domain.EvidenceSourceStatusActive {
+		t.Errorf("PreviousStatus = %q, esperado 'active'", res.PreviousStatus)
+	}
+	if res.NewStatus != domain.EvidenceSourceStatusRejected {
+		t.Errorf("NewStatus = %q, esperado 'rejected'", res.NewStatus)
+	}
+	if !res.ClaimQuarantined {
+		t.Errorf("ClaimQuarantined = false, esperado true (perdeu o último suporte)")
+	}
+	if res.NewClaimStatus != domain.ClaimStatusQuarantined {
+		t.Errorf("NewClaimStatus = %q, esperado 'quarantined'", res.NewClaimStatus)
+	}
+
+	// Verificar estado do claim no banco
+	var claimStatus string
+	var metricEligible int
+	err = db.QueryRowContext(ctx, "SELECT status, metric_eligible FROM claims WHERE id = ?", claimID).Scan(&claimStatus, &metricEligible)
+	if err != nil {
+		t.Fatalf("falha ao consultar claim: %v", err)
+	}
+	if claimStatus != "quarantined" {
+		t.Errorf("claim status no banco = %q, esperado 'quarantined'", claimStatus)
+	}
+	if metricEligible != 0 {
+		t.Errorf("claim metric_eligible no banco = %d, esperado 0", metricEligible)
+	}
+
+	// Verificar estado do evidence_source no banco
+	var esStatus string
+	err = db.QueryRowContext(ctx, "SELECT status FROM evidence_sources WHERE id = ?", esID).Scan(&esStatus)
+	if err != nil {
+		t.Fatalf("falha ao consultar evidence_source: %v", err)
+	}
+	if esStatus != "rejected" {
+		t.Errorf("evidence_source status no banco = %q, esperado 'rejected'", esStatus)
+	}
+
+	// Verificar auditoria em moderation_decisions (com XOR estrito)
+	var decClaimID sql.NullString
+	var decESID sql.NullString
+	var decAction, decActor, decReason, decFP string
+	err = db.QueryRowContext(ctx, `
+		SELECT claim_id, evidence_source_id, action, actor, reason, candidate_fingerprint
+		FROM moderation_decisions WHERE id = ?
+	`, res.DecisionID).Scan(&decClaimID, &decESID, &decAction, &decActor, &decReason, &decFP)
+	if err != nil {
+		t.Fatalf("falha ao consultar decisão de moderação: %v", err)
+	}
+	if decClaimID.Valid {
+		t.Errorf("claim_id na decisão deveria ser nulo (XOR), obtido %q", decClaimID.String)
+	}
+	if !decESID.Valid || decESID.String != esID {
+		t.Errorf("evidence_source_id na decisão = %+v, esperado %q", decESID, esID)
+	}
+	if decAction != "reject" || decActor != "admin_editor" || decReason != "Trecho de evidência descontextualizado e desaprovado." {
+		t.Errorf("dados da decisão incorretos: action=%q, actor=%q, reason=%q", decAction, decActor, decReason)
+	}
+	if decFP != "v1:fp-last-support" {
+		t.Errorf("candidate_fingerprint na decisão = %q, esperado 'v1:fp-last-support'", decFP)
+	}
+}
+
+func TestModerateEvidenceSource_RejectNonLastSupport_KeepsClaimPublished(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-multi-support"
+	es1ID := "es-multi-1"
+	es2ID := "es-multi-2"
+	insertTestClaim(t, db, ctx, claimID, relID, "published")
+	insertTestEvidenceSource(t, db, ctx, es1ID, claimID, "src-1", "supports", "active")
+	insertTestEvidenceSource(t, db, ctx, es2ID, claimID, "src-1", "supports", "active")
+
+	es1UpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, es1ID)
+
+	res, err := svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  es1ID,
+		ExpectedUpdatedAt: es1UpdatedAt,
+		Action:            domain.ModerationActionReject,
+		Reason:            "Rejeitando primeiro suporte; claim ainda possui segundo suporte ativo.",
+		Actor:             "admin_editor",
+	})
+	if err != nil {
+		t.Fatalf("ModerateEvidenceSource falhou: %v", err)
+	}
+
+	if res.ClaimQuarantined {
+		t.Errorf("ClaimQuarantined = true, esperado false (claim ainda tem es-multi-2 ativo)")
+	}
+	if res.NewClaimStatus != domain.ClaimStatusPublished {
+		t.Errorf("NewClaimStatus = %q, esperado 'published'", res.NewClaimStatus)
+	}
+
+	// Verificar que o claim permaneceu published no banco
+	var claimStatus string
+	var metricEligible int
+	err = db.QueryRowContext(ctx, "SELECT status, metric_eligible FROM claims WHERE id = ?", claimID).Scan(&claimStatus, &metricEligible)
+	if err != nil {
+		t.Fatalf("falha ao consultar claim: %v", err)
+	}
+	if claimStatus != "published" {
+		t.Errorf("claim status no banco = %q, esperado 'published'", claimStatus)
+	}
+	if metricEligible != 1 {
+		t.Errorf("claim metric_eligible no banco = %d, esperado 1", metricEligible)
+	}
+}
+
+func TestModerateEvidenceSource_RejectNonSupportRole_KeepsClaimPublished(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-role-test"
+	esSupportID := "es-sup-1"
+	esContradictID := "es-contra-1"
+	insertTestClaim(t, db, ctx, claimID, relID, "published")
+	insertTestEvidenceSource(t, db, ctx, esSupportID, claimID, "src-1", "supports", "active")
+	insertTestEvidenceSource(t, db, ctx, esContradictID, claimID, "src-1", "contradicts", "active")
+
+	contraUpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, esContradictID)
+
+	res, err := svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  esContradictID,
+		ExpectedUpdatedAt: contraUpdatedAt,
+		Action:            domain.ModerationActionReject,
+		Reason:            "Rejeitando evidência de defesa contraditória desnecessária.",
+		Actor:             "admin_editor",
+	})
+	if err != nil {
+		t.Fatalf("ModerateEvidenceSource falhou: %v", err)
+	}
+
+	if res.ClaimQuarantined {
+		t.Errorf("ClaimQuarantined = true, esperado false (rejeição de contradicts não afeta suporte)")
+	}
+
+	var claimStatus string
+	err = db.QueryRowContext(ctx, "SELECT status FROM claims WHERE id = ?", claimID).Scan(&claimStatus)
+	if err != nil {
+		t.Fatalf("falha ao consultar claim: %v", err)
+	}
+	if claimStatus != "published" {
+		t.Errorf("claim status no banco = %q, esperado 'published'", claimStatus)
+	}
+}
+
+func TestModerateEvidenceSource_Restore_KeepsClaimInQuarantine(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-restore-test"
+	esID := "es-restore-1"
+	insertTestClaim(t, db, ctx, claimID, relID, "quarantined")
+	insertTestEvidenceSource(t, db, ctx, esID, claimID, "src-1", "supports", "rejected")
+
+	esUpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, esID)
+
+	res, err := svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  esID,
+		ExpectedUpdatedAt: esUpdatedAt,
+		Action:            domain.ModerationActionRestore,
+		Reason:            "Restaurando uso de evidência após validação documental.",
+		Actor:             "admin_editor",
+	})
+	if err != nil {
+		t.Fatalf("ModerateEvidenceSource falhou: %v", err)
+	}
+
+	if res.PreviousStatus != domain.EvidenceSourceStatusRejected {
+		t.Errorf("PreviousStatus = %q, esperado 'rejected'", res.PreviousStatus)
+	}
+	if res.NewStatus != domain.EvidenceSourceStatusActive {
+		t.Errorf("NewStatus = %q, esperado 'active'", res.NewStatus)
+	}
+	if res.NewClaimStatus != domain.ClaimStatusQuarantined {
+		t.Errorf("NewClaimStatus = %q, esperado 'quarantined' (invariante: restauração de evidência nunca republica claim)", res.NewClaimStatus)
+	}
+
+	// Verificar no banco que o claim continua em quarentena
+	var claimStatus string
+	err = db.QueryRowContext(ctx, "SELECT status FROM claims WHERE id = ?", claimID).Scan(&claimStatus)
+	if err != nil {
+		t.Fatalf("falha ao consultar claim: %v", err)
+	}
+	if claimStatus != "quarantined" {
+		t.Errorf("claim status no banco = %q, esperado 'quarantined'", claimStatus)
+	}
+}
+
+func TestModerateEvidenceSource_OCC_ConflictAndConcurrency(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-occ-test"
+	esID := "es-occ-1"
+	insertTestClaim(t, db, ctx, claimID, relID, "published")
+	insertTestEvidenceSource(t, db, ctx, esID, claimID, "src-1", "supports", "active")
+
+	esUpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, esID)
+
+	// 1. Versão esperada vazia deve falhar com ErrMissingExpectedVersion
+	_, err := svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  esID,
+		ExpectedUpdatedAt: "",
+		Action:            domain.ModerationActionReject,
+		Reason:            "Teste sem versão esperada",
+		Actor:             "admin",
+	})
+	if !errors.Is(err, moderation.ErrMissingExpectedVersion) {
+		t.Errorf("esperava ErrMissingExpectedVersion, obtido %v", err)
+	}
+
+	// 2. Versão divergente/stale deve falhar com ErrConflict
+	_, err = svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  esID,
+		ExpectedUpdatedAt: "2020-01-01T00:00:00Z",
+		Action:            domain.ModerationActionReject,
+		Reason:            "Teste versão antiga",
+		Actor:             "admin",
+	})
+	if !errors.Is(err, moderation.ErrConflict) {
+		t.Errorf("esperava ErrConflict para versão stale, obtido %v", err)
+	}
+
+	// 3. Concorrência real: duas goroutines tentando moderar simultaneamente com a mesma versão inicial
+	var wg sync.WaitGroup
+	results := make([]error, 2)
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, rErr := svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            fmt.Sprintf("Decisão concorrente número %d", idx),
+				Actor:             "admin_concurrent",
+			})
+			results[idx] = rErr
+		}(i)
+	}
+
+	wg.Wait()
+
+	successCount := 0
+	conflictCount := 0
+	for _, resErr := range results {
+		if resErr == nil {
+			successCount++
+		} else if errors.Is(resErr, moderation.ErrConflict) {
+			conflictCount++
+		} else {
+			t.Errorf("erro inesperado na moderação concorrente: %v", resErr)
+		}
+	}
+
+	if successCount != 1 || conflictCount != 1 {
+		t.Errorf("concorrência determinística: esperado 1 sucesso e 1 conflito, obtido %d sucessos e %d conflitos", successCount, conflictCount)
+	}
+
+	// Exatamente uma decisão deve ter sido gravada no banco
+	var decCount int
+	err = db.QueryRowContext(ctx, "SELECT count(*) FROM moderation_decisions WHERE evidence_source_id = ?", esID).Scan(&decCount)
+	if err != nil {
+		t.Fatalf("falha ao consultar contagem de decisões: %v", err)
+	}
+	if decCount != 1 {
+		t.Errorf("contagem de decisões no banco = %d, esperado exatamente 1", decCount)
+	}
+}
+
+func TestModerateEvidenceSource_ValidationErrors(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-val-test"
+	esID := "es-val-1"
+	insertTestClaim(t, db, ctx, claimID, relID, "published")
+	insertTestEvidenceSource(t, db, ctx, esID, claimID, "src-1", "supports", "active")
+	esUpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, esID)
+
+	tests := []struct {
+		name    string
+		params  moderation.ModerateEvidenceSourceParams
+		wantErr error
+	}{
+		{
+			name: "evidence_source_id vazio",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  "   ",
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            "Justificativa válida",
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrEvidenceSourceNotFound,
+		},
+		{
+			name: "evidence_source inexistente",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  "es-inexistente",
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            "Justificativa válida",
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrEvidenceSourceNotFound,
+		},
+		{
+			name: "motivo vazio",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            "   ",
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrInvalidReason,
+		},
+		{
+			name: "motivo com tags html",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            "<b>Rejeição com HTML</b>",
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrInvalidReason,
+		},
+		{
+			name: "motivo acima do limite de 1000 caracteres",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            string(make([]byte, 1001)),
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrInvalidReason,
+		},
+		{
+			name: "operador vazio",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionReject,
+				Reason:            "Justificativa válida",
+				Actor:             "   ",
+			},
+			wantErr: moderation.ErrInvalidActor,
+		},
+		{
+			name: "ação inválida",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationAction("acao_invalida"),
+				Reason:            "Justificativa válida",
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrInvalidAction,
+		},
+		{
+			name: "transição inválida (restore em active)",
+			params: moderation.ModerateEvidenceSourceParams{
+				EvidenceSourceID:  esID,
+				ExpectedUpdatedAt: esUpdatedAt,
+				Action:            domain.ModerationActionRestore,
+				Reason:            "Justificativa válida",
+				Actor:             "admin",
+			},
+			wantErr: moderation.ErrInvalidTransition,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.ModerateEvidenceSource(ctx, tt.params)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ModerateEvidenceSource() erro = %v, esperado %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestModerateEvidenceSource_SourceTableIntact(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	_, relID := seedTestData(t, db, ctx)
+	svc := moderation.NewService(db)
+
+	claimID := "claim-src-intact"
+	esID := "es-src-intact"
+	srcID := "src-1"
+	insertTestClaim(t, db, ctx, claimID, relID, "published")
+	insertTestEvidenceSource(t, db, ctx, esID, claimID, srcID, "supports", "active")
+	esUpdatedAt := getTestEvidenceSourceUpdatedAt(t, db, ctx, esID)
+
+	// Capturar estado da source antes
+	var srcTitleBefore, srcAccessStatusBefore, srcUrlBefore string
+	err := db.QueryRowContext(ctx, "SELECT title, source_access_status, original_url FROM sources WHERE id = ?", srcID).Scan(&srcTitleBefore, &srcAccessStatusBefore, &srcUrlBefore)
+	if err != nil {
+		t.Fatalf("falha ao consultar source: %v", err)
+	}
+
+	// Executar moderação do evidence_source
+	_, err = svc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  esID,
+		ExpectedUpdatedAt: esUpdatedAt,
+		Action:            domain.ModerationActionReject,
+		Reason:            "Rejeição pontual do uso de evidência.",
+		Actor:             "admin_editor",
+	})
+	if err != nil {
+		t.Fatalf("ModerateEvidenceSource falhou: %v", err)
+	}
+
+	// Capturar estado da source depois
+	var srcTitleAfter, srcAccessStatusAfter, srcUrlAfter string
+	err = db.QueryRowContext(ctx, "SELECT title, source_access_status, original_url FROM sources WHERE id = ?", srcID).Scan(&srcTitleAfter, &srcAccessStatusAfter, &srcUrlAfter)
+	if err != nil {
+		t.Fatalf("falha ao consultar source após moderação: %v", err)
+	}
+
+	if srcTitleAfter != srcTitleBefore || srcAccessStatusAfter != srcAccessStatusBefore || srcUrlAfter != srcUrlBefore {
+		t.Errorf("fonte documental global não deve ser alterada: antes=(%q, %q, %q), depois=(%q, %q, %q)",
+			srcTitleBefore, srcAccessStatusBefore, srcUrlBefore,
+			srcTitleAfter, srcAccessStatusAfter, srcUrlAfter,
+		)
 	}
 }

@@ -489,3 +489,89 @@ func TestValidateModerationActor(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateEvidenceSourceTransition(t *testing.T) {
+	tests := []struct {
+		name       string
+		current    domain.EvidenceSourceStatus
+		action     domain.ModerationAction
+		wantTarget domain.EvidenceSourceStatus
+		wantErr    bool
+	}{
+		// Reject transitions
+		{
+			name:       "reject active -> rejected",
+			current:    domain.EvidenceSourceStatusActive,
+			action:     domain.ModerationActionReject,
+			wantTarget: domain.EvidenceSourceStatusRejected,
+			wantErr:    false,
+		},
+		{
+			name:       "reject rejected -> error",
+			current:    domain.EvidenceSourceStatusRejected,
+			action:     domain.ModerationActionReject,
+			wantTarget: "",
+			wantErr:    true,
+		},
+
+		// Restore transitions
+		{
+			name:       "restore rejected -> active",
+			current:    domain.EvidenceSourceStatusRejected,
+			action:     domain.ModerationActionRestore,
+			wantTarget: domain.EvidenceSourceStatusActive,
+			wantErr:    false,
+		},
+		{
+			name:       "restore active -> error",
+			current:    domain.EvidenceSourceStatusActive,
+			action:     domain.ModerationActionRestore,
+			wantTarget: "",
+			wantErr:    true,
+		},
+
+		// Approve is not supported for evidence_source
+		{
+			name:       "approve active -> error",
+			current:    domain.EvidenceSourceStatusActive,
+			action:     domain.ModerationActionApprove,
+			wantTarget: "",
+			wantErr:    true,
+		},
+		{
+			name:       "approve rejected -> error",
+			current:    domain.EvidenceSourceStatusRejected,
+			action:     domain.ModerationActionApprove,
+			wantTarget: "",
+			wantErr:    true,
+		},
+
+		// Invalid inputs
+		{
+			name:       "invalid current status",
+			current:    domain.EvidenceSourceStatus("invalid"),
+			action:     domain.ModerationActionReject,
+			wantTarget: "",
+			wantErr:    true,
+		},
+		{
+			name:       "invalid action",
+			current:    domain.EvidenceSourceStatusActive,
+			action:     domain.ModerationAction("invalid"),
+			wantTarget: "",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := domain.ValidateEvidenceSourceTransition(tt.current, tt.action)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateEvidenceSourceTransition(%q, %q) err = %v, wantErr = %v", tt.current, tt.action, err, tt.wantErr)
+			}
+			if got != tt.wantTarget {
+				t.Errorf("ValidateEvidenceSourceTransition(%q, %q) = %q, esperado %q", tt.current, tt.action, got, tt.wantTarget)
+			}
+		})
+	}
+}

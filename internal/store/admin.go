@@ -135,6 +135,15 @@ type AdminClaimDetail struct {
 	CandidateID         string
 }
 
+// AdminEvidenceSourceDetail agrega os dados de um uso de evidência, seu claim associado, fonte documental e histórico de moderação.
+type AdminEvidenceSourceDetail struct {
+	EvidenceSource           sqlc.GetAdminEvidenceSourceByIDRow
+	ActiveSupportsCount      int64
+	OtherActiveSupportsCount int64
+	Decisions                []sqlc.ModerationDecision
+	CandidateID              string
+}
+
 // SanitizeAdminCandidateFilter valida e normaliza parâmetros do filtro de candidatos usando o relógio atual.
 func SanitizeAdminCandidateFilter(f AdminCandidateFilter) AdminCandidateFilter {
 	return SanitizeAdminCandidateFilterWithClock(f, time.Now().UTC())
@@ -476,6 +485,56 @@ func GetAdminClaimDetail(ctx context.Context, db *sql.DB, id string) (*AdminClai
 		ActiveSupportsCount: activeSupportsCount,
 		Decisions:           decisions,
 		CandidateID:         candidateID,
+	}, nil
+}
+
+// GetAdminEvidenceSourceDetail carrega os detalhes completos de um uso de evidência, seu claim, dados da fonte e histórico de moderação.
+func GetAdminEvidenceSourceDetail(ctx context.Context, db *sql.DB, id string) (*AdminEvidenceSourceDetail, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrNotFound
+	}
+
+	q := sqlc.New(db)
+	es, err := q.GetAdminEvidenceSourceByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("store: falha ao carregar uso de evidência %s: %w", id, err)
+	}
+
+	activeSupportsCount, err := q.CountActiveSupportsEvidenceSourcesByClaimID(ctx, es.ClaimID)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao contar suportes ativos do claim %s: %w", es.ClaimID, err)
+	}
+
+	otherActiveSupportsCount, err := q.CountActiveSupportsEvidenceSourcesByClaimIDExcludingID(ctx, sqlc.CountActiveSupportsEvidenceSourcesByClaimIDExcludingIDParams{
+		ClaimID:                 es.ClaimID,
+		ExcludeEvidenceSourceID: es.EvidenceSourceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao contar outros suportes ativos do claim %s: %w", es.ClaimID, err)
+	}
+
+	decisions, err := q.ListAdminModerationDecisionsByEvidenceSourceID(ctx, sql.NullString{String: id, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao carregar decisões de moderação do uso de evidência %s: %w", id, err)
+	}
+
+	candidateID := ""
+	cid, err := q.GetAdminCandidateIDByPublishedClaimID(ctx, sql.NullString{String: es.ClaimID, Valid: true})
+	if err == nil {
+		candidateID = cid
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("store: falha ao consultar candidato associado do claim %s: %w", es.ClaimID, err)
+	}
+
+	return &AdminEvidenceSourceDetail{
+		EvidenceSource:           es,
+		ActiveSupportsCount:      activeSupportsCount,
+		OtherActiveSupportsCount: otherActiveSupportsCount,
+		Decisions:                decisions,
+		CandidateID:              candidateID,
 	}, nil
 }
 

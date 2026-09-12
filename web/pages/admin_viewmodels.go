@@ -960,3 +960,194 @@ func ToAdminClaimDetailVM(detail *store.AdminClaimDetail, flashMsg, flashErr str
 		FlashError:                flashErr,
 	}
 }
+
+// AdminEvidenceActionOptionVM define uma ação de moderação permitida para o evidence_source no estado atual.
+type AdminEvidenceActionOptionVM struct {
+	Action         string
+	Label          string
+	ButtonClass    string
+	HelpText       string
+	Disabled       bool
+	DisabledReason string
+}
+
+// GetAllowedEvidenceSourceActions calcula as ações válidas para o evidence_source a partir do seu estado, papel e suporte do claim.
+func GetAllowedEvidenceSourceActions(status string, role string, isLastSupport bool, claimStatus string) []AdminEvidenceActionOptionVM {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "active":
+		helpText := "Desaprova este uso pontual da evidência."
+		if role == "supports" && isLastSupport && strings.ToLower(strings.TrimSpace(claimStatus)) == "published" {
+			helpText = "Desaprova este uso pontual da evidência. ATENÇÃO: como este é o último suporte ativo da alegação, a alegação será movida automaticamente para QUARENTENA e removida das métricas de rede."
+		}
+		return []AdminEvidenceActionOptionVM{
+			{
+				Action:      "reject",
+				Label:       "Desaprovar / Rejeitar Uso",
+				ButtonClass: "btn-danger",
+				HelpText:    helpText,
+			},
+		}
+	case "rejected":
+		return []AdminEvidenceActionOptionVM{
+			{
+				Action:      "restore",
+				Label:       "Restaurar Uso",
+				ButtonClass: "btn-secondary",
+				HelpText:    "Restaura o uso da evidência para Ativo. A alegação associada permanecerá em quarentena até nova deliberação explícita de aprovação.",
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+// AdminEvidenceSourceDetailVM contém todos os dados necessários para renderizar a página de inspeção e moderação do evidence_source.
+type AdminEvidenceSourceDetailVM struct {
+	EvidenceSourceID           string
+	EvidenceID                 string
+	SourceID                   string
+	Excerpt                    string
+	Locator                    string
+	Role                       string
+	RoleHuman                  string
+	EvidenceSourceStatus       string
+	EvidenceSourceStatusHuman  string
+	EvidenceSourceCreatedHuman string
+	EvidenceSourceUpdatedHuman string
+	EvidenceSourceUpdatedRaw   string
+	EvidenceSummary            string
+	EvidenceType               string
+	ClaimID                    string
+	ClaimProposition           string
+	ClaimAttribution           string
+	ClaimOrigin                string
+	ClaimOriginHuman           string
+	ClaimGrade                 string
+	ClaimGradeHuman            string
+	ClaimDisposition           string
+	ClaimDispositionHuman      string
+	ClaimMetricEligible        bool
+	ClaimStatus                string
+	ClaimStatusHuman           string
+	ClaimCreatedHuman          string
+	ClaimUpdatedHuman          string
+	RelationshipID             string
+	RelationshipType           string
+	RelationshipSummary        string
+	RelationshipContextLimits  string
+	SubjectEntityID            string
+	SubjectEntityName          string
+	SubjectEntitySlug          string
+	TargetEntityID             string
+	TargetEntityName           string
+	TargetEntitySlug           string
+	CaseID                     string
+	CaseName                   string
+	CaseSlug                   string
+	SourceTitle                string
+	SourcePublisher            string
+	SourceOriginalURL          ExternalLinkVM
+	SourceCanonicalURL         ExternalLinkVM
+	SourcePublishedAtHuman     string
+	SourceAccessedAtHuman      string
+	SourceType                 string
+	SourceAccessStatus         string
+	SourceAccessStatusHuman    string
+	SourceCheckedAtHuman       string
+	SourceHTTPStatus           sql.NullInt64
+	SourceErrorCode            string
+	CandidateID                string
+	ActiveSupportsCount        int64
+	OtherActiveSupportsCount   int64
+	IsLastActiveSupport        bool
+	Decisions                  []AdminModerationDecisionItemVM
+	AllowedActions             []AdminEvidenceActionOptionVM
+	FlashMessage               string
+	FlashError                 string
+}
+
+// ToAdminEvidenceSourceDetailVM monta o ViewModel a partir da estrutura store.AdminEvidenceSourceDetail.
+func ToAdminEvidenceSourceDetailVM(detail *store.AdminEvidenceSourceDetail, flashMsg, flashErr string) AdminEvidenceSourceDetailVM {
+	if detail == nil {
+		return AdminEvidenceSourceDetailVM{FlashMessage: flashMsg, FlashError: flashErr}
+	}
+	es := detail.EvidenceSource
+	isLastSupport := es.Role == "supports" && detail.OtherActiveSupportsCount == 0
+
+	var decList []AdminModerationDecisionItemVM
+	for _, d := range detail.Decisions {
+		decList = append(decList, AdminModerationDecisionItemVM{
+			ID:                   d.ID,
+			Action:               d.Action,
+			ActionHuman:          FormatModerationAction(d.Action),
+			Reason:               d.Reason,
+			Actor:                d.Actor,
+			CandidateFingerprint: d.CandidateFingerprint,
+			CreatedAtHuman:       FormatDate(d.CreatedAt),
+		})
+	}
+
+	return AdminEvidenceSourceDetailVM{
+		EvidenceSourceID:           es.EvidenceSourceID,
+		EvidenceID:                 es.EvidenceID,
+		SourceID:                   es.SourceID,
+		Excerpt:                    es.Excerpt,
+		Locator:                    es.Locator,
+		Role:                       es.Role,
+		RoleHuman:                  FormatEvidenceRole(es.Role),
+		EvidenceSourceStatus:       es.EvidenceSourceStatus,
+		EvidenceSourceStatusHuman:  FormatEvidenceSourceStatus(es.EvidenceSourceStatus),
+		EvidenceSourceCreatedHuman: FormatDate(es.EvidenceSourceCreatedAt),
+		EvidenceSourceUpdatedHuman: FormatDate(es.EvidenceSourceUpdatedAt),
+		EvidenceSourceUpdatedRaw:   es.EvidenceSourceUpdatedAt,
+		EvidenceSummary:            es.EvidenceSummary,
+		EvidenceType:               es.EvidenceType,
+		ClaimID:                    es.ClaimID,
+		ClaimProposition:           es.ClaimProposition,
+		ClaimAttribution:           es.ClaimAttribution,
+		ClaimOrigin:                es.ClaimOrigin,
+		ClaimOriginHuman:           FormatClaimOrigin(es.ClaimOrigin),
+		ClaimGrade:                 es.ClaimGrade,
+		ClaimGradeHuman:            FormatGradeShort(es.ClaimGrade),
+		ClaimDisposition:           es.ClaimDisposition,
+		ClaimDispositionHuman:      FormatDisposition(es.ClaimDisposition),
+		ClaimMetricEligible:        es.ClaimMetricEligible == 1,
+		ClaimStatus:                es.ClaimStatus,
+		ClaimStatusHuman:           FormatEditorialStatus(es.ClaimStatus),
+		ClaimCreatedHuman:          FormatDate(es.ClaimCreatedAt),
+		ClaimUpdatedHuman:          FormatDate(es.ClaimUpdatedAt),
+		RelationshipID:             es.RelationshipID,
+		RelationshipType:           es.RelationshipType,
+		RelationshipSummary:        es.RelationshipSummary,
+		RelationshipContextLimits:  es.RelationshipContextLimits,
+		SubjectEntityID:            es.SubjectEntityID,
+		SubjectEntityName:          es.SubjectEntityName,
+		SubjectEntitySlug:          es.SubjectEntitySlug,
+		TargetEntityID:             es.TargetEntityID,
+		TargetEntityName:           es.TargetEntityName,
+		TargetEntitySlug:           es.TargetEntitySlug,
+		CaseID:                     es.CaseID,
+		CaseName:                   es.CaseName,
+		CaseSlug:                   es.CaseSlug,
+		SourceTitle:                es.SourceTitle,
+		SourcePublisher:            es.SourcePublisherOrAuthor,
+		SourceOriginalURL:          SanitizeExternalLink(es.SourceOriginalUrl),
+		SourceCanonicalURL:         SanitizeExternalLink(es.SourceCanonicalUrl),
+		SourcePublishedAtHuman:     FormatDate(es.SourcePublishedAt),
+		SourceAccessedAtHuman:      FormatDate(es.SourceAccessedAt),
+		SourceType:                 es.SourceType,
+		SourceAccessStatus:         es.SourceAccessStatus,
+		SourceAccessStatusHuman:    FormatSourceAccessStatus(es.SourceAccessStatus),
+		SourceCheckedAtHuman:       FormatDate(es.SourceAccessCheckedAt),
+		SourceHTTPStatus:           es.SourceHttpStatus,
+		SourceErrorCode:            es.SourceNormalizedErrorCode,
+		CandidateID:                detail.CandidateID,
+		ActiveSupportsCount:        detail.ActiveSupportsCount,
+		OtherActiveSupportsCount:   detail.OtherActiveSupportsCount,
+		IsLastActiveSupport:        isLastSupport,
+		Decisions:                  decList,
+		AllowedActions:             GetAllowedEvidenceSourceActions(es.EvidenceSourceStatus, es.Role, isLastSupport, es.ClaimStatus),
+		FlashMessage:               flashMsg,
+		FlashError:                 flashErr,
+	}
+}

@@ -90,6 +90,10 @@ func newAdminRouter(authMiddleware func(http.Handler) http.Handler, csrfMiddlewa
 	adminRouter.Get("/evidencias", handlers.HandleAdminEvidences)
 	adminRouter.Get("/fontes", handlers.HandleAdminSources)
 
+	// Rotas de usos de evidência e moderação granular (VZ-021)
+	adminRouter.Get("/evidencias/{id}", handlers.HandleAdminEvidenceSourceDetail)
+	adminRouter.With(csrfMiddleware).Post("/evidencias/{id}/moderate", handlers.HandleAdminModerateEvidenceSource)
+
 	// Rotas de alegações e moderação editorial (VZ-016)
 	adminRouter.Get("/claims/{id}", handlers.HandleAdminClaimDetail)
 	adminRouter.With(csrfMiddleware).Post("/claims/{id}/moderate", handlers.HandleAdminModerateClaim)

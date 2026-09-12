@@ -1,6 +1,6 @@
 # Backlog inicial priorizado
 
-O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-016 é **VZ-017** / **VZ-021**.
+O backlog distingue o que está **concluído**, o que está **planejado no MVP** e o que constitui **evolução proposta pós-MVP**. O próximo item para implementação após a conclusão de VZ-021 é **VZ-017**.
 
 ## P0 — Núcleo do MVP
 
@@ -23,7 +23,7 @@ O backlog distingue o que está **concluído**, o que está **planejado no MVP**
 | VZ-014 | P0 | Proteção simples do `/admin` por autenticação HTTP | Concluído (Fase 5) |
 | VZ-015 | P0 | Painel simples para listagem e inspeção de fontes, evidências e candidatos | Concluído (Fase 5) |
 | VZ-016 | P0 | Ações de moderação: desaprovar, restaurar e aprovar quarentena | Concluído (Fase 5) |
-| VZ-021 | P0 | Moderação com integridade transacional XOR (claim ou evidence_source) e quarentena imediata ao perder último suporte ativo (**agrupado à moderação**) | Planejado no MVP |
+| VZ-021 | P0 | Moderação com integridade transacional XOR (claim ou evidence_source) e quarentena imediata ao perder último suporte ativo (**agrupado à moderação**) | Concluído (Fase 5) |
 | VZ-017 | P0 | Invalidação imediata de visualizações, métricas e exportação após moderação | Planejado no MVP |
 | VZ-018 | P0 | Deploy VPS, cron de monitoramento, persistência SQLite e smoke checklist | Planejado no MVP |
 | VZ-019 | P0 | Testes table-driven de publicação/quarentena, bloqueio por fingerprint rejeitado e métricas por estado/elegibilidade | Planejado no MVP |

@@ -573,3 +573,73 @@ func TestGetAdminClaimDetail(t *testing.T) {
 		t.Errorf("esperava ErrNotFound para id vazio, obtido %v", err)
 	}
 }
+
+func TestGetAdminEvidenceSourceDetail(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	insertEntity(t, db, "ent-sub-es", "slug-sub-es", "Sujeito ES", "Politica", 5)
+	insertEntity(t, db, "ent-tgt-es", "slug-tgt-es", "Alvo ES", "Empresarial", 4)
+	insertCase(t, db, "case-es-1", "case-es-slug-1", "Caso do ES")
+	insertRel(t, db, "rel-es-1", "ent-sub-es", "ent-tgt-es", "case-es-1", "societario", "Resumo Relacao ES")
+	insertSource(t, db, "src-es-1", "Fonte do ES")
+
+	insertClaim(t, db, "clm-es-1", "rel-es-1", "A", "supports_link", 1, "published", now)
+	insertEvidenceAndSource(t, db, "ev-es-1", "clm-es-1", "es-detail-1", "src-es-1", "supports", "active")
+	insertEvidenceAndSource(t, db, "ev-es-2", "clm-es-1", "es-detail-2", "src-es-1", "supports", "active")
+
+	// Inserir decisão prévia para o evidence_source
+	q := sqlc.New(db)
+	_, err := q.CreateModerationDecision(ctx, sqlc.CreateModerationDecisionParams{
+		ID:                   "dec-es-1",
+		ClaimID:              sql.NullString{Valid: false},
+		EvidenceSourceID:     sql.NullString{String: "es-detail-1", Valid: true},
+		Action:               "reject",
+		Reason:               "Trecho impreciso e fora de contexto.",
+		Actor:                "moderador_teste",
+		CandidateFingerprint: "",
+		CreatedAt:            now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar decisão de moderação para evidence_source: %v", err)
+	}
+
+	detail, err := store.GetAdminEvidenceSourceDetail(ctx, db, "es-detail-1")
+	if err != nil {
+		t.Fatalf("GetAdminEvidenceSourceDetail falhou: %v", err)
+	}
+
+	if detail.EvidenceSource.EvidenceSourceID != "es-detail-1" {
+		t.Errorf("EvidenceSourceID = %q, esperado 'es-detail-1'", detail.EvidenceSource.EvidenceSourceID)
+	}
+	if detail.EvidenceSource.ClaimID != "clm-es-1" {
+		t.Errorf("ClaimID = %q, esperado 'clm-es-1'", detail.EvidenceSource.ClaimID)
+	}
+	if detail.EvidenceSource.SubjectEntityName != "Sujeito ES" {
+		t.Errorf("SubjectEntityName = %q, esperado 'Sujeito ES'", detail.EvidenceSource.SubjectEntityName)
+	}
+	if detail.ActiveSupportsCount != 2 {
+		t.Errorf("ActiveSupportsCount = %d, esperado 2", detail.ActiveSupportsCount)
+	}
+	if detail.OtherActiveSupportsCount != 1 {
+		t.Errorf("OtherActiveSupportsCount = %d, esperado 1", detail.OtherActiveSupportsCount)
+	}
+	if len(detail.Decisions) != 1 {
+		t.Errorf("Decisions = %d, esperado 1", len(detail.Decisions))
+	}
+	if detail.Decisions[0].Action != "reject" || detail.Decisions[0].Actor != "moderador_teste" {
+		t.Errorf("Decisão inesperada: %+v", detail.Decisions[0])
+	}
+
+	// EvidenceSource inexistente retorna ErrNotFound
+	_, err = store.GetAdminEvidenceSourceDetail(ctx, db, "inexistente")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("esperava ErrNotFound para evidence_source inexistente, obtido %v", err)
+	}
+
+	// ID vazio retorna ErrNotFound
+	_, err = store.GetAdminEvidenceSourceDetail(ctx, db, "   ")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("esperava ErrNotFound para id vazio, obtido %v", err)
+	}
+}

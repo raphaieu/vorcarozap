@@ -119,16 +119,21 @@ A migration `00008_monitoring_lock_and_budget.sql` e a [ADR-015](adr/ADR-015-loc
 - **Extensão de `semantic_evaluations`**: colunas `prompt_tokens`, `completion_tokens`, `total_tokens` e `cost_microusd` (`cost` decimal derivado) para auditoria financeira precisa por avaliação documental individual gravada na mesma transação atômica.
 - **Persistência Segura em Inteiros:** todos os limites orçamentários (`MONITOR_MAX_COST_PER_RUN_USD`, `MONITOR_MAX_COST_PER_DAY_USD`) e custos reais são administrados e somados no SQLite em micro-USD inteiros (`int64`, arredondamento para cima via `math.Ceil(cost * 1_000_000)`), garantindo precisão absoluta e imunidade a subcontagem após reinício de processo.
 
-## Moderação humana de claims e auditoria imutável (VZ-016)
+## Moderação humana (claims e evidence_sources) e auditoria imutável (VZ-016, VZ-021)
 
-A migration `00009_moderation_claim_actions.sql` e a [ADR-017](adr/ADR-017-moderacao-humana-de-claims-transacoes-e-protecao-csrf.md) introduzem a estrutura auditável de deliberações humanas e transações atômicas de pós-moderação sobre claims:
-- **`moderation_decisions`**: tabela imutável de registro de auditoria, contendo `id TEXT PRIMARY KEY`, `claim_id TEXT REFERENCES claims(id) ON DELETE RESTRICT`, `evidence_source_id TEXT REFERENCES evidence_sources(id) ON DELETE RESTRICT` (reservada para VZ-021), `action TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'restore'))`, `reason TEXT NOT NULL CHECK (length(trim(reason)) > 0 AND length(reason) <= 1000)`, `actor TEXT NOT NULL CHECK (length(trim(actor)) > 0 AND length(actor) <= 128)`, `candidate_fingerprint TEXT NOT NULL DEFAULT ''`, e `created_at TEXT NOT NULL`.
+A migration `00009_moderation_claim_actions.sql`, a [ADR-017](adr/ADR-017-moderacao-humana-de-claims-transacoes-e-protecao-csrf.md) e a [ADR-018](adr/ADR-018-moderacao-granular-de-evidence-sources-e-quarentena-por-perda-de-suporte.md) introduzem a estrutura auditável de deliberações humanas e transações atômicas de pós-moderação sobre claims e usos de evidência:
+- **`moderation_decisions`**: tabela imutável de registro de auditoria, contendo `id TEXT PRIMARY KEY`, `claim_id TEXT REFERENCES claims(id) ON DELETE RESTRICT`, `evidence_source_id TEXT REFERENCES evidence_sources(id) ON DELETE RESTRICT`, `action TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'restore'))`, `reason TEXT NOT NULL CHECK (length(trim(reason)) > 0 AND length(reason) <= 1000)`, `actor TEXT NOT NULL CHECK (length(trim(actor)) > 0 AND length(actor) <= 128)`, `candidate_fingerprint TEXT NOT NULL DEFAULT ''`, e `created_at TEXT NOT NULL`. A tabela audita tanto deliberações sobre claims quanto sobre usos de evidências (`evidence_sources`).
 - **Restrição XOR estrita em banco:** `CONSTRAINT chk_moderation_decisions_target_xor CHECK ((claim_id IS NOT NULL AND evidence_source_id IS NULL) OR (claim_id IS NULL AND evidence_source_id IS NOT NULL))`, garantindo que cada deliberação registre exatamente um alvo.
 - **Invariantes e Transições de Domínio:**
-  - `approve`: `quarantined -> published` (exige obrigatoriamente pelo menos 1 `evidence_source` ativo com papel `supports`);
-  - `reject`: `published -> rejected` ou `quarantined -> rejected` (marca candidatos canônicos em `monitoring_candidates` como `rejected`, preservando o bloqueio por fingerprint contra republicações automáticas);
-  - `restore`: `rejected -> quarantined` ou `archived -> quarantined` (invariante: **restauração nunca publica diretamente**, exigindo posterior aprovação explícita).
-- **Isolamento Transacional e Controle Otimista de Versão:** Toda deliberação de moderação é executada em uma única transação SQLite atômica (`store.ExecTx`) com revalidação de versão (`expected_updated_at`) e atualização condicional no SQLite, impedindo inconsistências e devolvendo conflito determinístico (`409 Conflict`).
+  - **Claims (VZ-016):**
+    - `approve`: `quarantined -> published` (exige obrigatoriamente pelo menos 1 `evidence_source` ativo com papel `supports`);
+    - `reject`: `published -> rejected` ou `quarantined -> rejected` (marca candidatos canônicos em `monitoring_candidates` como `rejected`, preservando o bloqueio por fingerprint contra republicações automáticas);
+    - `restore`: `rejected -> quarantined` ou `archived -> quarantined` (invariante: **restauração nunca publica diretamente**, exigindo posterior aprovação explícita).
+  - **Evidence Sources (VZ-021, [ADR-018](adr/ADR-018-moderacao-granular-de-evidence-sources-e-quarentena-por-perda-de-suporte.md)):**
+    - `reject`: `active -> rejected` (focado no vínculo específico de uso; a fonte documental global em `sources` permanece intacta);
+    - **Quarentena Atômica por Perda de Suporte:** Rejeitar um `evidence_source` ativo com papel `supports` que seja o último suporte ativo de um claim `published` move o claim atomicamente para `status = 'quarantined'` e `metric_eligible = 0` na mesma transação;
+    - `restore`: `rejected -> active` (invariante: **restaurar evidência nunca republica o claim automaticamente**, mantendo-o em quarentena até nova deliberação humana).
+- **Isolamento Transacional e Controle Otimista de Versão:** Toda deliberação de moderação (claim ou evidence_source) é executada em uma única transação SQLite atômica (`store.WithTx`) com revalidação de versão (`expected_updated_at`) e atualização condicional no SQLite, impedindo inconsistências e devolvendo conflito determinístico (`409 Conflict`).
 
 ## Futuro
 

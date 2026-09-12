@@ -245,7 +245,7 @@ templ AdminClaimDetail(vm AdminClaimDetailVM) {
 								<div class="admin-item-card">
 									<div class="admin-item-header">
 										<div>
-											<span class="admin-item-id">EvidenceSource: <code>{ es.EvidenceSourceID }</code></span>
+											<span class="admin-item-id">EvidenceSource: <a href={ templ.SafeURL("/admin/evidencias/" + es.EvidenceSourceID) } class="dist-filter-link"><code>{ es.EvidenceSourceID }</code> &rarr;</a></span>
 											<div style="font-size: 0.85rem; color: var(--color-text-muted); margin-top: 0.25rem;">
 												Tipo de Evidência: <strong>{ es.EvidenceType }</strong> &bull; Criado em: { es.EvidenceSourceCreatedHuman }
 											</div>

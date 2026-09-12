@@ -479,3 +479,118 @@ SELECT
 FROM moderation_decisions
 WHERE claim_id = ?
 ORDER BY created_at DESC, id DESC;
+
+-- name: GetAdminEvidenceSourceByID :one
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.source_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    c.id AS claim_id,
+    c.proposition AS claim_proposition,
+    c.attribution AS claim_attribution,
+    c.origin AS claim_origin,
+    c.grade AS claim_grade,
+    c.disposition AS claim_disposition,
+    c.metric_eligible AS claim_metric_eligible,
+    c.status AS claim_status,
+    c.context_status AS claim_context_status,
+    c.created_at AS claim_created_at,
+    c.updated_at AS claim_updated_at,
+    rel.id AS relationship_id,
+    rel.relationship_type,
+    rel.summary AS relationship_summary,
+    rel.context_limits AS relationship_context_limits,
+    subj.id AS subject_entity_id,
+    subj.name AS subject_entity_name,
+    subj.slug AS subject_entity_slug,
+    COALESCE(tgt.id, '') AS target_entity_id,
+    COALESCE(tgt.name, '') AS target_entity_name,
+    COALESCE(tgt.slug, '') AS target_entity_slug,
+    COALESCE(cs.id, '') AS case_id,
+    COALESCE(cs.name, '') AS case_name,
+    COALESCE(cs.slug, '') AS case_slug,
+    s.id AS source_id_canonical,
+    s.title AS source_title,
+    s.publisher_or_author AS source_publisher_or_author,
+    s.original_url AS source_original_url,
+    s.canonical_url AS source_canonical_url,
+    COALESCE(s.published_at, '') AS source_published_at,
+    COALESCE(s.accessed_at, '') AS source_accessed_at,
+    s.source_type,
+    s.source_access_status,
+    COALESCE(s.source_access_checked_at, '') AS source_access_checked_at,
+    s.http_status AS source_http_status,
+    COALESCE(s.normalized_error_code, '') AS source_normalized_error_code
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN claims c ON c.id = ev.claim_id
+JOIN relationships rel ON rel.id = c.relationship_id
+JOIN entities subj ON subj.id = rel.subject_entity_id
+LEFT JOIN entities tgt ON tgt.id = rel.target_entity_id
+LEFT JOIN cases cs ON cs.id = rel.case_id
+JOIN sources s ON s.id = es.source_id
+WHERE es.id = ?
+LIMIT 1;
+
+-- name: GetEvidenceSourceByIDForModeration :one
+SELECT
+    es.id,
+    es.evidence_id,
+    es.source_id,
+    es.role,
+    es.status,
+    es.updated_at,
+    ev.claim_id,
+    c.status AS claim_status,
+    c.metric_eligible AS claim_metric_eligible,
+    c.updated_at AS claim_updated_at
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN claims c ON c.id = ev.claim_id
+WHERE es.id = ?
+LIMIT 1;
+
+-- name: UpdateEvidenceSourceStatusWithVersion :execrows
+UPDATE evidence_sources
+SET status = @new_status,
+    updated_at = @updated_at
+WHERE id = @id
+  AND updated_at = @expected_updated_at;
+
+-- name: QuarantineClaimDueToLostSupport :execrows
+UPDATE claims
+SET status = 'quarantined',
+    metric_eligible = 0,
+    updated_at = @updated_at
+WHERE id = @id;
+
+-- name: CountActiveSupportsEvidenceSourcesByClaimIDExcludingID :one
+SELECT count(*)
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+WHERE ev.claim_id = @claim_id
+  AND es.role = 'supports'
+  AND es.status = 'active'
+  AND es.id != @exclude_evidence_source_id;
+
+-- name: ListAdminModerationDecisionsByEvidenceSourceID :many
+SELECT
+    id,
+    claim_id,
+    evidence_source_id,
+    action,
+    reason,
+    actor,
+    candidate_fingerprint,
+    created_at
+FROM moderation_decisions
+WHERE evidence_source_id = ?
+ORDER BY created_at DESC, id DESC;

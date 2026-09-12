@@ -255,6 +255,34 @@ func ValidateClaimTransition(current ClaimStatus, action ModerationAction) (Clai
 	}
 }
 
+// ValidateEvidenceSourceTransition valida se a transição de estado solicitada para um uso de evidência (evidence_source) é permitida.
+// Retorna o novo EvidenceSourceStatus resultante ou erro caso a transição seja proibida.
+func ValidateEvidenceSourceTransition(current EvidenceSourceStatus, action ModerationAction) (EvidenceSourceStatus, error) {
+	if !current.IsValid() {
+		return "", fmt.Errorf("domain: estado atual do evidence_source inválido %q", current)
+	}
+	if !action.IsValid() {
+		return "", fmt.Errorf("domain: ação de moderação inválida %q", action)
+	}
+
+	switch action {
+	case ModerationActionReject:
+		if current == EvidenceSourceStatusActive {
+			return EvidenceSourceStatusRejected, nil
+		}
+		return "", fmt.Errorf("domain: ação 'reject' não é permitida para evidence_source com status %q (permitida apenas para %q)", current, EvidenceSourceStatusActive)
+
+	case ModerationActionRestore:
+		if current == EvidenceSourceStatusRejected {
+			return EvidenceSourceStatusActive, nil
+		}
+		return "", fmt.Errorf("domain: ação 'restore' não é permitida para evidence_source com status %q (permitida apenas para %q)", current, EvidenceSourceStatusRejected)
+
+	default:
+		return "", fmt.Errorf("domain: ação de moderação %q não é suportada para evidence_source", action)
+	}
+}
+
 const (
 	MaxModerationReasonLength = 1000
 )

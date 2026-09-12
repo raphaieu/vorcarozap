@@ -547,3 +547,117 @@ func (h *Handlers) HandleAdminModerateClaim(w http.ResponseWriter, r *http.Reque
 	redirectURL := fmt.Sprintf("/admin/claims/%s?msg=%s", id, url.QueryEscape(successMsg))
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
+
+// HandleAdminEvidenceSourceDetail renderiza a inspeção detalhada de um uso de evidência, o claim associado, fonte e histórico de moderação.
+func (h *Handlers) HandleAdminEvidenceSourceDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail, err := store.GetAdminEvidenceSourceDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get admin evidence source detail", "id", id, "error", err)
+		http.Error(w, "Erro interno ao carregar detalhes do uso de evidência", http.StatusInternalServerError)
+		return
+	}
+
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
+
+	vm := pages.ToAdminEvidenceSourceDetailVM(detail, flashMsg, flashErr)
+	component := pages.AdminEvidenceDetail(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin evidence source detail template", "id", id, "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminModerateEvidenceSource processa a ação humana de moderação sobre um uso de evidência via POST.
+// Segue o padrão PRG (303 See Other), validação estrita de ator, concorrência atômica, quarentena se perder último suporte e proteção CSRF.
+func (h *Handlers) HandleAdminModerateEvidenceSource(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	actor, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || strings.TrimSpace(actor) == "" {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "Corpo da requisição excede o limite máximo permitido de 64 KiB", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "Requisição inválida: formulário corrompido", http.StatusBadRequest)
+		return
+	}
+
+	actionStr := strings.TrimSpace(r.FormValue("action"))
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	expectedUpdatedAt := strings.TrimSpace(r.FormValue("expected_updated_at"))
+
+	action := domain.ModerationAction(actionStr)
+	if !action.IsValid() {
+		http.Error(w, fmt.Sprintf("Ação de moderação inválida: %q", actionStr), http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.moderation.ModerateEvidenceSource(r.Context(), moderation.ModerateEvidenceSourceParams{
+		EvidenceSourceID:  id,
+		ExpectedUpdatedAt: expectedUpdatedAt,
+		Action:            action,
+		Reason:            reason,
+		Actor:             actor,
+	})
+	if err != nil {
+		if errors.Is(err, moderation.ErrEvidenceSourceNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, moderation.ErrConflict) {
+			http.Error(w, "Conflito de concorrência: o estado do uso de evidência foi modificado por outra operação.", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, moderation.ErrMissingExpectedVersion) {
+			http.Error(w, "Versão esperada (expected_updated_at) é obrigatória para moderação.", http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, moderation.ErrInvalidTransition) {
+			http.Error(w, fmt.Sprintf("Transição de estado inválida: %v", err), http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, moderation.ErrInvalidReason) || errors.Is(err, moderation.ErrInvalidAction) || errors.Is(err, moderation.ErrInvalidActor) {
+			http.Error(w, fmt.Sprintf("Dados de moderação inválidos: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		slog.Error("failed to moderate evidence source", "evidence_source_id", id, "action", actionStr, "error", err)
+		http.Error(w, "Erro interno ao processar moderação", http.StatusInternalServerError)
+		return
+	}
+
+	successMsg := fmt.Sprintf("Uso de evidência moderado com sucesso: ação '%s' aplicada (novo status: %s).", actionStr, res.NewStatus)
+	if res.ClaimQuarantined {
+		successMsg += " A alegação associada perdeu o último suporte ativo e foi movida para QUARENTENA."
+	}
+	redirectURL := fmt.Sprintf("/admin/evidencias/%s?msg=%s", id, url.QueryEscape(successMsg))
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
