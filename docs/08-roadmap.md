@@ -29,8 +29,9 @@ CLI, config com defaults seguros, SSR com Templ, SQLite WAL (`modernc.org/sqlite
 ## Fase 5 — painel simples e moderação humana (Em andamento no MVP)
 
 - **Concluído:** Proteção simples do `/admin` por HTTP Basic Authentication nativa no monólito Go (`ADMIN_USER` e `ADMIN_PASSWORD_HASH`), validação rigorosa de hash bcrypt sem suporte a senha em texto puro, mitigação de timing attacks via constante temporal e execução incondicional de bcrypt, cabeçalhos restritivos de cache (`Cache-Control: no-store`, `Vary: Authorization`), comportamento fail-closed (desabilitado responde 404 sem desafio) e página SSR mínima de confirmação, conforme [ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md). (VZ-014).
-- **Próximo item:** Painel simples para listagem e inspeção de fontes, evidências e candidatos (VZ-015 — Fase 5).
-- **Planejado:** Ações de moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-015, VZ-016, VZ-017, VZ-021).
+- **Concluído:** Painel SSR administrativo somente leitura para listagem e inspeção profunda de fontes, evidências e candidatos (`/admin`, `/admin/candidatos`, `/admin/candidatos/{id}`, `/admin/evidencias`, `/admin/fontes`), paginação conservadora e filtros seguros por allowlist, histórico auditável de `semantic_evaluations` com omissão rigorosa de `raw_response`, aviso editorial de escopo de moderação em `evidence_sources` e links externos protegidos com `target="_blank"` e `rel="noopener noreferrer"`. (VZ-015).
+- **Próximo item:** Ações de moderação: desaprovar, restaurar e aprovar quarentena (VZ-016 — Fase 5).
+- **Planejado:** Ações de moderação com decisão atômica por XOR (claim ou evidence_source), quarentena automática ao perder último suporte ativo (VZ-021), restauração/aprovação de quarentena, invalidação imediata de visualizações e métricas, e acionamento manual do monitor. (VZ-016, VZ-017, VZ-021).
 
 ## Fase 6 — deploy MVP e validação econômica (Planejado no MVP)
 
