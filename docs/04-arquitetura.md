@@ -31,7 +31,7 @@ flowchart TB
 
 ```text
 cmd/vorcarozap/
-internal/{config,domain,store,editorial,research,monitoring,sourcecheck,metrics,importer,exporter,web,admin}
+internal/{config,domain,store,editorial,moderation,research,monitoring,sourcecheck,metrics,importer,exporter,web}
 migrations/ queries/ web/{components,pages,static}/
 config/import-mapping-v1.yaml
 ```
@@ -50,7 +50,8 @@ Consultas SQL de rede agregam somente claims `published` e `metric_eligible = tr
 
 ## Admin
 
-SSR/HTMX protegido por HTTP Basic Authentication e hash bcrypt (`ADMIN_USER`, `ADMIN_PASSWORD_HASH`, [ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md)). Comportamento fail-closed (desabilitado responde 404 sem desafio) e ações pequenas: listar, detalhar, moderar claim ou uso específico de fonte, restaurar/aprovar quarentena e disparar monitor. Uma source não é rejeitada globalmente. Não é CMS completo.
+SSR protegido por HTTP Basic Authentication e hash bcrypt (`ADMIN_USER`, `ADMIN_PASSWORD_HASH`, [ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md)). Comportamento fail-closed (desabilitado responde 404 sem desafio) e ações editoriais protegidas contra CSRF via validação estrita de `Origin` com `ADMIN_ALLOWED_ORIGIN` ([ADR-017](adr/ADR-017-moderacao-humana-de-claims-transacoes-e-protecao-csrf.md)).
+Ações de moderação humana em claims (`approve`, `reject`, `restore`) executam em transação SQLite atômica, validam suportes ativos, aplicam o padrão PRG (303 See Other) e registram auditoria imutável na tabela `moderation_decisions` com autor derivado exclusivamente do contexto HTTP autenticado. Uma source não é rejeitada globalmente. Não é CMS completo.
 
 ## Verificação de fonte
 
