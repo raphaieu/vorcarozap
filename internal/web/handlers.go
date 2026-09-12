@@ -204,15 +204,225 @@ func (h *Handlers) HandleExportXLSX(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(buf.Bytes())
 }
 
-// HandleAdmin renderiza a página administrativa mínima protegida SSR via templ.
+// HandleAdmin renderiza o dashboard administrativo protegido SSR via templ.
 func (h *Handlers) HandleAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Vary", "Authorization")
 
-	component := pages.Admin()
+	counts, err := store.GetAdminOverviewCounts(r.Context(), h.db)
+	if err != nil {
+		slog.Error("failed to get admin overview counts", "error", err)
+		http.Error(w, "Erro interno ao carregar estatísticas do painel", http.StatusInternalServerError)
+		return
+	}
+
+	vm := pages.ToAdminDashboardVM(counts)
+	component := pages.Admin(vm)
 	if err := component.Render(r.Context(), w); err != nil {
-		slog.Error("failed to render admin template", "error", err)
+		slog.Error("failed to render admin dashboard template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminCandidates renderiza a listagem paginada e filtrável de candidatos de monitoramento.
+func (h *Handlers) HandleAdminCandidates(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
+	filter := store.AdminCandidateFilter{
+		Status:   q.Get("status"),
+		Grade:    q.Get("grade"),
+		RunID:    q.Get("run_id"),
+		Period:   q.Get("period"),
+		Search:   q.Get("q"),
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	res, err := store.ListAdminCandidates(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list admin candidates", "error", err)
+		http.Error(w, "Erro interno ao consultar candidatos de monitoramento", http.StatusInternalServerError)
+		return
+	}
+
+	var candidateVMs []pages.AdminCandidateItemVM
+	for _, c := range res.Candidates {
+		candidateVMs = append(candidateVMs, pages.ToAdminCandidateItemVM(c))
+	}
+
+	sanitized := store.SanitizeAdminCandidateFilter(filter)
+	vm := pages.AdminCandidateListVM{
+		Candidates: candidateVMs,
+		Filter: pages.AdminCandidateFilterVM{
+			Status:      sanitized.Status,
+			Grade:       sanitized.Grade,
+			RunID:       sanitized.RunID,
+			Period:      sanitized.Period,
+			PeriodSince: sanitized.PeriodSince,
+			Search:      sanitized.Search,
+			Page:        res.Page,
+			PageSize:    res.PageSize,
+			TotalPages:  res.TotalPages,
+			TotalCount:  res.TotalCount,
+		},
+	}
+
+	component := pages.AdminCandidates(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin candidates template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminCandidateDetail renderiza a inspeção individual de um candidato e seu histórico de avaliações.
+func (h *Handlers) HandleAdminCandidateDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail, err := store.GetAdminCandidateDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get admin candidate detail", "id", id, "error", err)
+		http.Error(w, "Erro interno ao carregar detalhes do candidato", http.StatusInternalServerError)
+		return
+	}
+
+	vm := pages.ToAdminCandidateDetailVM(detail)
+	component := pages.AdminCandidateDetail(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin candidate detail template", "id", id, "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminEvidences renderiza a listagem paginada e filtrável de usos de evidência (evidence_sources).
+func (h *Handlers) HandleAdminEvidences(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
+	filter := store.AdminEvidenceFilter{
+		ClaimStatus:          q.Get("claim_status"),
+		EvidenceSourceStatus: q.Get("es_status"),
+		Origin:               q.Get("origin"),
+		Grade:                q.Get("grade"),
+		Role:                 q.Get("role"),
+		Period:               q.Get("period"),
+		Search:               q.Get("q"),
+		Page:                 page,
+		PageSize:             pageSize,
+	}
+
+	res, err := store.ListAdminEvidenceSources(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list admin evidence sources", "error", err)
+		http.Error(w, "Erro interno ao consultar usos de evidência", http.StatusInternalServerError)
+		return
+	}
+
+	var esVMs []pages.AdminEvidenceItemVM
+	for _, es := range res.EvidenceSources {
+		esVMs = append(esVMs, pages.ToAdminEvidenceItemVM(es))
+	}
+
+	sanitized := store.SanitizeAdminEvidenceFilter(filter)
+	vm := pages.AdminEvidenceListVM{
+		EvidenceSources: esVMs,
+		Filter: pages.AdminEvidenceFilterVM{
+			ClaimStatus:          sanitized.ClaimStatus,
+			EvidenceSourceStatus: sanitized.EvidenceSourceStatus,
+			Origin:               sanitized.Origin,
+			Grade:                sanitized.Grade,
+			Role:                 sanitized.Role,
+			Period:               sanitized.Period,
+			PeriodSince:          sanitized.PeriodSince,
+			Search:               sanitized.Search,
+			Page:                 res.Page,
+			PageSize:             res.PageSize,
+			TotalPages:           res.TotalPages,
+			TotalCount:           res.TotalCount,
+		},
+	}
+
+	component := pages.AdminEvidences(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin evidences template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminSources renderiza a listagem paginada e filtrável de fontes documentais (sources).
+func (h *Handlers) HandleAdminSources(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
+	filter := store.AdminSourceFilter{
+		AccessStatus: q.Get("access_status"),
+		SourceType:   q.Get("source_type"),
+		Period:       q.Get("period"),
+		Search:       q.Get("q"),
+		Page:         page,
+		PageSize:     pageSize,
+	}
+
+	res, err := store.ListAdminSources(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list admin sources", "error", err)
+		http.Error(w, "Erro interno ao consultar fontes documentais", http.StatusInternalServerError)
+		return
+	}
+
+	var sourceVMs []pages.AdminSourceItemVM
+	for _, s := range res.Sources {
+		sourceVMs = append(sourceVMs, pages.ToAdminSourceItemVM(s))
+	}
+
+	sanitized := store.SanitizeAdminSourceFilter(filter)
+	vm := pages.AdminSourceListVM{
+		Sources: sourceVMs,
+		Filter: pages.AdminSourceFilterVM{
+			AccessStatus: sanitized.AccessStatus,
+			SourceType:   sanitized.SourceType,
+			Period:       sanitized.Period,
+			PeriodSince:  sanitized.PeriodSince,
+			Search:       sanitized.Search,
+			Page:         res.Page,
+			PageSize:     res.PageSize,
+			TotalPages:   res.TotalPages,
+			TotalCount:   res.TotalCount,
+		},
+		SourceTypeOptions: pages.GetAdminSourceTypeOptionsVM(),
+	}
+
+	component := pages.AdminSources(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin sources template", "error", err)
 		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
 	}
 }

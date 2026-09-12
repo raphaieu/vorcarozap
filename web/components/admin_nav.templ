@@ -1,0 +1,41 @@
+package components
+
+templ AdminNav(currentTab string) {
+	<header class="site-header admin-header">
+		<div class="header-container">
+			<div class="site-title-row">
+				<div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+					<a href="/admin" class="site-title" aria-label="Painel Administrativo VorcaroZAP">
+						<span>VorcaroZAP</span>
+						<span class="badge" style="background-color: #ffd580; color: #664d03;">Admin</span>
+					</a>
+					<span class="status-tag" style="background-color: rgba(255,255,255,0.15); color: #ffffff; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 4px;">Somente Leitura</span>
+				</div>
+				<nav class="site-nav" aria-label="Navegação Administrativa">
+					<a
+						href="/admin"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "dashboard") }
+					>Dashboard</a>
+					<a
+						href="/admin/candidatos"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "candidatos") }
+					>Candidatos</a>
+					<a
+						href="/admin/evidencias"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "evidencias") }
+					>Usos de Evidência</a>
+					<a
+						href="/admin/fontes"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "fontes") }
+					>Fontes</a>
+					<a
+						href="/"
+						class="nav-link"
+						style="opacity: 0.8; margin-left: 0.5rem; border-left: 1px solid rgba(255,255,255,0.25); padding-left: 0.75rem;"
+						title="Ver página pública"
+					>Área Pública &rarr;</a>
+				</nav>
+			</div>
+		</div>
+	</header>
+}

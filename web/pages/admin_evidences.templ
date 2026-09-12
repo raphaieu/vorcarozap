@@ -1,0 +1,290 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminEvidences(vm AdminEvidenceListVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Listagem e inspeção de usos de evidência (evidence_sources) no VorcaroZAP."/>
+			<title>Usos de Evidência — Admin — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("evidencias")
+			<main class="container">
+				<!-- Cabeçalho da Página -->
+				<header class="page-intro">
+					<h1 class="page-title">Usos de Evidência (Evidence Sources)</h1>
+					<p class="page-subtitle">
+						Inspeção dos vínculos específicos entre fontes documentais, alegações e entidades.
+					</p>
+				</header>
+
+				<!-- Aviso Editorial Obrigatório sobre Unidade de Moderação -->
+				<div class="editorial-notice" style="margin-bottom: 1rem;" aria-label="Aviso sobre Unidade de Moderação">
+					<strong>Diretriz Editorial: Unidade de Moderação</strong>
+					<p style="margin-top: 0.25rem;">
+						A pós-moderação humana atua cirurgicamente sobre a <strong>alegação (claim)</strong> ou sobre o <strong>uso específico da evidência (evidence_source)</strong>, e <strong>jamais rejeita uma fonte documental globalmente</strong>. A mesma fonte pode sustentar outros fatos legítimos de forma independente.
+					</p>
+				</div>
+
+				<!-- Formulário de Filtros e Busca -->
+				<section class="card filter-card" aria-label="Filtros de Evidências">
+					<form method="GET" action="/admin/evidencias" class="filter-form">
+						<div class="search-row">
+							<div class="form-group flex-grow">
+								<label for="search-input" class="form-label">Busca Textual</label>
+								<input
+									type="search"
+									id="search-input"
+									name="q"
+									class="form-control"
+									placeholder="Buscar por entidade, alvo, proposição, trecho, veículo ou URL..."
+									value={ vm.Filter.Search }
+								/>
+							</div>
+							<div class="form-actions-inline">
+								<button type="submit" class="btn btn-primary">Filtrar</button>
+								if vm.Filter.Search != "" || vm.Filter.ClaimStatus != "" || vm.Filter.EvidenceSourceStatus != "" || vm.Filter.Origin != "" || vm.Filter.Grade != "" || vm.Filter.Role != "" || (vm.Filter.Period != "" && vm.Filter.Period != "all") {
+									<a href="/admin/evidencias" class="btn btn-subtle">Limpar</a>
+								}
+							</div>
+						</div>
+
+						<div class="filters-grid">
+							<!-- Status do Claim -->
+							<div class="form-group">
+								<label for="filter-claim-status" class="form-label">Status da Alegação</label>
+								<select id="filter-claim-status" name="claim_status" class="form-control" onchange="this.form.submit()">
+									<option value="">Todos os status</option>
+									<option value="published" selected?={ vm.Filter.ClaimStatus == "published" }>Publicado</option>
+									<option value="quarantined" selected?={ vm.Filter.ClaimStatus == "quarantined" }>Quarentena (Não público)</option>
+									<option value="rejected" selected?={ vm.Filter.ClaimStatus == "rejected" }>Rejeitado</option>
+									<option value="archived" selected?={ vm.Filter.ClaimStatus == "archived" }>Arquivado</option>
+								</select>
+							</div>
+
+							<!-- Status do Evidence Source -->
+							<div class="form-group">
+								<label for="filter-es-status" class="form-label">Status do Uso</label>
+								<select id="filter-es-status" name="es_status" class="form-control" onchange="this.form.submit()">
+									<option value="">Todos os usos</option>
+									<option value="active" selected?={ vm.Filter.EvidenceSourceStatus == "active" }>Ativo</option>
+									<option value="rejected" selected?={ vm.Filter.EvidenceSourceStatus == "rejected" }>Desaprovado / Inativo</option>
+								</select>
+							</div>
+
+							<!-- Papel da Evidência -->
+							<div class="form-group">
+								<label for="filter-role" class="form-label">Papel da Evidência</label>
+								<select id="filter-role" name="role" class="form-control" onchange="this.form.submit()">
+									<option value="">Todos os papéis</option>
+									<option value="supports" selected?={ vm.Filter.Role == "supports" }>Sustenta (Suporte)</option>
+									<option value="contradicts" selected?={ vm.Filter.Role == "contradicts" }>Contesta (Defesa)</option>
+									<option value="contextualizes" selected?={ vm.Filter.Role == "contextualizes" }>Contextualiza</option>
+								</select>
+							</div>
+
+							<!-- Grau do Claim -->
+							<div class="form-group">
+								<label for="filter-grade" class="form-label">Grau Probatório</label>
+								<select id="filter-grade" name="grade" class="form-control" onchange="this.form.submit()">
+									<option value="">Todos os graus</option>
+									<option value="A" selected?={ vm.Filter.Grade == "A" }>Grau A</option>
+									<option value="B" selected?={ vm.Filter.Grade == "B" }>Grau B</option>
+									<option value="C" selected?={ vm.Filter.Grade == "C" }>Grau C</option>
+									<option value="D" selected?={ vm.Filter.Grade == "D" }>Grau D</option>
+									<option value="E" selected?={ vm.Filter.Grade == "E" }>Grau E</option>
+								</select>
+							</div>
+
+							<!-- Origem -->
+							<div class="form-group">
+								<label for="filter-origin" class="form-label">Origem do Claim</label>
+								<select id="filter-origin" name="origin" class="form-control" onchange="this.form.submit()">
+									<option value="">Todas as origens</option>
+									<option value="curated_seed" selected?={ vm.Filter.Origin == "curated_seed" }>Carga Curada</option>
+									<option value="openrouter" selected?={ vm.Filter.Origin == "openrouter" }>OpenRouter</option>
+									<option value="admin" selected?={ vm.Filter.Origin == "admin" }>Administrativo</option>
+								</select>
+							</div>
+
+							<!-- Período -->
+							<div class="form-group">
+								<label for="filter-period" class="form-label">Período de Criação</label>
+								<select id="filter-period" name="period" class="form-control" onchange="this.form.submit()">
+									<option value="all" selected?={ vm.Filter.Period == "" || vm.Filter.Period == "all" }>Todo o histórico</option>
+									<option value="7d" selected?={ vm.Filter.Period == "7d" }>Últimos 7 dias</option>
+									<option value="30d" selected?={ vm.Filter.Period == "30d" }>Últimos 30 dias</option>
+									<option value="90d" selected?={ vm.Filter.Period == "90d" }>Últimos 90 dias</option>
+								</select>
+							</div>
+						</div>
+					</form>
+				</section>
+
+				<!-- Cabeçalho de Resultados -->
+				<div class="results-header">
+					<span class="results-count">
+						<strong>{ fmt.Sprintf("%d", vm.Filter.TotalCount) }</strong> usos de evidência encontrados
+					</span>
+					if vm.Filter.TotalPages > 1 {
+						<span class="pagination-status">
+							Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }
+						</span>
+					}
+				</div>
+
+				<!-- Listagem de Evidências -->
+				if len(vm.EvidenceSources) == 0 {
+					<section class="card empty-state" aria-label="Nenhuma Evidência Encontrada">
+						<h3>Nenhum uso de evidência encontrado</h3>
+						<p>Nenhum registro corresponde aos filtros selecionados.</p>
+					</section>
+				} else {
+					<div class="admin-items-list" aria-label="Lista de Usos de Evidência">
+						for _, es := range vm.EvidenceSources {
+							<article class="card admin-item-card">
+								<div class="admin-item-header">
+									<div class="admin-item-title-group">
+										<div class="admin-item-title-row">
+											<span class="admin-subject-name">{ es.SubjectEntityName }</span>
+											if es.TargetEntityName != "" {
+												<span class="relation-target">&rarr; { es.TargetEntityName }</span>
+											} else if es.CaseName != "" {
+												<span class="relation-target">&rarr; Caso: { es.CaseName }</span>
+											}
+											if es.RelationshipType != "" {
+												<span class="category-badge">{ es.RelationshipType }</span>
+											}
+										</div>
+										<div class="admin-item-meta-row">
+											<span>Uso ID: <code>{ es.EvidenceSourceID }</code></span>
+											<span>Criado em: <strong>{ es.EvidenceSourceCreatedHuman }</strong></span>
+											<span>Origem: <strong>{ es.ClaimOriginHuman }</strong></span>
+										</div>
+									</div>
+
+									<div class="badge-cluster">
+										<span class={ "grade-badge", "grade-" + es.ClaimGrade }>
+											{ es.ClaimGradeHuman }
+										</span>
+										if es.Role == "supports" {
+											<span class="admin-status-badge status-published">{ es.RoleHuman }</span>
+										} else if es.Role == "contradicts" {
+											<span class="admin-status-badge status-quarantined">{ es.RoleHuman }</span>
+										} else {
+											<span class="admin-status-badge status-archived">{ es.RoleHuman }</span>
+										}
+
+										if es.EvidenceSourceStatus == "active" {
+											<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">Uso Ativo</span>
+										} else {
+											<span class="status-tag" style="background-color: #f8d7da; color: #842029;">Uso Desaprovado</span>
+										}
+
+										if es.ClaimStatus == "published" {
+											<span class="admin-status-badge status-published">Claim: Publicado</span>
+										} else if es.ClaimStatus == "quarantined" {
+											<span class="admin-status-badge status-quarantined">Claim: Quarentena</span>
+										} else if es.ClaimStatus == "rejected" {
+											<span class="admin-status-badge status-rejected">Claim: Rejeitado</span>
+										} else {
+											<span class="admin-status-badge status-archived">Claim: Arquivado</span>
+										}
+									</div>
+								</div>
+
+								<div class="admin-item-body">
+									<!-- Proposição do Claim -->
+									<div style="margin-bottom: 0.5rem;">
+										<span class="fact-label">Proposição da Alegação</span>
+										<p class="admin-item-proposition">{ es.ClaimProposition }</p>
+									</div>
+
+									<!-- Trecho Literal -->
+									if es.Excerpt != "" {
+										<div class="source-excerpt">
+											&ldquo;{ es.Excerpt }&rdquo;
+											if es.Locator != "" {
+												<span class="source-locator">{ es.Locator }</span>
+											}
+										</div>
+									}
+
+									<!-- Informações da Fonte -->
+									<div class="admin-item-source-info">
+										<span class="meta-item">
+											Fonte:
+											if es.SourceTitle != "" {
+												<strong>{ es.SourceTitle }</strong>
+											}
+											if es.SourcePublisher != "" {
+												<span>({ es.SourcePublisher })</span>
+											}
+										</span>
+										<span class="meta-item">
+											Acessibilidade: <strong>{ es.SourceAccessStatusHuman }</strong>
+										</span>
+										if es.SourceCanonicalURL.IsValid {
+											<a
+												href={ templ.SafeURL(es.SourceCanonicalURL.SafeURL) }
+												target="_blank"
+												rel="noopener noreferrer"
+												class="source-external-link"
+												title="Abrir URL original da fonte em nova aba"
+											>
+												Abrir fonte externa &UpperRightArrow;
+											</a>
+										} else if es.SourceCanonicalURL.RawURL != "" {
+											<span class="source-url-invalid" title="URL externa inválida ou insegura" style="font-size: 0.85rem; color: var(--color-text-muted);">
+												{ es.SourceCanonicalURL.RawURL } <em>(URL inválida ou insegura)</em>
+											</span>
+										}
+									</div>
+								</div>
+							</article>
+						}
+					</div>
+
+					<!-- Paginação com filtros preservados -->
+					if vm.Filter.TotalPages > 1 {
+						<nav class="pagination-nav" aria-label="Navegação entre páginas de evidências">
+							if vm.Filter.Page > 1 {
+								<a
+									href={ templ.SafeURL("/admin/evidencias" + vm.Filter.BuildQueryString(vm.Filter.Page-1)) }
+									class="btn-pagination"
+								>
+									&larr; Anterior
+								</a>
+							} else {
+								<span class="btn-pagination disabled">&larr; Anterior</span>
+							}
+
+							<span class="pagination-status">
+								Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }
+							</span>
+
+							if vm.Filter.Page < vm.Filter.TotalPages {
+								<a
+									href={ templ.SafeURL("/admin/evidencias" + vm.Filter.BuildQueryString(vm.Filter.Page+1)) }
+									class="btn-pagination"
+								>
+									Próxima &rarr;
+								</a>
+							} else {
+								<span class="btn-pagination disabled">Próxima &rarr;</span>
+							}
+						</nav>
+					}
+				}
+			</main>
+		</body>
+	</html>
+}

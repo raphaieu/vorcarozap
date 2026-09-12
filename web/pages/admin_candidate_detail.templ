@@ -1,0 +1,429 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminCandidateDetail(vm AdminCandidateDetailVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Inspeção detalhada de candidato de monitoramento no VorcaroZAP."/>
+			<title>{ "Inspeção: " + vm.Candidate.EntityName } — Admin — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("candidatos")
+			<main class="container">
+				<!-- Navegação de Retorno -->
+				<div class="breadcrumb-nav">
+					<a href="/admin/candidatos" class="back-link">&larr; Voltar para listagem de candidatos</a>
+				</div>
+
+				<!-- Cabeçalho do Candidato -->
+				<section class="card admin-detail-header-card" aria-label="Dados Principais do Candidato">
+					<div class="admin-detail-title-row">
+						<div>
+							<h1 class="page-title" style="margin-bottom: 0.25rem;">{ vm.Candidate.EntityName }</h1>
+							<p class="page-subtitle" style="margin: 0;">
+								ID: <code>{ vm.Candidate.ID }</code> &bull; Criado em: <strong>{ vm.Candidate.CreatedAtHuman }</strong>
+							</p>
+						</div>
+						<div class="badge-cluster">
+							<span class={ "grade-badge", "grade-" + vm.Candidate.SuggestedGrade }>
+								{ vm.Candidate.SuggestedGradeHuman }
+							</span>
+							if vm.Candidate.EditorialStatus == "quarantined" {
+								<span class="admin-status-badge status-quarantined">Quarentena (Não público)</span>
+							} else if vm.Candidate.EditorialStatus == "published" {
+								<span class="admin-status-badge status-published">Publicado</span>
+							} else if vm.Candidate.EditorialStatus == "rejected" {
+								<span class="admin-status-badge status-rejected">Rejeitado</span>
+							} else {
+								<span class="admin-status-badge status-archived">Arquivado</span>
+							}
+						</div>
+					</div>
+
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item">
+							<span class="fact-label">Confiança Técnica</span>
+							<span class="fact-value"><strong>{ vm.Candidate.ConfidenceHuman }</strong></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Fingerprint (v1)</span>
+							<span class="fact-value" style="font-family: monospace; font-size: 0.8rem; word-break: break-all;">
+								{ vm.Candidate.Fingerprint }
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Status de Duplicação</span>
+							<span class="fact-value">
+								if vm.Candidate.IsDuplicate {
+									<span class="admin-duplicate-badge">Duplicata ({ vm.Candidate.DuplicateReason })</span>
+									if vm.Candidate.CanonicalCandidateID != "" {
+										<div style="margin-top: 0.25rem;">
+											Canônico:
+											<a href={ templ.SafeURL("/admin/candidatos/" + vm.Candidate.CanonicalCandidateID) } class="dist-filter-link">
+												{ vm.Candidate.CanonicalCandidateID } &rarr;
+											</a>
+										</div>
+									}
+								} else {
+									<span>Canônico (Único)</span>
+								}
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<!-- Conteúdo Factual e Evidência Extraída -->
+				<section class="card" aria-label="Conteúdo Factual Extraído">
+					<h2 class="card-title">Conteúdo Factual & Fonte Citada</h2>
+
+					<div class="admin-detail-section">
+						<div class="form-group" style="margin-bottom: 1rem;">
+							<span class="fact-label">Proposição Extraída</span>
+							<p class="admin-item-proposition" style="font-size: 1.05rem; margin-top: 0.25rem;">
+								{ vm.Candidate.Proposition }
+							</p>
+						</div>
+
+						if vm.Candidate.Excerpt != "" {
+							<div class="form-group" style="margin-bottom: 1rem;">
+								<span class="fact-label">Trecho Literal (Citação)</span>
+								<div class="source-excerpt" style="margin-top: 0.25rem;">
+									&ldquo;{ vm.Candidate.Excerpt }&rdquo;
+									if vm.Candidate.Locator != "" {
+										<span class="source-locator">Localizador: { vm.Candidate.Locator }</span>
+									}
+								</div>
+							</div>
+						}
+
+						if vm.Candidate.ContextLimits != "" {
+							<div class="form-group" style="margin-bottom: 1rem;">
+								<span class="fact-label">Limites de Contexto Declarados</span>
+								<div class="claim-limits-box" style="margin-top: 0.25rem;">
+									{ vm.Candidate.ContextLimits }
+								</div>
+							</div>
+						}
+
+						<div class="admin-detail-facts-grid" style="margin-top: 1rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+							<div class="fact-item">
+								<span class="fact-label">Título da Fonte</span>
+								<span class="fact-value">{ vm.Candidate.SourceTitle }</span>
+							</div>
+							<div class="fact-item">
+								<span class="fact-label">Veículo ou Autor</span>
+								<span class="fact-value">{ vm.Candidate.PublisherOrAuthor }</span>
+							</div>
+							<div class="fact-item">
+								<span class="fact-label">Data Publicada</span>
+								<span class="fact-value">
+									if vm.Candidate.PublishedAtHuman != "" {
+										{ vm.Candidate.PublishedAtHuman }
+									} else {
+										<span style="color: var(--color-text-muted);">Não informada</span>
+									}
+								</span>
+							</div>
+							<div class="fact-item fact-full">
+								<span class="fact-label">URL Canônica da Fonte</span>
+								<span class="fact-value">
+									if vm.Candidate.CanonicalURL.IsValid {
+										<a
+											href={ templ.SafeURL(vm.Candidate.CanonicalURL.SafeURL) }
+											target="_blank"
+											rel="noopener noreferrer"
+											class="source-external-link"
+											style="word-break: break-all;"
+										>
+											{ vm.Candidate.CanonicalURL.SafeURL } &UpperRightArrow;
+										</a>
+									} else if vm.Candidate.CanonicalURL.RawURL != "" {
+										<span class="source-url-invalid" title="URL externa inválida ou insegura" style="word-break: break-all; color: var(--color-text-muted);">
+											{ vm.Candidate.CanonicalURL.RawURL } <em>(URL inválida ou insegura)</em>
+										</span>
+									} else {
+										<span style="color: var(--color-text-muted);">Não informada</span>
+									}
+								</span>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- Resolução Relacional e Materialização Editorial -->
+				<section class="card" aria-label="Resolução Relacional">
+					<h2 class="card-title">Resolução Relacional & Editorial</h2>
+
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item">
+							<span class="fact-label">Sujeito Resolvido</span>
+							<span class="fact-value">
+								if vm.ResolvedSubjectName != "" {
+									<strong>{ vm.ResolvedSubjectName }</strong>
+									<span style="font-size: 0.8rem; color: var(--color-text-muted); display: block;">slug: { vm.ResolvedSubjectSlug }</span>
+								} else {
+									<span style="color: var(--color-notice-text);">Não resolvido (homônimo ou ausente)</span>
+								}
+							</span>
+						</div>
+
+						<div class="fact-item">
+							<span class="fact-label">Alvo / Caso Resolvido</span>
+							<span class="fact-value">
+								if vm.ResolvedTargetName != "" {
+									<strong>{ vm.ResolvedTargetName }</strong>
+									<span style="font-size: 0.8rem; color: var(--color-text-muted); display: block;">Entidade-alvo: { vm.ResolvedTargetSlug }</span>
+								} else if vm.ResolvedCaseName != "" {
+									<strong>{ vm.ResolvedCaseName }</strong>
+									<span style="font-size: 0.8rem; color: var(--color-text-muted); display: block;">Caso: { vm.ResolvedCaseSlug }</span>
+								} else {
+									<span style="color: var(--color-text-muted);">Sem alvo ou caso resolvido</span>
+								}
+							</span>
+						</div>
+
+						<div class="fact-item">
+							<span class="fact-label">Natureza da Relação</span>
+							<span class="fact-value">
+								if vm.Candidate.RelationshipType != "" {
+									<span class="category-badge">{ vm.Candidate.RelationshipType }</span>
+								} else {
+									<span style="color: var(--color-text-muted);">Não informada</span>
+								}
+							</span>
+						</div>
+
+						<div class="fact-item">
+							<span class="fact-label">Alegação Publicada (Claim)</span>
+							<span class="fact-value">
+								if vm.PublishedClaimID != "" {
+									<span class="admin-status-badge status-published">ID: { vm.PublishedClaimID }</span>
+									<span style="font-size: 0.8rem; color: var(--color-text-muted); display: block;">
+										Status: { vm.PublishedClaimStatusHuman } &bull; Disposição: { vm.PublishedClaimDispHuman }
+									</span>
+								} else {
+									<span style="color: var(--color-text-muted);">Nenhum claim publicado associado</span>
+								}
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<!-- Avaliação dos Gates e Política Go -->
+				<section class="card" aria-label="Avaliação dos Gates">
+					<h2 class="card-title">Auditoria dos Gates & Decisão da Política Go</h2>
+
+					<div class="admin-gates-detail-grid">
+						<!-- Gate Estrutural -->
+						<div class="admin-gate-card">
+							<div class="admin-gate-header">
+								<span class="fact-label">1. Gate Estrutural (Go)</span>
+								if vm.Candidate.StructuralGatePassed.Valid && vm.Candidate.StructuralGatePassed.Int64 == 1 {
+									<span class="gate-badge gate-pass">Aprovado</span>
+								} else if vm.Candidate.StructuralGatePassed.Valid && vm.Candidate.StructuralGatePassed.Int64 == 0 {
+									<span class="gate-badge gate-fail">Reprovado</span>
+								} else {
+									<span class="gate-badge gate-pending">Pendente</span>
+								}
+							</div>
+							if len(vm.StructuralGateReasons) > 0 {
+								<ul class="admin-reasons-list">
+									for _, r := range vm.StructuralGateReasons {
+										<li>{ r }</li>
+									}
+								</ul>
+							} else {
+								<p class="admin-reasons-empty">Sem motivos registrados.</p>
+							}
+						</div>
+
+						<!-- Gate Semântico -->
+						<div class="admin-gate-card">
+							<div class="admin-gate-header">
+								<span class="fact-label">2. Gate Semântico (OpenRouter)</span>
+								if vm.Candidate.SemanticGatePassed.Valid && vm.Candidate.SemanticGatePassed.Int64 == 1 {
+									<span class="gate-badge gate-pass">Aprovado</span>
+								} else if vm.Candidate.SemanticGatePassed.Valid && vm.Candidate.SemanticGatePassed.Int64 == 0 {
+									<span class="gate-badge gate-fail">Reprovado</span>
+								} else {
+									<span class="gate-badge gate-pending">Pendente</span>
+								}
+							</div>
+							if len(vm.SemanticGateReasons) > 0 {
+								<ul class="admin-reasons-list">
+									for _, r := range vm.SemanticGateReasons {
+										<li>{ r }</li>
+									}
+								</ul>
+							} else {
+								<p class="admin-reasons-empty">Sem motivos registrados.</p>
+							}
+						</div>
+
+						<!-- Política Go -->
+						<div class="admin-gate-card">
+							<div class="admin-gate-header">
+								<span class="fact-label">3. Deliberação da Política Go</span>
+								<span class="status-tag">
+									if vm.Candidate.PolicyAction != "" {
+										{ vm.Candidate.PolicyActionHuman }
+									} else {
+										Indefinida
+									}
+								</span>
+							</div>
+							if len(vm.PolicyReasons) > 0 {
+								<ul class="admin-reasons-list">
+									for _, r := range vm.PolicyReasons {
+										<li>{ r }</li>
+									}
+								</ul>
+							} else {
+								<p class="admin-reasons-empty">Sem motivos registrados.</p>
+							}
+						</div>
+					</div>
+				</section>
+
+				<!-- Histórico de Avaliações Semânticas -->
+				<section class="card" aria-label="Histórico de Avaliações Semânticas">
+					<div class="admin-summary-header" style="margin-bottom: 0.75rem;">
+						<h2 class="card-title" style="margin: 0;">Histórico de Avaliações Semânticas (Semantic Evaluations)</h2>
+						<span class="status-tag">Auditabilidade Estruturada</span>
+					</div>
+
+					<p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1rem;">
+						Exibição estritamente dos critérios booleanos e incertezas estruturadas. Payloads brutos (<code>raw_response</code>) e telemetria operacional são omitidos por integridade e separação de escopo.
+					</p>
+
+					if len(vm.Evaluations) == 0 {
+						<p class="admin-reasons-empty" style="padding: 1.5rem; text-align: center;">
+							Nenhuma avaliação semântica executada para este candidato.
+						</p>
+					} else {
+						<div class="admin-evaluations-list">
+							for i, ev := range vm.Evaluations {
+								<div class="admin-eval-card">
+									<div class="admin-eval-header">
+										<div>
+											<strong>Avaliação #{ fmt.Sprintf("%d", i+1) }</strong>
+											<span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 0.5rem;">
+												Modelo: <code>{ ev.Model }</code> ({ ev.Provider }) &bull; Data: { ev.CreatedAtHuman }
+											</span>
+										</div>
+										<span class="status-tag">
+											Recomendação: <strong>{ ev.RecommendedActionHuman }</strong>
+										</span>
+									</div>
+
+									<!-- 6 Critérios Booleanos -->
+									<div class="admin-criteria-grid">
+										<div class="criteria-item">
+											<span class="criteria-label">Correspondência de Identidade</span>
+											if ev.IdentityMatch {
+												<span class="criteria-badge criteria-pass">Sim (Correta)</span>
+											} else {
+												<span class="criteria-badge criteria-fail">Não (Divergente)</span>
+											}
+										</div>
+										<div class="criteria-item">
+											<span class="criteria-label">Suporte pelo Trecho</span>
+											if ev.ClaimSupported {
+												<span class="criteria-badge criteria-pass">Sim (Suportado)</span>
+											} else {
+												<span class="criteria-badge criteria-fail">Não (Sem suporte)</span>
+											}
+										</div>
+										<div class="criteria-item">
+											<span class="criteria-label">Extrapolação da Fonte</span>
+											if ev.ClaimOverstatesSource {
+												<span class="criteria-badge criteria-fail">Sim (Extrapola)</span>
+											} else {
+												<span class="criteria-badge criteria-pass">Não (Compatível)</span>
+											}
+										</div>
+										<div class="criteria-item">
+											<span class="criteria-label">Atribuição Explícita</span>
+											if ev.AttributionExplicit {
+												<span class="criteria-badge criteria-pass">Sim (Explícita)</span>
+											} else {
+												<span class="criteria-badge criteria-fail">Não (Imprecisa)</span>
+											}
+										</div>
+										<div class="criteria-item">
+											<span class="criteria-label">Compatibilidade do Grau</span>
+											if ev.GradeCompatible {
+												<span class="criteria-badge criteria-pass">Sim (Compatível)</span>
+											} else {
+												<span class="criteria-badge criteria-fail">Não (Incompatível)</span>
+											}
+										</div>
+										<div class="criteria-item">
+											<span class="criteria-label">Inferência Ilícita / Culpa</span>
+											if ev.ContainsIllicitInference {
+												<span class="criteria-badge criteria-fail">Sim (Inferência indevida)</span>
+											} else {
+												<span class="criteria-badge criteria-pass">Não (Neutro)</span>
+											}
+										</div>
+									</div>
+
+									<!-- Incertezas Declaradas -->
+									if len(ev.Uncertainties) > 0 {
+										<div style="margin-top: 0.75rem;">
+											<span class="fact-label" style="color: #664d03;">Incertezas Declaradas pelo Modelo:</span>
+											<ul class="admin-reasons-list" style="margin-top: 0.25rem;">
+												for _, u := range ev.Uncertainties {
+													<li>{ u }</li>
+												}
+											</ul>
+										</div>
+									}
+								</div>
+							}
+						</div>
+					}
+				</section>
+
+				<!-- Referência da Execução (Monitoring Run) -->
+				<section class="card" aria-label="Referência da Execução">
+					<h2 class="card-title">Execução de Descoberta (Monitoring Run)</h2>
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item">
+							<span class="fact-label">ID da Run</span>
+							<span class="fact-value"><code>{ vm.Candidate.MonitoringRunID }</code></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Consulta Executada</span>
+							<span class="fact-value">{ vm.RunQuery }</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Modelo de Descoberta</span>
+							<span class="fact-value"><code>{ vm.RunDiscoveryModel }</code> ({ vm.RunDiscoveryProvider })</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Modelo de Verificação</span>
+							<span class="fact-value"><code>{ vm.RunVerificationModel }</code> ({ vm.RunVerificationProvider })</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Status Operacional da Run</span>
+							<span class="fact-value"><span class="status-tag">{ vm.RunStatus }</span></span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Data da Execução</span>
+							<span class="fact-value">{ vm.RunCreatedAtHuman }</span>
+						</div>
+					</div>
+				</section>
+			</main>
+		</body>
+	</html>
+}

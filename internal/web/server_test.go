@@ -1033,7 +1033,7 @@ func TestAdminDisabled_Returns404(t *testing.T) {
 	srv := setupTestServer(t)
 
 	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
-	paths := []string{"/admin", "/admin/", "/admin/inexistente"}
+	paths := []string{"/admin", "/admin/", "/admin/candidatos", "/admin/candidatos/c-1", "/admin/evidencias", "/admin/fontes", "/admin/inexistente"}
 
 	for _, method := range methods {
 		for _, p := range paths {
@@ -1066,7 +1066,7 @@ func TestAdminEnabled_BasicAuth_Unauthenticated_AllMethodsAndPaths(t *testing.T)
 	srv, _ := setupAdminTestServer(t, "admin")
 
 	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
-	paths := []string{"/admin", "/admin/", "/admin/rota-inexistente"}
+	paths := []string{"/admin", "/admin/", "/admin/candidatos", "/admin/candidatos/c-1", "/admin/evidencias", "/admin/fontes", "/admin/rota-inexistente"}
 
 	for _, method := range methods {
 		for _, p := range paths {
@@ -1202,14 +1202,14 @@ func TestAdminEnabled_BasicAuth_ValidCredentials(t *testing.T) {
 	}
 
 	body := wAdmin.Body.String()
-	if !strings.Contains(body, "Painel Administrativo") {
-		t.Errorf("HTML deve conter 'Painel Administrativo', obtido: %s", body)
+	if !strings.Contains(body, "Dashboard Administrativo") {
+		t.Errorf("HTML deve conter 'Dashboard Administrativo', obtido: %s", body)
 	}
 	if !strings.Contains(body, "Autenticado") {
 		t.Errorf("HTML deve conter 'Autenticado', obtido: %s", body)
 	}
-	if !strings.Contains(body, "VZ-015") || !strings.Contains(body, "VZ-016") {
-		t.Errorf("HTML deve mencionar as fases VZ-015 e VZ-016, obtido: %s", body)
+	if !strings.Contains(body, "VZ-015") {
+		t.Errorf("HTML deve mencionar a fase VZ-015, obtido: %s", body)
 	}
 
 	// Garante que nenhum hash ou dado sensível aparece no corpo
@@ -1374,5 +1374,723 @@ func TestAdminEnabled_NoBypass(t *testing.T) {
 				t.Errorf("WWW-Authenticate esperado em tentativa de bypass: obtido %q", auth)
 			}
 		})
+	}
+}
+
+func setupAdminTestServerWithData(t *testing.T, user string) (*http.Server, *sql.DB) {
+	t.Helper()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "web_admin_data_test.db")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha nas migrations: %v", err)
+	}
+
+	// Popula banco com dados administrativos de teste
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO cases (id, name, slug, description)
+		VALUES ('case-1', 'Caso Banco Master', 'caso-banco-master', 'Investigação e apurações');
+
+		INSERT INTO entities (id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, category, reach)
+		VALUES
+			('ent-pub-1', 'person', 'Alice Santos & Cia', 'alice santos & cia', 'alice-santos', 'Senadora', 'Resumo Alice', 5, 'Figura pública', 'Politica', 'Nacional'),
+			('ent-quar-1', 'person', 'Carlos Quarentena', 'carlos quarentena', 'carlos-quarentena', 'Assessor', 'Resumo Carlos', 2, 'Assessor', 'Outros', 'Local');
+
+		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary, context_limits)
+		VALUES
+			('rel-pub-1', 'ent-pub-1', 'case-1', 'contato', 'Registro de contato', 'Sem limites adicionais'),
+			('rel-quar-1', 'ent-quar-1', 'case-1', 'mencao', 'Menção indireta', '');
+
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons)
+		VALUES
+			('clm-pub-1', 'rel-pub-1', 'Alice manteve conversas documentadas', '', 'curated_seed', 'A', 'supports_link', 1, 'published', 'contact_confirmed', '[]'),
+			('clm-quar-1', 'rel-quar-1', 'Carlos citado em relatório preliminar', '', 'openrouter', 'C', 'possible_link', 0, 'quarantined', 'quarantined', '["NEEDS_REVIEW"]'),
+			('clm-rej-1', 'rel-quar-1', 'Carlos teria participado de reunião', '', 'openrouter', 'E', 'possible_link', 0, 'rejected', 'quarantined', '["REJECTED_GRADE_E"]');
+
+		INSERT INTO evidence (id, claim_id, summary, evidence_type)
+		VALUES
+			('ev-pub-1', 'clm-pub-1', 'Evidência documental de contato', 'document'),
+			('ev-quar-1', 'clm-quar-1', 'Menção em artigo', 'mention'),
+			('ev-rej-1', 'clm-rej-1', 'Postagem de rede', 'social_media');
+
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status, http_status, normalized_error_code, source_access_checked_at)
+		VALUES
+			('src-1', 'Folha de S.Paulo', 'Redação Folha', 'https://folha.com.br/artigo1', 'https://folha.com.br/artigo1', 'article', 'reachable', 200, '', '2026-09-10 12:00:00'),
+			('src-2', 'Site Indisponível', 'Autor Desconhecido', 'https://indisponivel.com/artigo', 'https://indisponivel.com/artigo', 'blog', 'unreachable', 503, 'ERR_HTTP_503', '2026-09-09 10:00:00'),
+			('src-3', 'Fonte Não Verificada', 'Assessoria', 'https://naoverificada.com.br/doc', 'https://naoverificada.com.br/doc', 'official_statement', 'not_checked', NULL, '', NULL);
+
+		INSERT INTO evidence_sources (id, evidence_id, source_id, role, excerpt, locator, status)
+		VALUES
+			('es-1', 'ev-pub-1', 'src-1', 'supports', 'Trecho confirmando o encontro entre as partes', 'Página 4', 'active'),
+			('es-2', 'ev-pub-1', 'src-2', 'contradicts', 'Nota oficial negando que tenha ocorrido reunião', 'Parágrafo 2', 'active'),
+			('es-3', 'ev-quar-1', 'src-1', 'supports', 'Trecho citando Carlos de passagem', 'Pág 10', 'active'),
+			('es-4', 'ev-rej-1', 'src-3', 'supports', 'Trecho rejeitado', '', 'rejected');
+
+		INSERT INTO monitoring_runs (id, status, query, discovery_model, created_at)
+		VALUES
+			('run-1', 'completed', 'Alice Santos', 'openai/gpt-4o', '2026-09-10 10:00:00'),
+			('run-2', 'running', 'Banco Master', 'openai/gpt-4o', '2026-09-11 08:00:00');
+
+		INSERT INTO monitoring_candidates (
+			id, monitoring_run_id, fingerprint, entity_name, normalized_entity_name,
+			case_name, normalized_case_name, proposition, suggested_grade, source_url,
+			canonical_url, excerpt, technical_confidence, editorial_status, is_duplicate,
+			duplicate_reason, canonical_candidate_id, resolved_subject_entity_id, resolved_case_id,
+			published_claim_id, structural_gate_passed, structural_gate_reasons, semantic_gate_passed,
+			semantic_gate_reasons, created_at, updated_at
+		) VALUES
+			('cand-1', 'run-1', 'v1:fp1', 'Alice Santos', 'alice santos', 'Caso Banco Master', 'caso banco master', 'Alice manteve contato com diretoria', 'A', 'https://folha.com.br/artigo1', 'https://folha.com.br/artigo1', 'Trecho extraído comprovando contato de Alice', 0.95, 'published', 0, '', NULL, 'ent-pub-1', 'case-1', 'clm-pub-1', 1, '[]', 1, '[]', '2026-09-10 10:01:00', '2026-09-10 10:01:00'),
+			('cand-2', 'run-1', 'v1:fp2', 'Carlos Quarentena', 'carlos quarentena', 'Caso Banco Master', 'caso banco master', 'Carlos citado em relatório preliminar', 'C', 'https://folha.com.br/artigo1', 'https://folha.com.br/artigo1', 'Trecho extraído sobre Carlos', 0.70, 'quarantined', 0, '', NULL, 'ent-quar-1', 'case-1', NULL, 1, '[]', 0, '["UNCERTAIN_LINK"]', '2026-09-10 10:02:00', '2026-09-10 10:02:00'),
+			('cand-3', 'run-2', 'v1:fp1', 'Alice Santos Duplicate', 'alice santos duplicate', 'Caso Banco Master', 'caso banco master', 'Alice manteve contato com diretoria', 'A', 'https://folha.com.br/artigo1', 'https://folha.com.br/artigo1', 'Mesmo trecho da Alice em outro run', 0.95, 'quarantined', 1, 'same_run_duplicate', 'cand-1', 'ent-pub-1', 'case-1', NULL, 1, '[]', 1, '[]', '2026-09-11 08:01:00', '2026-09-11 08:01:00');
+
+		INSERT INTO semantic_evaluations (
+			id, monitoring_candidate_id, provider, model, identity_match, claim_supported,
+			claim_overstates_source, attribution_explicit, grade_compatible, contains_illicit_inference,
+			uncertainties, recommended_action, raw_response, prompt_tokens, completion_tokens, total_tokens, cost_microusd, cost, created_at
+		) VALUES
+			('semeval-1', 'cand-1', 'openrouter', 'openai/gpt-4o', 1, 1, 0, 1, 1, 0, '[]', 'publish', '{"secret_prompt":"DO_NOT_LEAK_RAW_PROMPT_KEY_1"}', 850, 120, 970, 4850, 0.00485, '2026-09-10 10:01:30'),
+			('semeval-2', 'cand-2', 'openrouter', 'openai/gpt-4o', 1, 0, 1, 0, 0, 0, '["UNCERTAIN_LINK"]', 'quarantine', '{"secret_prompt":"DO_NOT_LEAK_RAW_PROMPT_KEY_2"}', 400, 80, 480, 2400, 0.00240, '2026-09-10 10:02:30');
+	`)
+	if err != nil {
+		t.Fatalf("falha ao popular dados administrativos de teste: %v", err)
+	}
+
+	passwordHash := getTestAdminHashCost12(t)
+
+	cfg := &config.Config{
+		Port:              8080,
+		Env:               "test",
+		DBPath:            dbPath,
+		PublicDataCutoff:  "2026-09-03",
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		AdminUser:         user,
+		AdminPasswordHash: passwordHash,
+	}
+
+	srv, err := web.NewServer(cfg, db)
+	if err != nil {
+		t.Fatalf("falha ao criar servidor web com admin e dados: %v", err)
+	}
+
+	return srv, db
+}
+
+func TestAdminDashboard_AuthenticatedData(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtido %d", w.Code)
+	}
+
+	body := w.Body.String()
+
+	// Valida seções principais e contagens operacionais
+	if !strings.Contains(body, "Dashboard Administrativo") {
+		t.Errorf("título do dashboard não encontrado")
+	}
+	if !strings.Contains(body, "Candidatos de Monitoramento") || !strings.Contains(body, "Usos de Evidência") || !strings.Contains(body, "Fontes Documentais") {
+		t.Errorf("seções de contagem operacional não encontradas")
+	}
+
+	// Valida presença de links para as subrotas
+	if !strings.Contains(body, `href="/admin/candidatos"`) {
+		t.Errorf("link para /admin/candidatos não encontrado")
+	}
+	if !strings.Contains(body, `href="/admin/evidencias"`) {
+		t.Errorf("link para /admin/evidencias não encontrado")
+	}
+	if !strings.Contains(body, `href="/admin/fontes"`) {
+		t.Errorf("link para /admin/fontes não encontrado")
+	}
+
+	// Headers de segurança e cache
+	if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control: esperado 'no-store', obtido %q", cc)
+	}
+	if vary := w.Header().Get("Vary"); vary != "Authorization" {
+		t.Errorf("Vary: esperado 'Authorization', obtido %q", vary)
+	}
+}
+
+func TestAdminCandidates_ListingAndFiltering(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. Listagem completa sem filtros
+	reqAll := httptest.NewRequest(http.MethodGet, "/admin/candidatos", nil)
+	reqAll.Header.Set("Authorization", authHeader)
+	wAll := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAll, reqAll)
+
+	if wAll.Code != http.StatusOK {
+		t.Fatalf("listagem geral: esperado 200, obtido %d", wAll.Code)
+	}
+	bodyAll := wAll.Body.String()
+	if !strings.Contains(bodyAll, "cand-1") || !strings.Contains(bodyAll, "cand-2") || !strings.Contains(bodyAll, "cand-3") {
+		t.Errorf("todos os candidatos esperados na listagem geral")
+	}
+	if !strings.Contains(bodyAll, "Duplicata de cand-1") {
+		t.Errorf("indicação de duplicata com link para o canônico não encontrada no cand-3")
+	}
+
+	// 2. Filtro por status=quarantined
+	reqQuar := httptest.NewRequest(http.MethodGet, "/admin/candidatos?status=quarantined", nil)
+	reqQuar.Header.Set("Authorization", authHeader)
+	wQuar := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wQuar, reqQuar)
+
+	if wQuar.Code != http.StatusOK {
+		t.Fatalf("filtro status=quarantined: esperado 200, obtido %d", wQuar.Code)
+	}
+	bodyQuar := wQuar.Body.String()
+	if !strings.Contains(bodyQuar, "cand-2") {
+		t.Errorf("cand-2 esperado no filtro quarantined")
+	}
+	if strings.Contains(bodyQuar, "Trecho extraído comprovando contato de Alice") {
+		t.Errorf("cand-1 (publicado) não deveria aparecer na listagem do filtro quarantined")
+	}
+
+	// 3. Filtro por grade=A
+	reqGradeA := httptest.NewRequest(http.MethodGet, "/admin/candidatos?grade=A", nil)
+	reqGradeA.Header.Set("Authorization", authHeader)
+	wGradeA := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wGradeA, reqGradeA)
+
+	if wGradeA.Code != http.StatusOK {
+		t.Fatalf("filtro grade=A: esperado 200, obtido %d", wGradeA.Code)
+	}
+	bodyGradeA := wGradeA.Body.String()
+	if !strings.Contains(bodyGradeA, "cand-1") || !strings.Contains(bodyGradeA, "cand-3") {
+		t.Errorf("cand-1 e cand-3 esperados no filtro grade=A")
+	}
+	if strings.Contains(bodyGradeA, "cand-2") {
+		t.Errorf("cand-2 (grau C) não deveria aparecer no filtro grade=A")
+	}
+
+	// 4. Busca por termo de texto
+	reqSearch := httptest.NewRequest(http.MethodGet, "/admin/candidatos?q=Carlos", nil)
+	reqSearch.Header.Set("Authorization", authHeader)
+	wSearch := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wSearch, reqSearch)
+
+	if wSearch.Code != http.StatusOK {
+		t.Fatalf("busca q=Carlos: esperado 200, obtido %d", wSearch.Code)
+	}
+	bodySearch := wSearch.Body.String()
+	if !strings.Contains(bodySearch, "cand-2") {
+		t.Errorf("cand-2 esperado na busca por Carlos")
+	}
+	if strings.Contains(bodySearch, "Trecho extraído comprovando contato de Alice") {
+		t.Errorf("cand-1 não deveria aparecer na busca por Carlos")
+	}
+}
+
+func TestAdminCandidateDetail_Inspection(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. Detalhe de cand-1 existente
+	req := httptest.NewRequest(http.MethodGet, "/admin/candidatos/cand-1", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("detalhe cand-1: esperado 200, obtido %d", w.Code)
+	}
+
+	body := w.Body.String()
+
+	// Valida campos extraídos e resolução
+	if !strings.Contains(body, "Alice Santos") {
+		t.Errorf("nome extraído não encontrado")
+	}
+	if !strings.Contains(body, "Caso Banco Master") {
+		t.Errorf("caso não encontrado")
+	}
+	if !strings.Contains(body, "https://folha.com.br/artigo1") {
+		t.Errorf("url da fonte não encontrada")
+	}
+	if !strings.Contains(body, "Grau A") {
+		t.Errorf("grau proposto A não encontrado")
+	}
+	if !strings.Contains(body, "clm-pub-1") {
+		t.Errorf("link para claim publicado não encontrado")
+	}
+
+	// Valida histórico de avaliação semântica
+	if !strings.Contains(body, "openai/gpt-4o") || !strings.Contains(body, "openrouter") {
+		t.Errorf("avaliação semântica não encontrada nos detalhes")
+	}
+	if !strings.Contains(body, "Correspondência de Identidade") {
+		t.Errorf("critérios de avaliação semântica não encontrados")
+	}
+
+	// TESTE DE BLINDAGEM: raw_response nunca deve aparecer no HTML
+	if strings.Contains(body, "DO_NOT_LEAK_RAW_PROMPT_KEY_1") || strings.Contains(body, "secret_prompt") {
+		t.Errorf("vazamento de segurança: payload bruto raw_response exposto no corpo da resposta")
+	}
+
+	// TESTE DE ESCOPO EDITORIAL / TELEMETRIA: Tokens e custo não devem aparecer no HTML do detalhe VZ-015
+	forbidWords := []string{
+		"Tokens Prompt",
+		"Tokens Resposta",
+		"Tokens Totais",
+		"Custo",
+		"µUSD",
+		"&mu;USD",
+		"micro-USD",
+		"cost_microusd",
+		"850",
+		"970",
+		"4850",
+	}
+	for _, word := range forbidWords {
+		if strings.Contains(body, word) {
+			t.Errorf("violação de escopo VZ-015: termo ou valor de telemetria operacional %q encontrado no HTML", word)
+		}
+	}
+
+	// 2. Detalhe de cand-3 (duplicata)
+	reqDup := httptest.NewRequest(http.MethodGet, "/admin/candidatos/cand-3", nil)
+	reqDup.Header.Set("Authorization", authHeader)
+	wDup := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wDup, reqDup)
+
+	if wDup.Code != http.StatusOK {
+		t.Fatalf("detalhe cand-3: esperado 200, obtido %d", wDup.Code)
+	}
+	bodyDup := wDup.Body.String()
+	if !strings.Contains(bodyDup, "cand-1") || !strings.Contains(bodyDup, "Duplicata") {
+		t.Errorf("referência ao candidato canônico não encontrada no detalhe da duplicata")
+	}
+
+	// 3. Candidato inexistente -> 404
+	req404 := httptest.NewRequest(http.MethodGet, "/admin/candidatos/candidato-fantasma", nil)
+	req404.Header.Set("Authorization", authHeader)
+	w404 := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w404, req404)
+
+	if w404.Code != http.StatusNotFound {
+		t.Errorf("candidato inexistente: esperado 404, obtido %d", w404.Code)
+	}
+	if cc := w404.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control em 404: esperado 'no-store', obtido %q", cc)
+	}
+}
+
+func TestAdminEvidences_ListingAndFiltering(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. Listagem geral e validação do aviso editorial
+	reqAll := httptest.NewRequest(http.MethodGet, "/admin/evidencias", nil)
+	reqAll.Header.Set("Authorization", authHeader)
+	wAll := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAll, reqAll)
+
+	if wAll.Code != http.StatusOK {
+		t.Fatalf("listagem geral de evidências: esperado 200, obtido %d", wAll.Code)
+	}
+
+	bodyAll := wAll.Body.String()
+	// Valida aviso editorial obrigatório de moderação no evidence_source
+	if !strings.Contains(bodyAll, "Unidade de Moderação") ||
+		!strings.Contains(bodyAll, "jamais rejeita uma fonte documental globalmente") {
+		t.Errorf("aviso de escopo de moderação em evidence_source não encontrado")
+	}
+
+	if !strings.Contains(bodyAll, "es-1") || !strings.Contains(bodyAll, "es-2") || !strings.Contains(bodyAll, "es-3") || !strings.Contains(bodyAll, "es-4") {
+		t.Errorf("todos os evidence_sources esperados na listagem geral")
+	}
+
+	// 2. Filtro por papel (role=contradicts)
+	reqContra := httptest.NewRequest(http.MethodGet, "/admin/evidencias?role=contradicts", nil)
+	reqContra.Header.Set("Authorization", authHeader)
+	wContra := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wContra, reqContra)
+
+	if wContra.Code != http.StatusOK {
+		t.Fatalf("filtro role=contradicts: esperado 200, obtido %d", wContra.Code)
+	}
+	bodyContra := wContra.Body.String()
+	if !strings.Contains(bodyContra, "es-2") {
+		t.Errorf("es-2 esperado no filtro contradicts")
+	}
+	if strings.Contains(bodyContra, "es-1") {
+		t.Errorf("es-1 (supports) não deveria aparecer no filtro contradicts")
+	}
+
+	// 3. Filtro por status do claim (claim_status=quarantined)
+	reqClaimQuar := httptest.NewRequest(http.MethodGet, "/admin/evidencias?claim_status=quarantined", nil)
+	reqClaimQuar.Header.Set("Authorization", authHeader)
+	wClaimQuar := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wClaimQuar, reqClaimQuar)
+
+	if wClaimQuar.Code != http.StatusOK {
+		t.Fatalf("filtro claim_status=quarantined: esperado 200, obtido %d", wClaimQuar.Code)
+	}
+	bodyClaimQuar := wClaimQuar.Body.String()
+	if !strings.Contains(bodyClaimQuar, "es-3") {
+		t.Errorf("es-3 esperado no filtro claim_status=quarantined")
+	}
+	if strings.Contains(bodyClaimQuar, "es-1") {
+		t.Errorf("es-1 (published) não deveria aparecer no filtro claim_status=quarantined")
+	}
+
+	// 4. Filtro por status da evidência (es_status=rejected)
+	reqEsRej := httptest.NewRequest(http.MethodGet, "/admin/evidencias?es_status=rejected", nil)
+	reqEsRej.Header.Set("Authorization", authHeader)
+	wEsRej := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wEsRej, reqEsRej)
+
+	if wEsRej.Code != http.StatusOK {
+		t.Fatalf("filtro es_status=rejected: esperado 200, obtido %d", wEsRej.Code)
+	}
+	bodyEsRej := wEsRej.Body.String()
+	if !strings.Contains(bodyEsRej, "es-4") {
+		t.Errorf("es-4 esperado no filtro es_status=rejected")
+	}
+	if strings.Contains(bodyEsRej, "es-1") {
+		t.Errorf("es-1 (active) não deveria aparecer no filtro es_status=rejected")
+	}
+}
+
+func TestAdminSources_ListingAndFiltering(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. Listagem geral
+	reqAll := httptest.NewRequest(http.MethodGet, "/admin/fontes", nil)
+	reqAll.Header.Set("Authorization", authHeader)
+	wAll := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAll, reqAll)
+
+	if wAll.Code != http.StatusOK {
+		t.Fatalf("listagem de fontes: esperado 200, obtido %d", wAll.Code)
+	}
+
+	bodyAll := wAll.Body.String()
+	if !strings.Contains(bodyAll, "Folha de S.Paulo") || !strings.Contains(bodyAll, "Site Indisponível") || !strings.Contains(bodyAll, "Fonte Não Verificada") {
+		t.Errorf("todas as fontes esperadas na listagem")
+	}
+
+	// Valida segurança nos links externos: target="_blank" e rel="noopener noreferrer"
+	if !strings.Contains(bodyAll, `target="_blank"`) || !strings.Contains(bodyAll, `rel="noopener noreferrer"`) {
+		t.Errorf("links externos de fontes devem conter target='_blank' e rel='noopener noreferrer'")
+	}
+
+	// 2. Filtro por status de acessibilidade (access_status=unreachable)
+	reqUnreach := httptest.NewRequest(http.MethodGet, "/admin/fontes?access_status=unreachable", nil)
+	reqUnreach.Header.Set("Authorization", authHeader)
+	wUnreach := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wUnreach, reqUnreach)
+
+	if wUnreach.Code != http.StatusOK {
+		t.Fatalf("filtro access_status=unreachable: esperado 200, obtido %d", wUnreach.Code)
+	}
+	bodyUnreach := wUnreach.Body.String()
+	if !strings.Contains(bodyUnreach, "Site Indisponível") {
+		t.Errorf("Site Indisponível esperado no filtro unreachable")
+	}
+	if strings.Contains(bodyUnreach, "Folha de S.Paulo") {
+		t.Errorf("Folha de S.Paulo (reachable) não deveria aparecer no filtro unreachable")
+	}
+	if !strings.Contains(bodyUnreach, "503") || !strings.Contains(bodyUnreach, "ERR_HTTP_503") {
+		t.Errorf("código HTTP 503 e código de erro esperados para fonte inacessível")
+	}
+}
+
+func TestAdminQuarantineIsolationFromPublicArea(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. No Admin: Carlos Quarentena e cand-2 aparecem normalmente
+	reqAdmin := httptest.NewRequest(http.MethodGet, "/admin/candidatos?q=Carlos", nil)
+	reqAdmin.Header.Set("Authorization", authHeader)
+	wAdmin := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAdmin, reqAdmin)
+
+	if wAdmin.Code != http.StatusOK || !strings.Contains(wAdmin.Body.String(), "cand-2") {
+		t.Fatalf("cand-2 deve estar visível para consulta no admin")
+	}
+
+	// 2. Na Área Pública: Carlos Quarentena NÃO deve aparecer em /pessoas
+	reqPublicList := httptest.NewRequest(http.MethodGet, "/pessoas", nil)
+	wPublicList := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wPublicList, reqPublicList)
+
+	if wPublicList.Code != http.StatusOK {
+		t.Fatalf("status /pessoas: esperado 200, obtido %d", wPublicList.Code)
+	}
+	if strings.Contains(wPublicList.Body.String(), "Carlos Quarentena") {
+		t.Errorf("vazamento: entidade em quarentena apareceu na listagem pública /pessoas")
+	}
+
+	// 3. Na Área Pública: /pessoas/carlos-quarentena deve retornar rigorosamente 404
+	reqPublicDetail := httptest.NewRequest(http.MethodGet, "/pessoas/carlos-quarentena", nil)
+	wPublicDetail := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wPublicDetail, reqPublicDetail)
+
+	if wPublicDetail.Code != http.StatusNotFound {
+		t.Errorf("vazamento: /pessoas/carlos-quarentena deve retornar 404, obtido %d", wPublicDetail.Code)
+	}
+}
+
+func TestAdminInvalidQueryParams(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	invalidPaths := []string{
+		"/admin/candidatos?page=-10&page_size=9999&grade=INVALID&status=UNKNOWN_STATUS&period=bizarre",
+		"/admin/evidencias?page=abc&page_size=-5&role=unknown&claim_status=xyz&es_status=foo&period=bar",
+		"/admin/fontes?page=0&page_size=10000&access_status=fake&source_type=aliens&period=future",
+	}
+
+	for _, p := range invalidPaths {
+		t.Run(p, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, p, nil)
+			req.Header.Set("Authorization", authHeader)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+
+			// Nunca deve dar pânico ou erro 500
+			if w.Code != http.StatusOK {
+				t.Errorf("parâmetros inválidos em %s: esperado 200 com sanitização defensiva, obtido %d", p, w.Code)
+			}
+			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+				t.Errorf("Cache-Control: esperado 'no-store', obtido %q", cc)
+			}
+		})
+	}
+}
+
+func TestAdminSources_SourceTypeAllowlistAndSanitization(t *testing.T) {
+	srv, _ := setupAdminTestServerWithData(t, "admin")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	// 1. Validar que o select renderiza exatamente todas as opções canônicas de store.GetAdminSourceTypeOptions()
+	reqAll := httptest.NewRequest(http.MethodGet, "/admin/fontes", nil)
+	reqAll.Header.Set("Authorization", authHeader)
+	wAll := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAll, reqAll)
+
+	if wAll.Code != http.StatusOK {
+		t.Fatalf("listagem geral status: esperado 200, obtido %d", wAll.Code)
+	}
+	bodyAll := wAll.Body.String()
+
+	canonicalOptions := store.GetAdminSourceTypeOptions()
+	for _, opt := range canonicalOptions {
+		expectedOptionSub := fmt.Sprintf(`value="%s"`, opt.Value)
+		if !strings.Contains(bodyAll, expectedOptionSub) {
+			t.Errorf("opção canônica com valor %q não renderizada no select", opt.Value)
+		}
+		if !strings.Contains(bodyAll, opt.Label) {
+			t.Errorf("label canônico %q não renderizado no select", opt.Label)
+		}
+	}
+
+	// 2. Tipo permitido (article) deve filtrar corretamente, marcar selected e retornar 200
+	reqAllowed := httptest.NewRequest(http.MethodGet, "/admin/fontes?source_type=article", nil)
+	reqAllowed.Header.Set("Authorization", authHeader)
+	wAllowed := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wAllowed, reqAllowed)
+
+	if wAllowed.Code != http.StatusOK {
+		t.Fatalf("tipo permitido status: esperado 200, obtido %d", wAllowed.Code)
+	}
+	bodyAllowed := wAllowed.Body.String()
+	if !strings.Contains(bodyAllowed, "Folha de S.Paulo") {
+		t.Errorf("Folha de S.Paulo esperada no filtro source_type=article")
+	}
+	if !strings.Contains(bodyAllowed, `<option value="article" selected>`) {
+		t.Errorf("opção 'article' deve estar selecionada no select")
+	}
+
+	// 3. Tipo desconhecido não deve causar 500 nem ser preservado no select
+	reqUnknown := httptest.NewRequest(http.MethodGet, "/admin/fontes?source_type=unknown_arbitrary_type", nil)
+	reqUnknown.Header.Set("Authorization", authHeader)
+	wUnknown := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wUnknown, reqUnknown)
+
+	if wUnknown.Code != http.StatusOK {
+		t.Fatalf("tipo desconhecido status: esperado 200 (sanitizado), obtido %d", wUnknown.Code)
+	}
+	bodyUnknown := wUnknown.Body.String()
+	// Como foi sanitizado para vazio, todas as fontes aparecem
+	if !strings.Contains(bodyUnknown, "Folha de S.Paulo") || !strings.Contains(bodyUnknown, "Site Indisponível") {
+		t.Errorf("tipo desconhecido deve retornar busca geral segura sem quebrar")
+	}
+	if strings.Contains(bodyUnknown, "unknown_arbitrary_type") {
+		t.Errorf("tipo desconhecido não deve ser refletido/preservado na interface/select")
+	}
+
+	// 4. Tipo excessivamente longo não causa 500 nem aparece no HTML
+	longType := strings.Repeat("evil_type_", 50)
+	reqLong := httptest.NewRequest(http.MethodGet, "/admin/fontes?source_type="+longType, nil)
+	reqLong.Header.Set("Authorization", authHeader)
+	wLong := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wLong, reqLong)
+
+	if wLong.Code != http.StatusOK {
+		t.Fatalf("tipo longo status: esperado 200, obtido %d", wLong.Code)
+	}
+	bodyLong := wLong.Body.String()
+	if strings.Contains(bodyLong, longType) {
+		t.Errorf("tipo excessivamente longo não deve ser refletido no HTML")
+	}
+}
+
+func TestAdminExternalLinks_SanitizationAndMaliciousURLDefense(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "admin_url_defense_test.db")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha nas migrations: %v", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Inserir fontes e candidatos com URLs maliciosas e válidas
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO cases (id, name, slug, description)
+		VALUES ('case-sec', 'Caso Segurança', 'caso-seguranca', 'Auditoria');
+
+		INSERT INTO entities (id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, category, reach)
+		VALUES ('ent-sec', 'person', 'Alvo Seguro', 'alvo seguro', 'alvo-seguro', 'Função', 'Resumo', 3, 'Justificativa', 'Outros', 'Local');
+
+		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary)
+		VALUES ('rel-sec', 'ent-sec', 'case-sec', 'contato', 'Resumo');
+
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons)
+		VALUES ('clm-sec', 'rel-sec', 'Proposição defensiva', '', 'curated_seed', 'A', 'supports_link', 1, 'published', 'contact_confirmed', '[]');
+
+		INSERT INTO evidence (id, claim_id, summary, evidence_type)
+		VALUES ('ev-sec', 'clm-sec', 'Evidência URL', 'document');
+
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status)
+		VALUES
+			('src-malicious', 'Fonte Maliciosa', 'Hacker', 'javascript:alert(1)', 'javascript:alert(1)', 'article', 'reachable'),
+			('src-dataurl', 'Fonte Data URL', 'Hacker', 'data:text/html,<script>alert(2)</script>', 'data:text/html,<script>alert(2)</script>', 'article', 'reachable'),
+			('src-valid', 'Fonte Válida', 'Jornal', 'https://seguro.com.br/materia', 'https://seguro.com.br/materia', 'article', 'reachable');
+
+		INSERT INTO evidence_sources (id, evidence_id, source_id, role, excerpt, locator, status)
+		VALUES
+			('es-malicious', 'ev-sec', 'src-malicious', 'supports', 'Citação maliciosa', '', 'active'),
+			('es-valid', 'ev-sec', 'src-valid', 'supports', 'Citação válida', '', 'active');
+
+		INSERT INTO monitoring_runs (id, status, query, discovery_model, created_at)
+		VALUES ('run-sec', 'completed', 'Auditoria Links', 'openai/gpt-4o', ?);
+
+		INSERT INTO monitoring_candidates (
+			id, monitoring_run_id, fingerprint, entity_name, normalized_entity_name,
+			proposition, suggested_grade, source_url, canonical_url, technical_confidence,
+			editorial_status, is_duplicate, duplicate_reason, canonical_candidate_id, created_at, updated_at
+		) VALUES
+			('cand-malicious', 'run-sec', 'v1:sec-1', 'Alvo Malicioso', 'alvo malicioso', 'Prop maliciosa', 'B', 'javascript:alert(3)', 'javascript:alert(3)', 0.90, 'published', 0, '', NULL, ?, ?),
+			('cand-valid', 'run-sec', 'v1:sec-2', 'Alvo Válido', 'alvo valido', 'Prop válida', 'A', 'https://noticias-validas.com/art', 'https://noticias-validas.com/art', 0.95, 'published', 0, '', NULL, ?, ?);
+	`, now, now, now, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir dados de teste de segurança de URL: %v", err)
+	}
+
+	passwordHash := getTestAdminHashCost12(t)
+	cfg := &config.Config{
+		Port:              8080,
+		Env:               "test",
+		DBPath:            dbPath,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		AdminUser:         "admin",
+		AdminPasswordHash: passwordHash,
+	}
+
+	srv, err := web.NewServer(cfg, db)
+	if err != nil {
+		t.Fatalf("falha ao criar servidor: %v", err)
+	}
+
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+
+	endpoints := []struct {
+		name string
+		path string
+	}{
+		{"Fontes", "/admin/fontes"},
+		{"Candidatos", "/admin/candidatos"},
+		{"Candidato Detalhe", "/admin/candidatos/cand-malicious"},
+		{"Evidências", "/admin/evidencias"},
+	}
+
+	for _, ep := range endpoints {
+		t.Run(ep.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, ep.path, nil)
+			req.Header.Set("Authorization", authHeader)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s status: esperado 200, obtido %d", ep.name, w.Code)
+			}
+			body := w.Body.String()
+
+			// 1. NÃO DEVE existir nenhum href com javascript: ou data:
+			if strings.Contains(body, `href="javascript:`) || strings.Contains(body, `href='javascript:`) ||
+				strings.Contains(body, `href="data:`) || strings.Contains(body, `href='data:`) {
+				t.Errorf("%s: link executável inseguro renderizado no atributo href: %s", ep.name, body)
+			}
+
+			// 2. Deve conter indicador neutro de URL inválida/insegura
+			if !strings.Contains(body, "URL inválida ou insegura") {
+				t.Errorf("%s: esperado aviso textual neutro de URL inválida/insegura", ep.name)
+			}
+
+			// 3. O link malicioso só pode aparecer como texto escapado seguro
+			if !strings.Contains(body, "javascript:alert") {
+				t.Errorf("%s: texto bruto original deveria estar presente de forma segura/escapada", ep.name)
+			}
+		})
+	}
+
+	// Validar que link válido contém target="_blank" e rel="noopener noreferrer"
+	reqCandValid := httptest.NewRequest(http.MethodGet, "/admin/candidatos/cand-valid", nil)
+	reqCandValid.Header.Set("Authorization", authHeader)
+	wCandValid := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wCandValid, reqCandValid)
+	bodyCandValid := wCandValid.Body.String()
+
+	if !strings.Contains(bodyCandValid, `href="https://noticias-validas.com/art"`) {
+		t.Errorf("link válido esperado com href correto")
+	}
+	if !strings.Contains(bodyCandValid, `target="_blank"`) || !strings.Contains(bodyCandValid, `rel="noopener noreferrer"`) {
+		t.Errorf("link válido deve conter target='_blank' e rel='noopener noreferrer'")
 	}
 }

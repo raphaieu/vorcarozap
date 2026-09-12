@@ -82,7 +82,13 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 func newAdminRouter(authMiddleware func(http.Handler) http.Handler, handlers *Handlers) http.Handler {
 	adminRouter := chi.NewRouter()
 	adminRouter.Use(authMiddleware)
+
 	adminRouter.Get("/", handlers.HandleAdmin)
+	adminRouter.Get("/candidatos", handlers.HandleAdminCandidates)
+	adminRouter.Get("/candidatos/{id}", handlers.HandleAdminCandidateDetail)
+	adminRouter.Get("/evidencias", handlers.HandleAdminEvidences)
+	adminRouter.Get("/fontes", handlers.HandleAdminSources)
+
 	adminRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Vary", "Authorization")
