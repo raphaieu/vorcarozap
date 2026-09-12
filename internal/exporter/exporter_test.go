@@ -323,3 +323,142 @@ func TestExporter_VisibilityAndMetricEligibility(t *testing.T) {
 		}
 	}
 }
+
+func TestExporter_ImmediateInvalidationAfterModeration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 1. Popula base de teste
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO cases (id, name, slug, description)
+		VALUES ('case-exp-1', 'Operação Export', 'operacao-export', 'Caso de teste exportação');
+
+		INSERT INTO entities (id, type, name, normalized_name, slug, category, role_or_context, reach, summary, relevance, relevance_rationale)
+		VALUES
+			('ent-exp-1', 'person', 'Entidade Alfa', 'entidade alfa', 'entidade-alfa', 'Finanças', 'Executivo', 'Nacional', 'Resumo Alfa', 5, 'Justificativa Alfa'),
+			('ent-exp-2', 'person', 'Entidade Beta', 'entidade beta', 'entidade-beta', 'Politica', 'Diretor', 'Nacional', 'Resumo Beta', 4, 'Justificativa Beta');
+
+		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary)
+		VALUES
+			('rel-exp-1', 'ent-exp-1', 'case-exp-1', 'investigado', 'Vínculo Alfa'),
+			('rel-exp-2', 'ent-exp-2', 'case-exp-1', 'investigado', 'Vínculo Beta');
+
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_access_status)
+		VALUES
+			('src-exp-1', 'Notícia Alfa', 'Jornal Alfa', 'https://alfa.com/doc', 'https://alfa.com/doc', 'reachable'),
+			('src-exp-2', 'Notícia Beta', 'Jornal Beta', 'https://beta.com/doc', 'https://beta.com/doc', 'reachable');
+
+		-- Claim 1: Publicado
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
+		VALUES ('claim-exp-1', 'rel-exp-1', 'Proposição Alfa', 'Jornal Alfa', 'curated_seed', 'A', 'supports_link', 1, 'published', 'ativo');
+
+		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-exp-1', 'claim-exp-1', 'Evidência Alfa');
+		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
+		VALUES ('es-exp-1', 'ev-exp-1', 'src-exp-1', 'Trecho Alfa', 'Pág. 1', 'supports', 'active');
+
+		-- Claim 2: Publicado
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
+		VALUES ('claim-exp-2', 'rel-exp-2', 'Proposição Beta', 'Jornal Beta', 'curated_seed', 'B', 'supports_link', 1, 'published', 'ativo');
+
+		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-exp-2', 'claim-exp-2', 'Evidência Beta');
+		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
+		VALUES ('es-exp-2', 'ev-exp-2', 'src-exp-2', 'Trecho Beta', 'Pág. 2', 'supports', 'active');
+	`)
+	if err != nil {
+		t.Fatalf("falha ao popular base de exportação: %v", err)
+	}
+
+	exp := exporter.New(db, "2026-09-03")
+
+	// 2. Exportação 1 (Estado Inicial: 2 claims publicados)
+	var buf1 bytes.Buffer
+	if err := exp.WriteTo(ctx, &buf1); err != nil {
+		t.Fatalf("falha ao exportar buf1: %v", err)
+	}
+	f1, err := excelize.OpenReader(&buf1)
+	if err != nil {
+		t.Fatalf("falha ao abrir f1: %v", err)
+	}
+	defer f1.Close()
+
+	entRows1, _ := f1.GetRows(exporter.SheetEntities)
+	if len(entRows1) != 3 { // 1 cabecalho + 2 entidades
+		t.Errorf("f1 Entidades: esperado 3 linhas, obtido %d", len(entRows1))
+	}
+
+	claimRows1, _ := f1.GetRows(exporter.SheetClaims)
+	if len(claimRows1) != 3 { // 1 cabecalho + 2 claims
+		t.Errorf("f1 Alegações: esperado 3 linhas, obtido %d", len(claimRows1))
+	}
+
+	sourceRows1, _ := f1.GetRows(exporter.SheetSources)
+	if len(sourceRows1) != 3 { // 1 cabecalho + 2 fontes
+		t.Errorf("f1 Fontes: esperado 3 linhas, obtido %d", len(sourceRows1))
+	}
+
+	// 3. Moderação: Rejeita Claim 1 e Rejeita Suporte Único do Claim 2
+	_, err = db.ExecContext(ctx, `
+		-- Rejeição do Claim 1
+		UPDATE claims SET status = 'rejected', updated_at = datetime('now') WHERE id = 'claim-exp-1';
+
+		-- Rejeição do único suporte do Claim 2 e quarentena do Claim 2
+		UPDATE evidence_sources SET status = 'rejected', updated_at = datetime('now') WHERE id = 'es-exp-2';
+		UPDATE claims SET status = 'quarantined', metric_eligible = 0, updated_at = datetime('now') WHERE id = 'claim-exp-2';
+	`)
+	if err != nil {
+		t.Fatalf("falha ao executar moderação no banco: %v", err)
+	}
+
+	// 4. Exportação 2 (Após Moderação: 0 claims públicos)
+	var buf2 bytes.Buffer
+	if err := exp.WriteTo(ctx, &buf2); err != nil {
+		t.Fatalf("falha ao exportar buf2: %v", err)
+	}
+	f2, err := excelize.OpenReader(&buf2)
+	if err != nil {
+		t.Fatalf("falha ao abrir f2: %v", err)
+	}
+	defer f2.Close()
+
+	entRows2, _ := f2.GetRows(exporter.SheetEntities)
+	// Com 0 entidades públicas, deve haver linha de cabeçalho + linha informativa de base vazia
+	if len(entRows2) != 2 {
+		t.Errorf("f2 Entidades: esperado 2 linhas (cabecalho + aviso vazio), obtido %d", len(entRows2))
+	}
+	if len(entRows2) > 1 && entRows2[1][0] == "" {
+		t.Errorf("f2 Entidades: esperado aviso de base vazia, obteve vazio")
+	}
+
+	claimRows2, _ := f2.GetRows(exporter.SheetClaims)
+	if len(claimRows2) != 2 {
+		t.Errorf("f2 Alegações: esperado 2 linhas (cabecalho + aviso vazio), obtido %d", len(claimRows2))
+	}
+
+	sourceRows2, _ := f2.GetRows(exporter.SheetSources)
+	if len(sourceRows2) != 2 {
+		t.Errorf("f2 Fontes: esperado 2 linhas (cabecalho + aviso vazio), obtido %d", len(sourceRows2))
+	}
+
+	// 5. Restauração do Claim 1 (rejected -> quarantined)
+	_, err = db.ExecContext(ctx, `UPDATE claims SET status = 'quarantined', updated_at = datetime('now') WHERE id = 'claim-exp-1'`)
+	if err != nil {
+		t.Fatalf("falha ao restaurar claim-exp-1: %v", err)
+	}
+
+	// 6. Exportação 3 (Após Restauração para Quarentena: deve continuar 100% vazia)
+	var buf3 bytes.Buffer
+	if err := exp.WriteTo(ctx, &buf3); err != nil {
+		t.Fatalf("falha ao exportar buf3: %v", err)
+	}
+	f3, err := excelize.OpenReader(&buf3)
+	if err != nil {
+		t.Fatalf("falha ao abrir f3: %v", err)
+	}
+	defer f3.Close()
+
+	claimRows3, _ := f3.GetRows(exporter.SheetClaims)
+	if len(claimRows3) != 2 {
+		t.Errorf("f3 Alegações: claim restaurado para quarentena vazou na exportação (linhas: %d)", len(claimRows3))
+	}
+}

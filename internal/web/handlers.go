@@ -69,6 +69,7 @@ func (h *Handlers) HandleHealthReady(w http.ResponseWriter, r *http.Request) {
 // HandleHome renderiza a página pública inicial SSR via templ com as métricas calculadas.
 func (h *Handlers) HandleHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 
 	pubMetrics, err := metrics.GetPublicMetrics(r.Context(), h.queries, h.publicDataCutoff, 5)
 	if err != nil {
@@ -89,6 +90,9 @@ func (h *Handlers) HandleHome(w http.ResponseWriter, r *http.Request) {
 
 // HandleEntities renderiza a listagem paginada de entidades públicas com busca e filtros.
 func (h *Handlers) HandleEntities(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
 	q := r.URL.Query()
 	rel, _ := strconv.Atoi(q.Get("relevance"))
 	page, _ := strconv.Atoi(q.Get("page"))
@@ -142,7 +146,6 @@ func (h *Handlers) HandleEntities(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	component := pages.Entities(vm)
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render entities template", "error", err)
@@ -152,6 +155,9 @@ func (h *Handlers) HandleEntities(w http.ResponseWriter, r *http.Request) {
 
 // HandleEntityDetail renderiza os detalhes e alegações/fontes de uma entidade pública pelo slug.
 func (h *Handlers) HandleEntityDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
 	slug := chi.URLParam(r, "slug")
 	if strings.TrimSpace(slug) == "" {
 		http.NotFound(w, r)
@@ -171,7 +177,6 @@ func (h *Handlers) HandleEntityDetail(w http.ResponseWriter, r *http.Request) {
 
 	vm := pages.ToEntityDetailVM(detail)
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	component := pages.EntityDetail(vm)
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render entity detail template", "slug", slug, "error", err)
