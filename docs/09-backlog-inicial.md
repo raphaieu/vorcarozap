@@ -26,7 +26,7 @@ O backlog distingue o que está **concluído**, o que está **planejado no MVP**
 | VZ-021 | P0 | Moderação com integridade transacional XOR (claim ou evidence_source) e quarentena imediata ao perder último suporte ativo (**agrupado à moderação**) | Concluído (Fase 5) |
 | VZ-017 | P0 | Invalidação imediata de visualizações, métricas e exportação após moderação | Concluído (Fase 5) |
 | VZ-018 | P0 | Deploy VPS, cron de monitoramento, persistência SQLite e smoke checklist | Concluído (Fase 6) |
-| VZ-019 | P0 | Testes table-driven de publicação/quarentena, bloqueio por fingerprint rejeitado e métricas por estado/elegibilidade | Planejado no MVP |
+| VZ-019 | P0 | Testes table-driven de publicação/quarentena, bloqueio por fingerprint rejeitado e métricas por estado/elegibilidade | Concluído (Fase 6) |
 
 ## P1 — Evolução Proposta (Pós-MVP)
 

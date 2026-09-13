@@ -187,6 +187,7 @@ func (h *Handlers) HandleEntityDetail(w http.ResponseWriter, r *http.Request) {
 // HandleMethodology renderiza a página pública de metodologia e critérios editoriais.
 func (h *Handlers) HandleMethodology(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	component := pages.Methodology()
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render methodology template", "error", err)
