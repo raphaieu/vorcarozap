@@ -1,14 +1,18 @@
-:80 {
+{$SITE_DOMAIN::80} {
 	encode zstd gzip
 
 	header {
-		# Proteções HTTP adicionais no proxy
-		# NOTA: Strict-Transport-Security removido do ambiente local (:80 HTTP).
-		# Deve ser reativado na configuração de produção com HTTPS real.
+		# Proteções HTTP no proxy reverso
 		-Server
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# HSTS ativado para conexões HTTPS com subdomínios e preload
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 	}
 
-	reverse_proxy app:8080
+	reverse_proxy app:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
 }

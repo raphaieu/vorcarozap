@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -59,6 +60,21 @@ func main() {
 			slog.Error("erro ao executar comando monitor", "error", err)
 			os.Exit(1)
 		}
+	case "backup":
+		if err := runBackup(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando backup", "error", err)
+			os.Exit(1)
+		}
+	case "verify-backup":
+		if err := runVerifyBackup(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando verify-backup", "error", err)
+			os.Exit(1)
+		}
+	case "restore":
+		if err := runRestore(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando restore", "error", err)
+			os.Exit(1)
+		}
 	case "help", "-h", "--help":
 		printUsage(os.Stdout)
 		os.Exit(0)
@@ -76,12 +92,15 @@ Uso:
   vorcarozap <comando> [opções]
 
 Comandos disponíveis nesta fase:
-  serve      Aplica migrations pendentes e inicia o servidor HTTP
-  migrate    Aplica migrations pendentes no banco SQLite
-  import     Importa dados da planilha XLSX curated_seed (--file obrigatório, opcional --dry-run)
-  export     Exporta a base pública ativa em planilha XLSX (--out opcional)
-  monitor    Executa ciclo seguro de monitoramento OpenRouter (--query obrigatório)
-  help       Exibe esta mensagem de ajuda
+  serve          Aplica migrations pendentes e inicia o servidor HTTP
+  migrate        Aplica migrations pendentes no banco SQLite
+  import         Importa dados da planilha XLSX curated_seed (--file obrigatório, opcional --dry-run)
+  export         Exporta a base pública ativa em planilha XLSX (--out opcional)
+  monitor        Executa ciclo seguro de monitoramento OpenRouter (--query obrigatório)
+  backup         Gera backup atômico e consistente do SQLite via VACUUM INTO (--out opcional)
+  verify-backup  Verifica integridade (PRAGMA integrity_check) e migrations de um backup (--file obrigatório)
+  restore        Restaura backup verificado para o banco de destino (--backup, --target e --confirm)
+  help           Exibe esta mensagem de ajuda
 
 Configuração via variáveis de ambiente:
   APP_PORT                                Porta HTTP do servidor (padrão: 8080)
@@ -493,4 +512,193 @@ Resumo Técnico:          %s
 		monitoring.FormatUSD(maxCostPerDayUSD),
 		s.TechnicalSummary,
 	)
+}
+
+func runBackup(args []string) error {
+	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando backup:
+  vorcarozap backup [--out <caminho.db>] [--retention <N>]
+
+Opções:
+  --out string     Caminho do arquivo de destino do backup (padrão: /backups/vorcarozap-YYYYMMDD_HHMMSSZ.db ou ./backups/...)
+  --retention int  Quantidade de backups mais recentes a reter (0 = desabilitado)
+  -h, --help       Exibe esta ajuda
+`)
+	}
+
+	outPath := fs.String("out", "", "Caminho do arquivo de backup de destino")
+	retention := fs.Int("retention", 0, "Quantidade de backups a reter (0 = desabilitado)")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	if *retention < 0 {
+		return fmt.Errorf("a flag --retention deve ser um número inteiro não negativo (recebido %d)", *retention)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("carregamento de configuração: %w", err)
+	}
+
+	dest := *outPath
+	if dest == "" {
+		timestamp := time.Now().UTC().Format("20060102_150405Z")
+		if _, err := os.Stat("/backups"); err == nil {
+			dest = fmt.Sprintf("/backups/vorcarozap-%s.db", timestamp)
+		} else {
+			dest = fmt.Sprintf("backups/vorcarozap-%s.db", timestamp)
+		}
+	}
+
+	ctx := context.Background()
+	db, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("abertura do banco SQLite %q: %w", cfg.DBPath, err)
+	}
+	defer db.Close()
+
+	slog.Info("iniciando backup consistente do SQLite (VACUUM INTO)...", "origem", cfg.DBPath, "destino", dest)
+	result, err := store.Backup(ctx, db, dest)
+	if err != nil {
+		return fmt.Errorf("execução do backup: %w", err)
+	}
+
+	slog.Info("backup concluído com sucesso", "arquivo", result.BackupPath, "tamanho_bytes", result.SizeBytes, "versao_schema", result.SchemaVersion)
+
+	var rotatedFiles []string
+	if *retention > 0 {
+		backupDir := filepath.Dir(result.BackupPath)
+		slog.Info("aplicando política de retenção de backups...", "dir", backupDir, "manter", *retention)
+		var rotErr error
+		rotatedFiles, rotErr = store.RotateBackups(backupDir, *retention)
+		if rotErr != nil {
+			return fmt.Errorf("backup gerado com sucesso em %q, mas a política de retenção falhou: %w", result.BackupPath, rotErr)
+		}
+		if len(rotatedFiles) > 0 {
+			slog.Info("backups antigos removidos por retenção", "total_removidos", len(rotatedFiles), "arquivos", rotatedFiles)
+		}
+	}
+
+	printBackupSummary(os.Stdout, result, rotatedFiles)
+	return nil
+}
+
+func printBackupSummary(w io.Writer, res *store.BackupResult, rotated []string) {
+	retentionInfo := "Nenhuma remoção realizada (ou retenção desabilitada)"
+	if len(rotated) > 0 {
+		retentionInfo = fmt.Sprintf("%d arquivo(s) antigo(s) removido(s) por retenção:\n  - %s", len(rotated), strings.Join(rotated, "\n  - "))
+	}
+
+	fmt.Fprintf(w, `
+================================================================================
+VorcaroZAP — Relatório de Backup do SQLite
+================================================================================
+Arquivo de Destino:   %s
+Tamanho:              %.2f KB (%d bytes)
+Integridade (PRAGMA): OK (sem corrupção de páginas ou índices)
+Versão de Migrations: %d (100%% compatível com o binário)
+Data e Hora (UTC):    %s
+Política de Retenção: %s
+================================================================================
+Backup concluído com sucesso e verificado.
+`,
+		res.BackupPath,
+		float64(res.SizeBytes)/1024.0,
+		res.SizeBytes,
+		res.SchemaVersion,
+		res.CreatedAt.Format(time.RFC3339),
+		retentionInfo,
+	)
+}
+
+func runVerifyBackup(args []string) error {
+	fs := flag.NewFlagSet("verify-backup", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando verify-backup:
+  vorcarozap verify-backup --file <caminho.db>
+
+Opções:
+  --file string   Caminho do arquivo de backup a verificar (obrigatório)
+  -h, --help      Exibe esta ajuda
+`)
+	}
+
+	filePath := fs.String("file", "", "Caminho do arquivo de backup a verificar")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	if *filePath == "" {
+		fs.Usage()
+		return fmt.Errorf("a flag --file é obrigatória")
+	}
+
+	ctx := context.Background()
+	slog.Info("verificando integridade e migrations do arquivo de backup...", "arquivo", *filePath)
+	result, err := store.VerifyBackup(ctx, *filePath)
+	if err != nil {
+		return fmt.Errorf("verificação do backup reprovou: %w", err)
+	}
+
+	slog.Info("verificação concluída: backup íntegro", "arquivo", result.BackupPath, "tamanho_bytes", result.SizeBytes, "versao_schema", result.SchemaVersion)
+	printBackupSummary(os.Stdout, result, nil)
+	return nil
+}
+
+func runRestore(args []string) error {
+	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando restore:
+  vorcarozap restore --backup <origem.db> --target <destino.db> [--confirm]
+
+Opções:
+  --backup string   Caminho do arquivo de backup verificado (obrigatório)
+  --target string   Caminho do banco de destino (obrigatório)
+  --confirm         Confirmação explícita para restauração (obrigatório)
+  -h, --help        Exibe esta ajuda
+`)
+	}
+
+	backupPath := fs.String("backup", "", "Caminho do arquivo de backup de origem")
+	targetPath := fs.String("target", "", "Caminho do banco de dados de destino")
+	confirm := fs.Bool("confirm", false, "Confirmação explícita de restauração")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	if *backupPath == "" || *targetPath == "" {
+		fs.Usage()
+		return fmt.Errorf("as flags --backup e --target são obrigatórias")
+	}
+
+	if !*confirm {
+		return fmt.Errorf("a restauração requer confirmação explícita com a flag --confirm")
+	}
+
+	ctx := context.Background()
+	slog.Info("iniciando restauração de backup...", "backup", *backupPath, "target", *targetPath)
+	if err := store.Restore(ctx, *backupPath, *targetPath); err != nil {
+		return fmt.Errorf("restauração falhou: %w", err)
+	}
+
+	slog.Info("restauração concluída com sucesso e verificada", "destino", *targetPath)
+	fmt.Printf("Backup %s restaurado com sucesso em %s (integridade e migrations verificadas)\n", *backupPath, *targetPath)
+	return nil
 }

@@ -1,15 +1,21 @@
 # Binários compilados
 bin/
 
-# Banco de dados local SQLite
+# Banco de dados local SQLite e backups
 data/
+backups/
 *.db
 *.db-wal
 *.db-shm
+*.bak
 
 # Arquivos de ambiente locais com segredos
 .env
 .env.local
+
+# Logs operacionais
+logs/
+*.log
 
 # IDEs e temporários
 .DS_Store

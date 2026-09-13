@@ -28,8 +28,8 @@ RUN apk add --no-cache ca-certificates curl tzdata
 RUN addgroup -g 10001 -S appgroup && \
     adduser -u 10001 -S appuser -G appgroup
 
-# Criação do diretório de dados persistentes do SQLite
-RUN mkdir -p /data && chown -R appuser:appgroup /data
+# Criação do diretório de dados persistentes do SQLite e backups operacionais
+RUN mkdir -p /data /backups && chown -R appuser:appgroup /data /backups
 
 # Cópia do binário compilado e arquivos de configuração
 COPY --from=builder /bin/vorcarozap /usr/local/bin/vorcarozap
@@ -45,7 +45,7 @@ ENV APP_PORT=8080 \
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
-    CMD curl -f http://localhost:8080/health/live || exit 1
+    CMD curl -f http://localhost:8080/health/ready || exit 1
 
 ENTRYPOINT ["/usr/local/bin/vorcarozap"]
 CMD ["serve"]

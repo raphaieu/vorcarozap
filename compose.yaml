@@ -6,7 +6,7 @@ services:
     container_name: vorcarozap_app
     restart: unless-stopped
     ports:
-      - "${HOST_PORT:-8090}:8080"
+      - "${APP_BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8090}:8080"
     environment:
       APP_PORT: "8080"
       APP_ENV: ${APP_ENV:-development}
@@ -36,8 +36,9 @@ services:
       ADMIN_ALLOWED_ORIGIN: ${ADMIN_ALLOWED_ORIGIN:-}
     volumes:
       - vorcarozap_data:/data
+      - vorcarozap_backups:/backups
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
       interval: 15s
       timeout: 3s
       retries: 3
@@ -88,10 +89,13 @@ services:
     container_name: vorcarozap_caddy
     restart: unless-stopped
     profiles:
+      - prod
       - proxy
     ports:
-      - "${CADDY_HTTP_PORT:-8000}:80"
-      - "${CADDY_HTTPS_PORT:-8443}:443"
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-:80}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -102,6 +106,7 @@ services:
 
 volumes:
   vorcarozap_data:
+  vorcarozap_backups:
   caddy_data:
   caddy_config:
   go_modules:

@@ -27,7 +27,9 @@ Aplicação pública, investigativa e documental para organizar informações pu
   - **VZ-016 — Ações humanas de moderação para claims concluído.** Migration `00009_moderation_claim_actions.sql`, auditoria imutável na tabela `moderation_decisions` com integridade XOR estrita, transações atômicas SQLite (`internal/moderation`), validação rigorosa de suportes ativos para aprovação (`approve`), rejeição com bloqueio persistente de fingerprint em candidatos de monitoramento (`reject`), restauração exclusivamente para quarentena sem publicação automática direta (`restore`), proteção CSRF estrita (`AdminCSRFMiddleware` com `ADMIN_ALLOWED_ORIGIN`), operador autenticado derivado do contexto (`web.WithAuthenticatedUser`), e interface SSR de inspeção detalhada e formulários de deliberação (`GET /admin/claims/{id}` e `POST /admin/claims/{id}/moderate` com PRG 303), conforme [ADR-017](docs/adr/ADR-017-moderacao-humana-de-claims-transacoes-e-protecao-csrf.md).
   - **VZ-021 — Moderação granular de evidence_sources com quarentena automática ao perder o último suporte ativo concluído.** Moderação de usos específicos de evidência (`reject`, `restore`) com OCC (`expected_updated_at`), quarentena atômica imediata em claims publicados ao perder o último suporte ativo com papel `supports`, garantia de não-republicação automática em restaurações, isolamento estrito da fonte global (`sources` inalterada), auditoria imutável com restrição relacional XOR em `moderation_decisions`, proteção CSRF (`ADMIN_ALLOWED_ORIGIN`, Content-Type, payload <= 64 KiB) e interface SSR de deliberação (`GET /admin/evidencias/{id}` e `POST /admin/evidencias/{id}/moderate` com PRG 303), conforme [ADR-018](docs/adr/ADR-018-moderacao-granular-de-evidence-sources-e-quarentena-por-perda-de-suporte.md).
   - **VZ-017 — Invalidação imediata de visualizações públicas, métricas e exportação após moderação concluído.** Garantia de consistência transacional direta e atualização imediata via consultas dinâmicas ao SQLite WAL sobre `public_claims_view`, ausência deliberada de cache intermediário de aplicação, e cabeçalhos explícitos `Cache-Control: no-cache, no-store, must-revalidate` em rotas públicas dinâmicas SSR (`/`, `/pessoas`, `/pessoas/{slug}`) e na exportação XLSX (`/exportar/base.xlsx`), conforme [ADR-019](docs/adr/ADR-019-invalidacao-imediata-de-visualizacoes-publicas-metricas-e-exportacao.md).
-- **Próximo item:** VZ-018 — Deploy VPS, cron de monitoramento, persistência SQLite e smoke checklist.
+- **Fase 6 — Deploy MVP e validação econômica:**
+  - **VZ-018 — Deploy em VPS econômica, cron de monitoramento, persistência SQLite, backup operacional e smoke checklist concluído.** Topologia de produção em containers (`app` + `caddy`), porta interna isolada do tráfego público, HTTPS automático via Caddy (`{$SITE_DOMAIN}`), volume persistente de dados (`/data`) e backups (`/backups`), mecanismo atômico de backup online consistente com SQLite WAL via `VACUUM INTO` com validação de `PRAGMA integrity_check` e migrations do Goose (`vorcarozap backup`, `vorcarozap verify-backup`, `vorcarozap restore`), script de monitoramento periódico (`scripts/cron-monitor.sh`) com controle de concorrência por lease lock em SQLite (`monitoring_locks`), procedimentos não-destrutivos de teste de restauração (`scripts/restore-test.sh`), guia operacional completo ([`docs/11-operacao-deploy-e-backup.md`](docs/11-operacao-deploy-e-backup.md)), suíte automatizada de smoke checklist e [ADR-020](docs/adr/ADR-020-deploy-economico-em-vps-cron-persistencia-backup-e-smoke-checklist.md).
+  - **Próximo item:** VZ-019 — Testes table-driven de publicação/quarentena, bloqueio por fingerprint rejeitado e métricas por estado/elegibilidade.
 
 O arquivo `_notes/mapa-vorcaro-contatos-2026-09-03.xlsx` é um artefato público de pesquisa e base inicial. Estar no arquivo não equivale a culpa nem dispensa classificação e fonte na aplicação.
 
@@ -110,7 +112,7 @@ make all
 ## Comandos operacionais (Compose)
 
 ```bash
-# Iniciar a aplicação (compila e sobe container 'app' na porta 8090)
+# Iniciar a aplicação localmente (porta 8090)
 make run
 
 # Executar migrations pendentes explicitamente no container
@@ -122,8 +124,20 @@ make import-dry-run
 # Importação aplicada da planilha curated_seed (transacional e idempotente)
 make import
 
-# Subir com proxy Caddy reverso opcional (porta 8000)
-make compose-proxy
+# Subir com proxy Caddy HTTPS (perfil 'prod' ou 'proxy')
+make prod-up
+
+# Parar a stack de produção
+make prod-down
+
+# Executar backup consistente do SQLite (VACUUM INTO + PRAGMA integrity_check)
+make backup
+
+# Verificar integridade de um arquivo de backup
+make verify-backup FILE=/backups/vorcarozap-YYYYMMDD_HHMMSSZ.db
+
+# Executar teste de fumaça operacional (smoke check)
+make smoke
 
 # Executar monitoramento automatizado de novas publicações (OpenRouter + Gates + Orçamento)
 vorcarozap monitor --query "<consulta de pesquisa>"
@@ -143,7 +157,7 @@ Sem meta de cobertura no MVP. Gate inicial:
 make all
 ```
 
-Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual. Três grupos têm testes unitários table-driven desde o MVP: decisão `published`/`quarantined`, fingerprint rejeitado impedindo republicação e métricas excluindo estados não públicos ou claims não elegíveis.
+Migrations, importação, monitoramento, moderação e jornadas públicas passam por smoke test manual e automatizado. Três grupos têm testes unitários table-driven desde o MVP: decisão `published`/`quarantined`, fingerprint rejeitado impedindo republicação e métricas excluindo estados não públicos ou claims não elegíveis.
 
 ## Documentação
 
@@ -158,4 +172,5 @@ Migrations, importação, monitoramento, moderação e jornadas públicas passam
 - [Roadmap](docs/08-roadmap.md)
 - [Backlog](docs/09-backlog-inicial.md)
 - [Critérios de aceite](docs/10-criterios-de-aceite.md)
+- [Operação, Deploy e Backup](docs/11-operacao-deploy-e-backup.md)
 - [ADRs](docs/adr/)

@@ -5,9 +5,12 @@
 !.env.example
 bin
 data
+backups
+logs
 *.db
 *.db-shm
 *.db-wal
+*.bak
 *.sqlite
 *.sqlite3
 coverage*

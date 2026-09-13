@@ -3,7 +3,7 @@ DEV_RUN := $(COMPOSE) --profile dev run --rm -T dev
 
 IMPORT_FILE ?= _notes/mapa-vorcaro-contatos-2026-09-03.xlsx
 
-.PHONY: all templ fmt tidy test test-race vet build shell run migrate import-dry-run import compose-config compose-build compose-up compose-proxy clean
+.PHONY: all templ sqlc fmt tidy test test-race vet build shell run migrate import-dry-run import compose-config compose-build compose-up compose-proxy prod-up prod-down backup verify-backup smoke clean
 
 all: templ fmt tidy test vet build
 
@@ -46,6 +46,12 @@ import-dry-run:
 import:
 	$(COMPOSE) run --rm -v $(CURDIR)/$(IMPORT_FILE):/imports/mapa.xlsx:ro app import --file /imports/mapa.xlsx
 
+backup:
+	$(COMPOSE) run --rm app backup
+
+verify-backup:
+	$(COMPOSE) run --rm app verify-backup --file $(FILE)
+
 compose-config:
 	$(COMPOSE) config
 
@@ -58,5 +64,14 @@ compose-up:
 compose-proxy:
 	$(COMPOSE) --profile proxy up -d
 
+prod-up:
+	$(COMPOSE) --profile prod up -d
+
+prod-down:
+	$(COMPOSE) --profile prod down
+
+smoke:
+	./scripts/smoke-check.sh
+
 clean:
-	rm -rf bin/ data/
+	rm -rf bin/ data/ backups/ logs/
