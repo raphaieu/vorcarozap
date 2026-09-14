@@ -296,6 +296,7 @@ type DocumentSourceDetail struct {
 	CreatedAt             string
 	UpdatedAt             string
 	Sequence              []DocumentSequenceItem
+	EditorialHistory      []PublicEditorialEvent
 }
 
 // IntegritySummary retorna o resumo humano da integridade técnica observada para a fonte.
@@ -455,4 +456,43 @@ func ValidateModerationActor(rawActor string) (string, error) {
 		return "", fmt.Errorf("domain: identificador do operador (actor) excede o limite de 128 caracteres")
 	}
 	return trimmed, nil
+}
+
+// PublicEditorialTargetType define o tipo de objeto alvo de uma alteração editorial pública.
+type PublicEditorialTargetType string
+
+const (
+	PublicEditorialTargetClaim          PublicEditorialTargetType = "claim"
+	PublicEditorialTargetEvidenceSource PublicEditorialTargetType = "evidence_source"
+)
+
+// PublicEditorialAction define a ação editorial normalizada para consumo público.
+type PublicEditorialAction string
+
+const (
+	PublicEditorialActionApprove        PublicEditorialAction = "approve"
+	PublicEditorialActionReject         PublicEditorialAction = "reject"
+	PublicEditorialActionRestore        PublicEditorialAction = "restore"
+	PublicEditorialActionInitialPublish PublicEditorialAction = "initial_publication"
+)
+
+// PublicEditorialEvent representa um evento auditável e redigido no histórico público de transparência editorial.
+// Não expõe nomes de usuários (actor), fingerprints, raw_response ou texto confidencial de itens não públicos.
+type PublicEditorialEvent struct {
+	ID               string                    `json:"id"`
+	CreatedAt        string                    `json:"created_at"`
+	TargetType       PublicEditorialTargetType `json:"target_type"`
+	TargetID         string                    `json:"target_id"`
+	Action           PublicEditorialAction     `json:"action"`
+	ActionLabel      string                    `json:"action_label"`
+	TargetLabel      string                    `json:"target_label"`
+	Summary          string                    `json:"summary"`
+	ImpactLabel      string                    `json:"impact_label"`
+	IsTargetPublic   bool                      `json:"is_target_public"`
+	ClaimID          string                    `json:"claim_id,omitempty"`
+	ClaimProposition string                    `json:"claim_proposition,omitempty"`
+	ClaimGrade       EvidenceGrade             `json:"claim_grade,omitempty"`
+	SourceID         string                    `json:"source_id,omitempty"`
+	SourceTitle      string                    `json:"source_title,omitempty"`
+	Locator          string                    `json:"locator,omitempty"`
 }

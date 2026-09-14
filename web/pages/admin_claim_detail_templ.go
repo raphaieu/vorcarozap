@@ -1048,20 +1048,20 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</section><!-- Histórico de Decisões de Moderação --><section class=\"card\" aria-label=\"Histórico de Auditoria de Moderação\"><div class=\"admin-summary-header\" style=\"margin-bottom: 0.75rem;\"><h2 class=\"card-title\" style=\"margin: 0;\">Histórico de Decisões de Moderação (")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</section><!-- Histórico de Decisões de Moderação --><section class=\"card\" aria-label=\"Histórico de Auditoria de Moderação\"><div class=\"admin-summary-header\" style=\"margin-bottom: 0.75rem;\"><div><h2 class=\"card-title\" style=\"margin: 0;\">Histórico de Decisões de Moderação (")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(vm.Decisions)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 334, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 335, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, ")</h2><span class=\"status-tag\">Auditoria Imutável</span></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, ")</h2><span style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Trilha administrativa completa e irredigida (restrita a operadores autenticados).</span></div><div class=\"badge-cluster\"><span class=\"admin-status-badge\" style=\"background-color: #f8d7da; color: #842029; font-weight: 600;\">Auditoria Administrativa Completa (Privada)</span> <span class=\"status-tag\">Imutável</span></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1083,7 +1083,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 				var templ_7745c5c3_Var58 string
 				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(d.CreatedAtHuman)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 357, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 364, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 				if templ_7745c5c3_Err != nil {
@@ -1101,7 +1101,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 					var templ_7745c5c3_Var59 string
 					templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 361, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 368, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 					if templ_7745c5c3_Err != nil {
@@ -1119,7 +1119,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 					var templ_7745c5c3_Var60 string
 					templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 363, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 370, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 					if templ_7745c5c3_Err != nil {
@@ -1137,7 +1137,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 					var templ_7745c5c3_Var61 string
 					templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 365, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 372, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 					if templ_7745c5c3_Err != nil {
@@ -1155,7 +1155,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 					var templ_7745c5c3_Var62 string
 					templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 367, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 374, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 					if templ_7745c5c3_Err != nil {
@@ -1173,7 +1173,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 				var templ_7745c5c3_Var63 string
 				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(d.Actor)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 371, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 378, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 				if templ_7745c5c3_Err != nil {
@@ -1186,7 +1186,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 				var templ_7745c5c3_Var64 string
 				templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(d.Reason)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 374, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 381, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 				if templ_7745c5c3_Err != nil {
@@ -1204,7 +1204,7 @@ func AdminClaimDetail(vm AdminClaimDetailVM) templ.Component {
 					var templ_7745c5c3_Var65 string
 					templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(d.CandidateFingerprint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 378, Col: 94}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_claim_detail.templ`, Line: 385, Col: 94}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 					if templ_7745c5c3_Err != nil {

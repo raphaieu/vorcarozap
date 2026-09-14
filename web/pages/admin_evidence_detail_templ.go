@@ -902,20 +902,20 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</section><!-- Histórico de Decisões de Moderação deste Uso de Evidência --><section class=\"card\" aria-label=\"Histórico de Auditoria de Moderação\"><div class=\"admin-summary-header\" style=\"margin-bottom: 0.75rem;\"><h2 class=\"card-title\" style=\"margin: 0;\">Histórico de Decisões de Moderação (")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</section><!-- Histórico de Decisões de Moderação deste Uso de Evidência --><section class=\"card\" aria-label=\"Histórico de Auditoria de Moderação\"><div class=\"admin-summary-header\" style=\"margin-bottom: 0.75rem;\"><div><h2 class=\"card-title\" style=\"margin: 0;\">Histórico de Decisões de Moderação (")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(vm.Decisions)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 335, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 336, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, ")</h2><span class=\"status-tag\">Auditoria Imutável (XOR)</span></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, ")</h2><span style=\"font-size: 0.8rem; color: var(--color-text-muted);\">Trilha administrativa completa e irredigida (restrita a operadores autenticados).</span></div><div class=\"badge-cluster\"><span class=\"admin-status-badge\" style=\"background-color: #f8d7da; color: #842029; font-weight: 600;\">Auditoria Administrativa Completa (Privada)</span> <span class=\"status-tag\">Imutável (XOR)</span></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -937,7 +937,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 				var templ_7745c5c3_Var51 string
 				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(d.CreatedAtHuman)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 358, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 365, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -955,7 +955,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 					var templ_7745c5c3_Var52 string
 					templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 362, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 369, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 					if templ_7745c5c3_Err != nil {
@@ -973,7 +973,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 					var templ_7745c5c3_Var53 string
 					templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 364, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 371, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 					if templ_7745c5c3_Err != nil {
@@ -991,7 +991,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 					var templ_7745c5c3_Var54 string
 					templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 366, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 373, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 					if templ_7745c5c3_Err != nil {
@@ -1009,7 +1009,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 					var templ_7745c5c3_Var55 string
 					templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(d.ActionHuman)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 368, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 375, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 					if templ_7745c5c3_Err != nil {
@@ -1027,7 +1027,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 				var templ_7745c5c3_Var56 string
 				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(d.Actor)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 372, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 379, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 				if templ_7745c5c3_Err != nil {
@@ -1040,7 +1040,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 				var templ_7745c5c3_Var57 string
 				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(d.Reason)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 375, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 382, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
@@ -1058,7 +1058,7 @@ func AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) templ.Component {
 					var templ_7745c5c3_Var58 string
 					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(d.CandidateFingerprint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 379, Col: 94}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/pages/admin_evidence_detail.templ`, Line: 386, Col: 94}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 					if templ_7745c5c3_Err != nil {

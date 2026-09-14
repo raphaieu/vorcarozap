@@ -330,11 +330,18 @@ templ AdminClaimDetail(vm AdminClaimDetailVM) {
 				<!-- Histórico de Decisões de Moderação -->
 				<section class="card" aria-label="Histórico de Auditoria de Moderação">
 					<div class="admin-summary-header" style="margin-bottom: 0.75rem;">
-						<h2 class="card-title" style="margin: 0;">
-							Histórico de Decisões de Moderação ({ fmt.Sprintf("%d", len(vm.Decisions)) })
-						</h2>
-						<span class="status-tag">Auditoria Imutável</span>
+						<div>
+							<h2 class="card-title" style="margin: 0;">
+								Histórico de Decisões de Moderação ({ fmt.Sprintf("%d", len(vm.Decisions)) })
+							</h2>
+							<span style="font-size: 0.8rem; color: var(--color-text-muted);">Trilha administrativa completa e irredigida (restrita a operadores autenticados).</span>
+						</div>
+						<div class="badge-cluster">
+							<span class="admin-status-badge" style="background-color: #f8d7da; color: #842029; font-weight: 600;">Auditoria Administrativa Completa (Privada)</span>
+							<span class="status-tag">Imutável</span>
+						</div>
 					</div>
+
 
 					if len(vm.Decisions) == 0 {
 						<p class="admin-reasons-empty">Nenhuma decisão de moderação registrada para esta alegação.</p>

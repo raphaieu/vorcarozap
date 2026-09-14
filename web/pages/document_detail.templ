@@ -218,6 +218,71 @@ templ DocumentDetail(vm DocumentDetailVM) {
 						</div>
 					}
 				</section>
+
+				<!-- Histórico de Alterações Editoriais do Documento -->
+				<section class="editorial-history-section" aria-label="Histórico de Alterações Editoriais do Documento" style="margin-top: 2rem;">
+					<div class="section-heading-row" style="margin-bottom: 1rem;">
+						<h2 class="section-heading" style="margin: 0;">Histórico de Alterações Editoriais do Documento</h2>
+						<p style="color: var(--color-text-muted); font-size: 0.9rem; margin: 0.25rem 0 0 0;">
+							Trilha pública de transparência sobre inclusão, deliberações de moderação e alterações nos trechos desta fonte documental.
+						</p>
+					</div>
+
+					if len(vm.EditorialHistory) > 0 {
+						<div class="card" style="padding: 0; overflow: hidden;">
+							<div class="table-responsive">
+								<table class="table admin-table" style="margin: 0;">
+									<thead>
+										<tr>
+											<th style="width: 140px;">Data (UTC)</th>
+											<th style="width: 170px;">Ação Editorial</th>
+											<th style="width: 180px;">Trecho / Alvo</th>
+											<th>Resumo da Alteração</th>
+											<th style="width: 190px;">Impacto</th>
+										</tr>
+									</thead>
+									<tbody>
+										for _, ev := range vm.EditorialHistory {
+											<tr>
+												<td style="white-space: nowrap; font-size: 0.85rem; color: var(--color-text-muted);">
+													{ ev.CreatedAtHuman }
+												</td>
+												<td>
+													<span class={ "admin-status-badge", ev.ActionBadgeClass } style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+														{ ev.ActionLabel }
+													</span>
+												</td>
+												<td>
+													<strong style="font-size: 0.85rem; display: block;">{ ev.TargetLabel }</strong>
+													if ev.Locator != "" {
+														<span class="source-locator-chip" style="font-size: 0.75rem; margin-top: 0.25rem;">{ ev.Locator }</span>
+													}
+												</td>
+												<td style="font-size: 0.9rem; line-height: 1.4;">
+													<p style="margin: 0;">{ ev.Summary }</p>
+													if ev.IsTargetPublic && ev.ClaimProposition != "" {
+														<p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--color-text-muted); font-style: italic;">
+															&ldquo;{ ev.ClaimProposition }&rdquo;
+														</p>
+													}
+												</td>
+												<td>
+													<span class="status-tag" style="font-size: 0.75rem; padding: 0.2rem 0.45rem;">
+														{ ev.ImpactLabel }
+													</span>
+												</td>
+											</tr>
+										}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					} else {
+						<div class="card empty-state">
+							<p>Nenhum registro de alteração editorial disponível para este documento.</p>
+						</div>
+					}
+				</section>
 			</main>
 			<footer class="site-footer">
 				<p>VorcaroZAP &bull; Base investigativa e documental independente &bull; <a href="/metodologia" style="color: inherit; text-decoration: underline;">Metodologia e Escala A–E</a></p>

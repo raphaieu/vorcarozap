@@ -26,6 +26,13 @@ Fontes datadas e atribuição reduzem risco, mas não transformam alegação em 
 
 D/E nunca são publicados automaticamente. Qualquer grau também vai para quarentena quando envolver homônimo, source `unreachable`, suporte insuficiente, acusação criminal não confirmada, PII desnecessária, divergência entre estágios ou fingerprint semelhante previamente rejeitado. `not_checked` não equivale a rejeição e segue a política diferenciada por origem definida no [ADR-006](adr/ADR-006-fontes-e-rastreabilidade.md) (quarentena para OpenRouter; preserva initial_state do mapeamento para curated_seed).
 
+## Trilha de transparência pública e privacidade de operadores (VZ-024)
+
+A disponibilização do histórico público de alterações editoriais (`/pessoas/{slug}` e `/documentos/{id}`) segue princípios estritos de minimização e redação de segurança ([ADR-023](adr/ADR-023-historico-publico-de-alteracoes-editoriais-e-trilha-de-transparencia.md)):
+- **Privacidade de operadores e moderadores:** O identificador do operador (`actor`), derivado do usuário autenticado no painel, é estritamente confidencial e nunca é exposto nas rotas públicas, sendo renderizado publicamente sob o rótulo institucional "Equipe Editorial".
+- **Omissão de justificativas internas e telemetria técnica:** Motivos internos de deliberação (`reason`), hashes e fingerprints de deduplicação (`candidate_fingerprint`), payloads brutos da LLM (`raw_response`) e contabilidade financeira (tokens e micro-USD) são exclusivos da área restrita `/admin`.
+- **Prevenção contra vazamento de proposições descartadas:** Conteúdos reprovados enquanto estavam em quarentena (que jamais foram publicados) são omitidos da visão pública. No caso de alegações previamente publicadas e posteriormente retiradas/desaprovadas, o texto da proposição é redigido, registrando-se publicamente apenas o ato editorial de retirada e a data.
+
 ## Futuro
 
 MFA/RBAC, dupla revisão, trilha imutável, snapshots, retenção formal, incident response, backup criptografado externo, SSRF hardening para crawler próprio, testes negativos abrangentes e validação jurídica aprofundada tornam-se prioritários com equipe, tráfego, crawler, uploads ou contestação relevante.

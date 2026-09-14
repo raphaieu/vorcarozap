@@ -490,3 +490,113 @@ WHERE es.source_id = ?
 ORDER BY
     es.created_at ASC,
     es.id ASC;
+
+-- name: ListPublicEditorialHistoryByEntityID :many
+SELECT
+    d.id AS decision_id,
+    d.claim_id,
+    d.evidence_source_id,
+    d.action,
+    d.created_at,
+    CASE
+        WHEN d.claim_id IS NOT NULL THEN 'claim'
+        ELSE 'evidence_source'
+    END AS target_type,
+    COALESCE(c.id, esc.id, '') AS associated_claim_id,
+    COALESCE(c.proposition, esc.proposition, '') AS associated_claim_proposition,
+    COALESCE(c.grade, esc.grade, '') AS associated_claim_grade,
+    COALESCE(c.status, esc.status, '') AS associated_claim_status,
+    COALESCE(c.origin, esc.origin, '') AS associated_claim_origin,
+    COALESCE(c.quarantine_reasons, esc.quarantine_reasons, '[]') AS associated_claim_quarantine_reasons,
+    COALESCE(es.id, '') AS target_evidence_source_id,
+    COALESCE(es.locator, '') AS target_evidence_source_locator,
+    COALESCE(es.role, '') AS target_evidence_source_role,
+    COALESCE(es.status, '') AS target_evidence_source_status,
+    COALESCE(s.id, '') AS target_source_id,
+    COALESCE(s.title, '') AS target_source_title,
+    COALESCE(s.publisher_or_author, '') AS target_source_publisher,
+    CAST(EXISTS (
+        SELECT 1 FROM public_claims_view pcv
+        WHERE pcv.claim_id = COALESCE(c.id, esc.id)
+    ) AS INTEGER) AS is_claim_currently_public,
+    CAST(EXISTS (
+        SELECT 1 FROM moderation_decisions prev_d
+        WHERE prev_d.claim_id = COALESCE(c.id, esc.id) AND prev_d.action = 'approve'
+    ) AS INTEGER) AS had_prior_approval
+FROM moderation_decisions d
+LEFT JOIN claims c ON c.id = d.claim_id
+LEFT JOIN relationships rc ON rc.id = c.relationship_id
+LEFT JOIN evidence_sources es ON es.id = d.evidence_source_id
+LEFT JOIN evidence ev ON ev.id = es.evidence_id
+LEFT JOIN claims esc ON esc.id = ev.claim_id
+LEFT JOIN relationships resc ON resc.id = esc.relationship_id
+LEFT JOIN sources s ON s.id = es.source_id
+WHERE (
+    (d.claim_id IS NOT NULL AND (rc.subject_entity_id = @entity_id OR rc.target_entity_id = @entity_id))
+    OR
+    (d.evidence_source_id IS NOT NULL AND (resc.subject_entity_id = @entity_id OR resc.target_entity_id = @entity_id))
+)
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT @event_limit;
+
+-- name: ListPublicEditorialHistoryBySourceID :many
+SELECT
+    d.id AS decision_id,
+    d.claim_id,
+    d.evidence_source_id,
+    d.action,
+    d.created_at,
+    CASE
+        WHEN d.claim_id IS NOT NULL THEN 'claim'
+        ELSE 'evidence_source'
+    END AS target_type,
+    COALESCE(c.id, esc.id, '') AS associated_claim_id,
+    COALESCE(c.proposition, esc.proposition, '') AS associated_claim_proposition,
+    COALESCE(c.grade, esc.grade, '') AS associated_claim_grade,
+    COALESCE(c.status, esc.status, '') AS associated_claim_status,
+    COALESCE(c.origin, esc.origin, '') AS associated_claim_origin,
+    COALESCE(c.quarantine_reasons, esc.quarantine_reasons, '[]') AS associated_claim_quarantine_reasons,
+    COALESCE(es.id, '') AS target_evidence_source_id,
+    COALESCE(es.locator, '') AS target_evidence_source_locator,
+    COALESCE(es.role, '') AS target_evidence_source_role,
+    COALESCE(es.status, '') AS target_evidence_source_status,
+    COALESCE(s.id, '') AS target_source_id,
+    COALESCE(s.title, '') AS target_source_title,
+    COALESCE(s.publisher_or_author, '') AS target_source_publisher,
+    COALESCE(sub.name, '') AS subject_entity_name,
+    COALESCE(sub.slug, '') AS subject_entity_slug,
+    CAST(EXISTS (
+        SELECT 1 FROM public_claims_view pcv
+        WHERE pcv.claim_id = COALESCE(c.id, esc.id)
+    ) AS INTEGER) AS is_claim_currently_public,
+    CAST(EXISTS (
+        SELECT 1 FROM moderation_decisions prev_d
+        WHERE prev_d.claim_id = COALESCE(c.id, esc.id) AND prev_d.action = 'approve'
+    ) AS INTEGER) AS had_prior_approval
+FROM moderation_decisions d
+LEFT JOIN claims c ON c.id = d.claim_id
+LEFT JOIN relationships rc ON rc.id = c.relationship_id
+LEFT JOIN entities sub_c ON sub_c.id = rc.subject_entity_id
+LEFT JOIN evidence_sources es ON es.id = d.evidence_source_id
+LEFT JOIN evidence ev ON ev.id = es.evidence_id
+LEFT JOIN claims esc ON esc.id = ev.claim_id
+LEFT JOIN relationships resc ON resc.id = esc.relationship_id
+LEFT JOIN entities sub_esc ON sub_esc.id = resc.subject_entity_id
+LEFT JOIN entities sub ON sub.id = COALESCE(sub_c.id, sub_esc.id)
+LEFT JOIN sources s ON s.id = COALESCE(es.source_id, (
+    SELECT es2.source_id FROM evidence ev2
+    JOIN evidence_sources es2 ON es2.evidence_id = ev2.id
+    WHERE ev2.claim_id = d.claim_id AND es2.source_id = @source_id
+    LIMIT 1
+))
+WHERE (
+    (d.evidence_source_id IS NOT NULL AND es.source_id = @source_id)
+    OR
+    (d.claim_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM evidence ev3
+        JOIN evidence_sources es3 ON es3.evidence_id = ev3.id
+        WHERE ev3.claim_id = d.claim_id AND es3.source_id = @source_id
+    ))
+)
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT @event_limit;

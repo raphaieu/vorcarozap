@@ -228,6 +228,7 @@ type EntityDetailVM struct {
 	RelevanceRationale string
 	UpdatedAtHuman     string
 	Claims             []PublicClaimVM
+	EditorialHistory   []PublicEditorialEventVM
 }
 
 func ToEntityCardVM(row sqlc.ListPublicEntitiesRow) EntityCardVM {
@@ -328,6 +329,11 @@ func ToEntityDetailVM(detail *store.PublicEntityDetail) EntityDetailVM {
 		lastUpdated = detail.Entity.UpdatedAt
 	}
 
+	var historyVM []PublicEditorialEventVM
+	for _, ev := range detail.EditorialHistory {
+		historyVM = append(historyVM, ToPublicEditorialEventVM(ev))
+	}
+
 	return EntityDetailVM{
 		ID:                 detail.Entity.ID,
 		Slug:               detail.Entity.Slug,
@@ -341,6 +347,7 @@ func ToEntityDetailVM(detail *store.PublicEntityDetail) EntityDetailVM {
 		RelevanceRationale: detail.Entity.RelevanceRationale,
 		UpdatedAtHuman:     FormatDate(lastUpdated),
 		Claims:             claimsVM,
+		EditorialHistory:   historyVM,
 	}
 }
 
@@ -564,6 +571,7 @@ type DocumentDetailVM struct {
 	IsTitleEnriched         bool
 	IsAuthorEnriched        bool
 	Sequence                []DocumentSequenceItemVM
+	EditorialHistory        []PublicEditorialEventVM
 }
 
 // ToDocumentDetailVM converte o detalhe de domínio em ViewModel formatado para a página pública.
@@ -601,6 +609,11 @@ func ToDocumentDetailVM(doc *domain.DocumentSourceDetail) DocumentDetailVM {
 		})
 	}
 
+	var historyVM []PublicEditorialEventVM
+	for _, ev := range doc.EditorialHistory {
+		historyVM = append(historyVM, ToPublicEditorialEventVM(ev))
+	}
+
 	title := strings.TrimSpace(doc.Title)
 	publisher := strings.TrimSpace(doc.PublisherOrAuthor)
 
@@ -625,5 +638,82 @@ func ToDocumentDetailVM(doc *domain.DocumentSourceDetail) DocumentDetailVM {
 		IsTitleEnriched:         title != "",
 		IsAuthorEnriched:        publisher != "",
 		Sequence:                seqVM,
+		EditorialHistory:        historyVM,
 	}
+}
+
+// PublicEditorialEventVM encapsula um evento auditável e redigido do histórico público editorial.
+type PublicEditorialEventVM struct {
+	ID               string
+	CreatedAtHuman   string
+	CreatedAtISO     string
+	Action           string
+	ActionBadgeClass string
+	ActionLabel      string
+	TargetType       string
+	TargetTypeHuman  string
+	TargetLabel      string
+	Summary          string
+	ImpactLabel      string
+	IsTargetPublic   bool
+	ClaimID          string
+	ClaimProposition string
+	ClaimGrade       string
+	SourceID         string
+	SourceTitle      string
+	Locator          string
+}
+
+// ToPublicEditorialEventVM converte um evento de domínio no ViewModel formatado para apresentação pública segura.
+func ToPublicEditorialEventVM(ev domain.PublicEditorialEvent) PublicEditorialEventVM {
+	actionBadgeClass := "status-archived"
+	switch ev.Action {
+	case domain.PublicEditorialActionApprove, domain.PublicEditorialActionInitialPublish:
+		actionBadgeClass = "status-published"
+	case domain.PublicEditorialActionReject:
+		actionBadgeClass = "status-rejected"
+	case domain.PublicEditorialActionRestore:
+		actionBadgeClass = "status-quarantined"
+	}
+
+	targetTypeHuman := "Alegação"
+	if ev.TargetType == domain.PublicEditorialTargetEvidenceSource {
+		targetTypeHuman = "Fonte / Documento"
+	}
+
+	return PublicEditorialEventVM{
+		ID:               ev.ID,
+		CreatedAtHuman:   FormatDateTime(ev.CreatedAt),
+		CreatedAtISO:     ev.CreatedAt,
+		Action:           string(ev.Action),
+		ActionBadgeClass: actionBadgeClass,
+		ActionLabel:      ev.ActionLabel,
+		TargetType:       string(ev.TargetType),
+		TargetTypeHuman:  targetTypeHuman,
+		TargetLabel:      ev.TargetLabel,
+		Summary:          ev.Summary,
+		ImpactLabel:      ev.ImpactLabel,
+		IsTargetPublic:   ev.IsTargetPublic,
+		ClaimID:          ev.ClaimID,
+		ClaimProposition: ev.ClaimProposition,
+		ClaimGrade:       string(ev.ClaimGrade),
+		SourceID:         ev.SourceID,
+		SourceTitle:      ev.SourceTitle,
+		Locator:          ev.Locator,
+	}
+}
+
+// FormatDateTime formata strings de timestamp ISO-8601 UTC em formato legível com indicação UTC.
+func FormatDateTime(isoDate string) string {
+	if strings.TrimSpace(isoDate) == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339Nano, isoDate)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, isoDate)
+	}
+	if err != nil {
+		return FormatDate(isoDate)
+	}
+	return t.UTC().Format("02/01/2006 15:04") + " UTC"
 }

@@ -102,8 +102,9 @@ type PublicClaimWithSources struct {
 
 // PublicEntityDetail agrega todos os dados públicos necessários para a visualização detalhada de uma entidade.
 type PublicEntityDetail struct {
-	Entity sqlc.GetPublicEntityBySlugRow
-	Claims []PublicClaimWithSources
+	Entity           sqlc.GetPublicEntityBySlugRow
+	Claims           []PublicClaimWithSources
+	EditorialHistory []domain.PublicEditorialEvent
 }
 
 // SanitizeFilter valida parâmetros e aplica defaults seguros e conservadores utilizando o horário atual.
@@ -221,7 +222,7 @@ func ListPublicEntities(ctx context.Context, db *sql.DB, rawFilter PublicEntityF
 	}, nil
 }
 
-// GetPublicEntityDetail obtém a entidade pelo slug e carrega seus claims públicos com as fontes segregadas.
+// GetPublicEntityDetail obtém a entidade pelo slug e carrega seus claims públicos com as fontes segregadas e o histórico editorial.
 func GetPublicEntityDetail(ctx context.Context, db *sql.DB, slug string) (*PublicEntityDetail, error) {
 	q := sqlc.New(db)
 
@@ -250,9 +251,15 @@ func GetPublicEntityDetail(ctx context.Context, db *sql.DB, slug string) (*Publi
 		})
 	}
 
+	history, err := GetPublicEditorialHistoryForEntity(ctx, db, ent.ID, claimsWithSources, DefaultEditorialHistoryLimit)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao carregar histórico editorial da entidade: %w", err)
+	}
+
 	return &PublicEntityDetail{
-		Entity: ent,
-		Claims: claimsWithSources,
+		Entity:           ent,
+		Claims:           claimsWithSources,
+		EditorialHistory: history,
 	}, nil
 }
 
@@ -414,6 +421,11 @@ func GetPublicDocumentDetail(ctx context.Context, db *sql.DB, sourceID string) (
 		normErr = src.NormalizedErrorCode.String
 	}
 
+	history, err := GetPublicEditorialHistoryForSource(ctx, db, sourceID, items, DefaultEditorialHistoryLimit)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao carregar histórico editorial do documento: %w", err)
+	}
+
 	detail := &domain.DocumentSourceDetail{
 		ID:                    src.ID,
 		Title:                 src.Title,
@@ -430,7 +442,328 @@ func GetPublicDocumentDetail(ctx context.Context, db *sql.DB, sourceID string) (
 		CreatedAt:             src.CreatedAt,
 		UpdatedAt:             src.UpdatedAt,
 		Sequence:              items,
+		EditorialHistory:      history,
 	}
 
 	return detail, nil
+}
+
+// DefaultEditorialHistoryLimit define o limite conservador padrão de eventos para páginas públicas.
+const DefaultEditorialHistoryLimit = 50
+
+// GetPublicEditorialHistoryForEntity recupera e sintetiza o histórico público de alterações editoriais de uma entidade.
+// Aplica política estrita de redação: omite operadores (actor), fingerprints, payloads internos e texto de claims não-públicos.
+func GetPublicEditorialHistoryForEntity(ctx context.Context, db *sql.DB, entityID string, publishedClaims []PublicClaimWithSources, limit int64) ([]domain.PublicEditorialEvent, error) {
+	if limit <= 0 {
+		limit = DefaultEditorialHistoryLimit
+	}
+
+	q := sqlc.New(db)
+	rows, err := q.ListPublicEditorialHistoryByEntityID(ctx, sqlc.ListPublicEditorialHistoryByEntityIDParams{
+		EntityID:   entityID,
+		EventLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao consultar histórico editorial da entidade %s: %w", entityID, err)
+	}
+
+	seenEvents := make(map[string]bool)
+	var events []domain.PublicEditorialEvent
+
+	for _, row := range rows {
+		isClaimCurrentlyPublic := row.IsClaimCurrentlyPublic == 1
+		hadPriorApproval := row.HadPriorApproval == 1
+		wasClaimEverPublic := isClaimCurrentlyPublic || hadPriorApproval
+
+		// Omitir qualquer evento (claim ou evidence_source) se o claim associado nunca esteve publicamente disponível
+		if !wasClaimEverPublic {
+			continue
+		}
+
+		ev := domain.PublicEditorialEvent{
+			ID:             row.DecisionID,
+			CreatedAt:      row.CreatedAt,
+			TargetType:     domain.PublicEditorialTargetType(row.TargetType),
+			Action:         domain.PublicEditorialAction(row.Action),
+			IsTargetPublic: isClaimCurrentlyPublic,
+		}
+
+		if row.TargetType == "claim" {
+			ev.TargetID = row.AssociatedClaimID
+			ev.ClaimID = row.AssociatedClaimID
+			ev.ClaimGrade = domain.EvidenceGrade(row.AssociatedClaimGrade)
+			ev.TargetLabel = fmt.Sprintf("Alegação (Grau %s)", row.AssociatedClaimGrade)
+
+			if isClaimCurrentlyPublic {
+				ev.ClaimProposition = row.AssociatedClaimProposition
+			} else {
+				ev.ClaimProposition = "" // Redação de itens não públicos ou retirados
+			}
+
+			switch row.Action {
+			case "approve":
+				ev.ActionLabel = "Aprovação e Publicação"
+				ev.Summary = "Alegação aprovada pela equipe editorial com suporte documental ativo e incluída na área pública."
+				ev.ImpactLabel = "Publicada e computada em métricas"
+			case "reject":
+				ev.ActionLabel = "Retirada Editorial"
+				ev.Summary = "Alegação desaprovada e retirada da visualização pública e das métricas após deliberação editorial."
+				ev.ImpactLabel = "Removida da visualização pública"
+			case "restore":
+				ev.ActionLabel = "Restauração para Quarentena"
+				ev.Summary = "Registro restaurado para quarentena intermediária para reanálise editorial."
+				ev.ImpactLabel = "Retido em quarentena"
+			default:
+				ev.ActionLabel = "Alteração Editorial"
+				ev.Summary = "Atualização editorial no registro da alegação."
+				ev.ImpactLabel = "Registro atualizado"
+			}
+		} else { // evidence_source
+			loc := normalize.SafeLocator(row.TargetEvidenceSourceLocator)
+			ev.TargetID = row.TargetEvidenceSourceID
+			ev.Locator = loc
+			ev.SourceID = row.TargetSourceID
+			ev.SourceTitle = row.TargetSourceTitle
+			ev.ClaimID = row.AssociatedClaimID
+			ev.IsTargetPublic = isClaimCurrentlyPublic && row.TargetEvidenceSourceStatus == "active"
+			ev.TargetLabel = "Uso de Suporte Documental"
+
+			if isClaimCurrentlyPublic {
+				ev.ClaimProposition = row.AssociatedClaimProposition
+				ev.ClaimGrade = domain.EvidenceGrade(row.AssociatedClaimGrade)
+			} else {
+				ev.ClaimProposition = ""
+			}
+
+			switch row.Action {
+			case "reject":
+				ev.ActionLabel = "Desativação de Suporte"
+				if row.TargetSourceTitle != "" && loc != "" {
+					ev.Summary = fmt.Sprintf("Uso da fonte %q (%s) desativado após revisão editorial do trecho.", row.TargetSourceTitle, loc)
+				} else if row.TargetSourceTitle != "" {
+					ev.Summary = fmt.Sprintf("Uso da fonte %q desativado após revisão editorial.", row.TargetSourceTitle)
+				} else {
+					ev.Summary = "Uso de suporte documental desativado após revisão editorial."
+				}
+				ev.ImpactLabel = "Suporte documental desativado"
+			case "restore":
+				ev.ActionLabel = "Reativação de Suporte"
+				if row.TargetSourceTitle != "" && loc != "" {
+					ev.Summary = fmt.Sprintf("Uso da fonte %q (%s) reativado após reavaliação editorial.", row.TargetSourceTitle, loc)
+				} else if row.TargetSourceTitle != "" {
+					ev.Summary = fmt.Sprintf("Uso da fonte %q reativado após reavaliação editorial.", row.TargetSourceTitle)
+				} else {
+					ev.Summary = "Uso de suporte documental reativado após reavaliação editorial."
+				}
+				ev.ImpactLabel = "Suporte documental reativado"
+			default:
+				ev.ActionLabel = "Revisão de Suporte"
+				ev.Summary = "Reavaliação editorial de uso de fonte documental."
+				ev.ImpactLabel = "Suporte documental atualizado"
+			}
+		}
+
+		if !seenEvents[ev.ID] {
+			seenEvents[ev.ID] = true
+			events = append(events, ev)
+		}
+	}
+
+	// Sintetiza eventos de publicação inicial para claims públicos que não possuem registro de 'approve' explícito em moderation_decisions
+	for _, c := range publishedClaims {
+		pubID := "pub-" + c.Claim.ClaimID
+		hasApprove := false
+		for _, e := range events {
+			if e.ClaimID == c.Claim.ClaimID && e.Action == domain.PublicEditorialActionApprove {
+				hasApprove = true
+				break
+			}
+		}
+
+		if !hasApprove && !seenEvents[pubID] {
+			seenEvents[pubID] = true
+			events = append(events, domain.PublicEditorialEvent{
+				ID:               pubID,
+				CreatedAt:        c.Claim.CreatedAt,
+				TargetType:       domain.PublicEditorialTargetClaim,
+				TargetID:         c.Claim.ClaimID,
+				Action:           domain.PublicEditorialActionInitialPublish,
+				ActionLabel:      "Publicação do Registro",
+				TargetLabel:      fmt.Sprintf("Alegação (Grau %s)", c.Claim.Grade),
+				Summary:          "Registro documental compilado e publicado na plataforma com suporte de fontes verificadas.",
+				ImpactLabel:      "Publicado e computado em métricas",
+				IsTargetPublic:   true,
+				ClaimID:          c.Claim.ClaimID,
+				ClaimProposition: c.Claim.Proposition,
+				ClaimGrade:       domain.EvidenceGrade(c.Claim.Grade),
+			})
+		}
+	}
+
+	// Ordenação determinística decrescente (mais recente primeiro)
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].CreatedAt != events[j].CreatedAt {
+			return events[i].CreatedAt > events[j].CreatedAt
+		}
+		return events[i].ID > events[j].ID
+	})
+
+	if limit > 0 && int64(len(events)) > limit {
+		events = events[:limit]
+	}
+
+	return events, nil
+}
+
+// GetPublicEditorialHistoryForSource recupera e sintetiza o histórico público de alterações editoriais de uma fonte/documento.
+func GetPublicEditorialHistoryForSource(ctx context.Context, db *sql.DB, sourceID string, sequenceItems []domain.DocumentSequenceItem, limit int64) ([]domain.PublicEditorialEvent, error) {
+	if limit <= 0 {
+		limit = DefaultEditorialHistoryLimit
+	}
+
+	q := sqlc.New(db)
+	rows, err := q.ListPublicEditorialHistoryBySourceID(ctx, sqlc.ListPublicEditorialHistoryBySourceIDParams{
+		SourceID:   sourceID,
+		EventLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao consultar histórico editorial da fonte %s: %w", sourceID, err)
+	}
+
+	seenEvents := make(map[string]bool)
+	var events []domain.PublicEditorialEvent
+
+	for _, row := range rows {
+		isClaimCurrentlyPublic := row.IsClaimCurrentlyPublic == 1
+		hadPriorApproval := row.HadPriorApproval == 1
+		wasClaimEverPublic := isClaimCurrentlyPublic || hadPriorApproval
+
+		// Omitir qualquer evento (claim ou evidence_source) se o claim associado nunca esteve publicamente disponível
+		if !wasClaimEverPublic {
+			continue
+		}
+
+		ev := domain.PublicEditorialEvent{
+			ID:             row.DecisionID,
+			CreatedAt:      row.CreatedAt,
+			TargetType:     domain.PublicEditorialTargetType(row.TargetType),
+			Action:         domain.PublicEditorialAction(row.Action),
+			IsTargetPublic: isClaimCurrentlyPublic,
+		}
+
+		if row.TargetType == "claim" {
+			ev.TargetID = row.AssociatedClaimID
+			ev.ClaimID = row.AssociatedClaimID
+			ev.ClaimGrade = domain.EvidenceGrade(row.AssociatedClaimGrade)
+			ev.TargetLabel = fmt.Sprintf("Alegação Vinculada (Grau %s)", row.AssociatedClaimGrade)
+
+			if isClaimCurrentlyPublic {
+				ev.ClaimProposition = row.AssociatedClaimProposition
+			} else {
+				ev.ClaimProposition = "" // Redação de itens não públicos ou retirados
+			}
+
+			switch row.Action {
+			case "approve":
+				ev.ActionLabel = "Aprovação e Publicação"
+				ev.Summary = "Alegação sustentada por este documento foi aprovada e disponibilizada na área pública."
+				ev.ImpactLabel = "Publicada e ativa"
+			case "reject":
+				ev.ActionLabel = "Retirada Editorial"
+				ev.Summary = "Alegação associada foi desaprovada e retirada da visualização pública após revisão editorial."
+				ev.ImpactLabel = "Removida da área pública"
+			case "restore":
+				ev.ActionLabel = "Restauração para Quarentena"
+				ev.Summary = "Alegação associada foi recolhida para quarentena intermediária para reanálise."
+				ev.ImpactLabel = "Retida em quarentena"
+			}
+		} else { // evidence_source
+			loc := normalize.SafeLocator(row.TargetEvidenceSourceLocator)
+			ev.TargetID = row.TargetEvidenceSourceID
+			ev.Locator = loc
+			ev.SourceID = row.TargetSourceID
+			ev.SourceTitle = row.TargetSourceTitle
+			ev.ClaimID = row.AssociatedClaimID
+			ev.IsTargetPublic = isClaimCurrentlyPublic && row.TargetEvidenceSourceStatus == "active"
+			ev.TargetLabel = "Trecho Documental"
+
+			if isClaimCurrentlyPublic {
+				ev.ClaimProposition = row.AssociatedClaimProposition
+				ev.ClaimGrade = domain.EvidenceGrade(row.AssociatedClaimGrade)
+			} else {
+				ev.ClaimProposition = ""
+			}
+
+			switch row.Action {
+			case "reject":
+				ev.ActionLabel = "Desativação de Trecho"
+				if loc != "" {
+					ev.Summary = fmt.Sprintf("Trecho documental (%s) desativado após revisão editorial de uso.", loc)
+				} else {
+					ev.Summary = "Trecho documental desativado após revisão editorial de uso."
+				}
+				ev.ImpactLabel = "Trecho desativado"
+			case "restore":
+				ev.ActionLabel = "Reativação de Trecho"
+				if loc != "" {
+					ev.Summary = fmt.Sprintf("Trecho documental (%s) reativado após reavaliação editorial.", loc)
+				} else {
+					ev.Summary = "Trecho documental reativado após reavaliação editorial."
+				}
+				ev.ImpactLabel = "Trecho reativado"
+			}
+		}
+
+		if !seenEvents[ev.ID] {
+			seenEvents[ev.ID] = true
+			events = append(events, ev)
+		}
+	}
+
+	// Sintetiza eventos de publicação inicial para os trechos atualmente ativos da sequência
+	for _, item := range sequenceItems {
+		pubID := "pub-doc-" + item.ID
+		hasApprove := false
+		for _, e := range events {
+			if e.TargetID == item.ID && (e.Action == domain.PublicEditorialActionApprove || e.Action == domain.PublicEditorialActionRestore) {
+				hasApprove = true
+				break
+			}
+		}
+
+		if !hasApprove && !seenEvents[pubID] {
+			seenEvents[pubID] = true
+			events = append(events, domain.PublicEditorialEvent{
+				ID:               pubID,
+				CreatedAt:        item.CreatedAt,
+				TargetType:       domain.PublicEditorialTargetEvidenceSource,
+				TargetID:         item.ID,
+				Action:           domain.PublicEditorialActionInitialPublish,
+				ActionLabel:      "Inclusão Documental",
+				TargetLabel:      "Trecho Documental",
+				Summary:          fmt.Sprintf("Trecho documental (%s) incluído e referenciado em alegação pública.", normalize.SafeLocator(item.Locator)),
+				ImpactLabel:      "Ativo e publicado",
+				IsTargetPublic:   true,
+				ClaimID:          item.ClaimID,
+				ClaimProposition: item.ClaimProposition,
+				ClaimGrade:       item.ClaimGrade,
+				SourceID:         sourceID,
+				Locator:          normalize.SafeLocator(item.Locator),
+			})
+		}
+	}
+
+	// Ordenação determinística decrescente
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].CreatedAt != events[j].CreatedAt {
+			return events[i].CreatedAt > events[j].CreatedAt
+		}
+		return events[i].ID > events[j].ID
+	})
+
+	if limit > 0 && int64(len(events)) > limit {
+		events = events[:limit]
+	}
+
+	return events, nil
 }

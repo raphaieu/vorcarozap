@@ -2,6 +2,21 @@
 
 Todas as alterações notáveis deste projeto são registradas neste documento. O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [Não lançado] — VZ-024: Histórico Público de Alterações Editoriais e Trilha de Auditoria
+
+### Adicionado
+- **Histórico Público de Alterações Editoriais e Trilha de Transparência ([ADR-023](docs/adr/ADR-023-historico-publico-de-alteracoes-editoriais-e-trilha-de-transparencia.md)):**
+  - Trilha pública de auditoria nas fichas de entidades (`GET /pessoas/{slug}`) e no visualizador de documentos (`GET /documentos/{id}`), apresentando eventos com rótulos institucionais claros (*Publicação Inicial*, *Aprovação Editorial*, *Retirada Editorial*, *Restauração de Vínculo Documental*, etc.).
+  - Projeção pública em `internal/store/public.go` (`GetPublicEditorialHistoryForEntity` e `GetPublicEditorialHistoryForSource`) reutilizando o schema existente de `moderation_decisions` sem requerer novas tabelas ou migrations.
+  - Segregação de segurança e privacidade: identificador do operador (`actor`) é sempre exibido publicamente como "Equipe Editorial"; motivos internos de moderação (`reason`), fingerprints (`candidate_fingerprint`), payloads brutos da LLM (`raw_response`) e telemetria financeira são omitidos da visão pública.
+  - Proteção contra vazamento de proposições: deliberações sobre itens que permaneceram em quarentena sem publicação prévia são omitidas do histórico público; alegações retiradas têm o texto da proposição redigido para evitar a perpetuação de desinformação.
+  - Ordenação determinística natural por timestamp UTC e ID (`created_at DESC, id DESC`).
+  - Destaque visual explícito no painel administrativo (`/admin/claims/{id}` e `/admin/evidencias/{id}`) identificando a seção como "Auditoria Administrativa Completa (Privada)".
+  - Integração com consultas diretas ao SQLite WAL e cabeçalhos dinâmicos `Cache-Control: no-cache, no-store, must-revalidate`, assegurando consistência imediata após qualquer deliberação de moderação.
+- **Suíte de Testes Automatizados:**
+  - Testes unitários em `internal/store/editorial_history_test.go` cobrindo agregação de histórico por entidade e por documento, redação de proposição em alegações rejeitadas, filtragem de candidatos em quarentena e ordenação determinística.
+  - Testes de integração HTTP em `internal/web/editorial_history_test.go` verificando renderização SSR em `/pessoas/{slug}` e `/documentos/{id}`, omissão de dados sensíveis na resposta HTML e atualização imediata do histórico após moderação.
+
 ## [Não lançado] — VZ-023: Avaliação Técnica e Viewer SSR de Documentos e Sequências Contextuais
 
 ### Adicionado

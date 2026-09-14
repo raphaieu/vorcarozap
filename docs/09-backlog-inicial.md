@@ -36,7 +36,7 @@ Itens de enriquecimento e maturidade inspirados nas discussões de navegação d
 |---|---|---|---|
 | VZ-022 | P1 | Referenciação aprofundada de laudos periciais e peças (locators cirúrgicos de página e figura em `evidence_sources`, mantendo schema do MVP sem criar novas tabelas) | Concluído (Fase 7) |
 | VZ-023 | P1 | Viewer SSR de documentos e sequências contextuais (avaliação técnica de viabilidade em Go/Templ, auditoria de integridade e conformidade estrita de licenças/permissões) | Concluído (Fase 7) |
-| VZ-024 | P1 | Histórico público de alterações editoriais e trilha de auditoria | Proposta (Pós-MVP) |
+| VZ-024 | P1 | Histórico público de alterações editoriais e trilha de auditoria | Concluído (Fase 7) |
 | VZ-025 | P1 | Módulo de contraditório estruturado e submissão pública de manifestações de defesa | Proposta (Pós-MVP) |
 | VZ-026 | P1 | Gestão multiusuário do painel com perfis e autenticação reforçada (MFA/RBAC) | Proposta (Pós-MVP) |
 

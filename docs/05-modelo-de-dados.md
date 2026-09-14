@@ -135,6 +135,16 @@ A migration `00009_moderation_claim_actions.sql`, a [ADR-017](adr/ADR-017-modera
     - `restore`: `rejected -> active` (invariante: **restaurar evidência nunca republica o claim automaticamente**, mantendo-o em quarentena até nova deliberação humana).
 - **Isolamento Transacional e Controle Otimista de Versão:** Toda deliberação de moderação (claim ou evidence_source) é executada em uma única transação SQLite atômica (`store.WithTx`) com revalidação de versão (`expected_updated_at`) e atualização condicional no SQLite, impedindo inconsistências e devolvendo conflito determinístico (`409 Conflict`).
 
+## Histórico público de alterações editoriais e trilha de auditoria (VZ-024)
+
+Conforme formalizado na [ADR-023](adr/ADR-023-historico-publico-de-alteracoes-editoriais-e-trilha-de-transparencia.md), a transparência pública de alterações editoriais é derivada deterministicamente em tempo de consulta sem necessidade de migrations ou tabelas adicionais:
+- **Separação estrita entre auditoria interna e histórico público:**
+  - A tabela imutável `moderation_decisions` registra todas as deliberações humanas (`claim_id` XOR `evidence_source_id`, `actor`, `reason`, `candidate_fingerprint`, `created_at`) para controle interno no painel administrativo `/admin`.
+  - A projeção pública (`internal/domain.PublicEditorialEvent`) redige estritamente dados internos: o operador (`actor`) é sempre exibido como "Equipe Editorial"; justificativas internas (`reason`), hashes/fingerprints (`candidate_fingerprint`), payloads brutos (`raw_response`) e custos/tokens de LLM nunca são expostos ao público leitor.
+- **Filtragem de itens não publicados:** Decisões de rejeição sobre itens que estavam sob quarentena e nunca foram tornados públicos são omitidas do histórico público para evitar vazamento de proposições não validadas ou alucinações de LLM.
+- **Redação de proposição em alegações retiradas:** Quando um claim previamente publicado é rejeitado por moderação humana, o evento público registra "Retirada Editorial" e redige a proposição (`ClaimProposition = ""`), prevenindo a permanência pública de desinformação refutada.
+- **Ordenação determinística e consistência imediata:** Eventos são ordenados estritamente por `created_at DESC, id DESC`. Consultas dinâmicas ao SQLite WAL garantem que qualquer deliberação de moderação reflita instantaneamente no histórico público de `/pessoas/{slug}` e `/documentos/{id}`.
+
 ## Futuro
 
 `users`, `sessions`, `publication_revisions`, `editorial_summaries`, `source_snapshots`, `source_relationships`, auditoria completa e contraditório estruturado entram quando painel/equipe amadurecerem.
