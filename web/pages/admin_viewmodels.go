@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/raphaieu/vorcarozap/internal/domain"
+	"github.com/raphaieu/vorcarozap/internal/normalize"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
@@ -305,7 +307,7 @@ func ToAdminCandidateItemVM(c sqlc.ListAdminCandidatesRow) AdminCandidateItemVM 
 		PublisherOrAuthor:    c.PublisherOrAuthor,
 		PublishedAtHuman:     FormatDate(c.PublishedAt),
 		Excerpt:              c.Excerpt,
-		Locator:              c.Locator,
+		Locator:              normalize.SafeLocator(c.Locator),
 		ContextLimits:        c.ContextLimits,
 		TechnicalConfidence:  c.TechnicalConfidence,
 		ConfidenceHuman:      FormatConfidence(c.TechnicalConfidence),
@@ -395,7 +397,7 @@ func ToAdminCandidateDetailVM(detail *store.AdminCandidateDetail) AdminCandidate
 		PublisherOrAuthor:    c.PublisherOrAuthor,
 		PublishedAtHuman:     FormatDate(c.PublishedAt),
 		Excerpt:              c.Excerpt,
-		Locator:              c.Locator,
+		Locator:              normalize.SafeLocator(c.Locator),
 		ContextLimits:        c.ContextLimits,
 		TechnicalConfidence:  c.TechnicalConfidence,
 		ConfidenceHuman:      FormatConfidence(c.TechnicalConfidence),
@@ -510,6 +512,8 @@ type AdminEvidenceItemVM struct {
 	SourceOriginalURL          ExternalLinkVM
 	SourceCanonicalURL         ExternalLinkVM
 	SourceType                 string
+	SourceTypeHuman            string
+	IsPrimaryDocument          bool
 	SourceAccessStatus         string
 	SourceAccessStatusHuman    string
 	SourceCheckedAtHuman       string
@@ -576,7 +580,7 @@ func ToAdminEvidenceItemVM(row sqlc.ListAdminEvidenceSourcesRow) AdminEvidenceIt
 		EvidenceID:                 row.EvidenceID,
 		SourceID:                   row.SourceID,
 		Excerpt:                    row.Excerpt,
-		Locator:                    row.Locator,
+		Locator:                    normalize.SafeLocator(row.Locator),
 		Role:                       row.Role,
 		RoleHuman:                  FormatEvidenceRole(row.Role),
 		EvidenceSourceStatus:       row.EvidenceSourceStatus,
@@ -616,6 +620,8 @@ func ToAdminEvidenceItemVM(row sqlc.ListAdminEvidenceSourcesRow) AdminEvidenceIt
 		SourceOriginalURL:          SanitizeExternalLink(row.SourceOriginalUrl),
 		SourceCanonicalURL:         SanitizeExternalLink(row.SourceCanonicalUrl),
 		SourceType:                 row.SourceType,
+		SourceTypeHuman:            domain.SourceType(row.SourceType).Label(),
+		IsPrimaryDocument:          domain.SourceType(row.SourceType).IsPrimaryDocument(),
 		SourceAccessStatus:         row.SourceAccessStatus,
 		SourceAccessStatusHuman:    FormatSourceAccessStatus(row.SourceAccessStatus),
 		SourceCheckedAtHuman:       FormatDate(row.SourceAccessCheckedAt),
@@ -635,6 +641,8 @@ type AdminSourceItemVM struct {
 	AccessedAtHuman         string
 	CreatedAtHuman          string
 	SourceType              string
+	SourceTypeHuman         string
+	IsPrimaryDocument       bool
 	SourceAccessStatus      string
 	SourceAccessStatusHuman string
 	SourceCheckedAtHuman    string
@@ -716,6 +724,8 @@ func ToAdminSourceItemVM(s sqlc.ListAdminSourcesRow) AdminSourceItemVM {
 		AccessedAtHuman:         FormatDate(s.AccessedAt),
 		CreatedAtHuman:          FormatDate(s.CreatedAt),
 		SourceType:              s.SourceType,
+		SourceTypeHuman:         domain.SourceType(s.SourceType).Label(),
+		IsPrimaryDocument:       domain.SourceType(s.SourceType).IsPrimaryDocument(),
 		SourceAccessStatus:      s.SourceAccessStatus,
 		SourceAccessStatusHuman: FormatSourceAccessStatus(s.SourceAccessStatus),
 		SourceCheckedAtHuman:    FormatDate(s.SourceAccessCheckedAt),
@@ -827,6 +837,8 @@ type AdminClaimEvidenceItemVM struct {
 	SourceOriginalURL          ExternalLinkVM
 	SourceCanonicalURL         ExternalLinkVM
 	SourceType                 string
+	SourceTypeHuman            string
+	IsPrimaryDocument          bool
 	SourceAccessStatus         string
 	SourceAccessStatusHuman    string
 	SourceCheckedAtHuman       string
@@ -886,7 +898,7 @@ func ToAdminClaimDetailVM(detail *store.AdminClaimDetail, flashMsg, flashErr str
 		evList = append(evList, AdminClaimEvidenceItemVM{
 			EvidenceSourceID:           es.EvidenceSourceID,
 			Excerpt:                    es.Excerpt,
-			Locator:                    es.Locator,
+			Locator:                    normalize.SafeLocator(es.Locator),
 			Role:                       es.Role,
 			RoleHuman:                  FormatEvidenceRole(es.Role),
 			EvidenceSourceStatus:       es.EvidenceSourceStatus,
@@ -899,6 +911,8 @@ func ToAdminClaimDetailVM(detail *store.AdminClaimDetail, flashMsg, flashErr str
 			SourceOriginalURL:          SanitizeExternalLink(es.SourceOriginalUrl),
 			SourceCanonicalURL:         SanitizeExternalLink(es.SourceCanonicalUrl),
 			SourceType:                 es.SourceType,
+			SourceTypeHuman:            domain.SourceType(es.SourceType).Label(),
+			IsPrimaryDocument:          domain.SourceType(es.SourceType).IsPrimaryDocument(),
 			SourceAccessStatus:         es.SourceAccessStatus,
 			SourceAccessStatusHuman:    FormatSourceAccessStatus(es.SourceAccessStatus),
 			SourceCheckedAtHuman:       FormatDate(es.SourceAccessCheckedAt),
@@ -1051,6 +1065,8 @@ type AdminEvidenceSourceDetailVM struct {
 	SourcePublishedAtHuman     string
 	SourceAccessedAtHuman      string
 	SourceType                 string
+	SourceTypeHuman            string
+	IsPrimaryDocument          bool
 	SourceAccessStatus         string
 	SourceAccessStatusHuman    string
 	SourceCheckedAtHuman       string
@@ -1092,7 +1108,7 @@ func ToAdminEvidenceSourceDetailVM(detail *store.AdminEvidenceSourceDetail, flas
 		EvidenceID:                 es.EvidenceID,
 		SourceID:                   es.SourceID,
 		Excerpt:                    es.Excerpt,
-		Locator:                    es.Locator,
+		Locator:                    normalize.SafeLocator(es.Locator),
 		Role:                       es.Role,
 		RoleHuman:                  FormatEvidenceRole(es.Role),
 		EvidenceSourceStatus:       es.EvidenceSourceStatus,
@@ -1136,6 +1152,8 @@ func ToAdminEvidenceSourceDetailVM(detail *store.AdminEvidenceSourceDetail, flas
 		SourcePublishedAtHuman:     FormatDate(es.SourcePublishedAt),
 		SourceAccessedAtHuman:      FormatDate(es.SourceAccessedAt),
 		SourceType:                 es.SourceType,
+		SourceTypeHuman:            domain.SourceType(es.SourceType).Label(),
+		IsPrimaryDocument:          domain.SourceType(es.SourceType).IsPrimaryDocument(),
 		SourceAccessStatus:         es.SourceAccessStatus,
 		SourceAccessStatusHuman:    FormatSourceAccessStatus(es.SourceAccessStatus),
 		SourceCheckedAtHuman:       FormatDate(es.SourceAccessCheckedAt),

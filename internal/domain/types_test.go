@@ -575,3 +575,79 @@ func TestValidateEvidenceSourceTransition(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceType(t *testing.T) {
+	validTypes := []domain.SourceType{
+		domain.SourceTypeArticle,
+		domain.SourceTypeCourtDocument,
+		domain.SourceTypePoliceReport,
+		domain.SourceTypeOfficialStatement,
+		domain.SourceTypeInterview,
+		domain.SourceTypeSocialMedia,
+	}
+
+	for _, st := range validTypes {
+		if !st.IsValid() {
+			t.Errorf("SourceType %q deveria ser válido", st)
+		}
+		if st.Label() == "" {
+			t.Errorf("SourceType %q não deve ter Label vazia", st)
+		}
+		if st.NatureLabel() == "" {
+			t.Errorf("SourceType %q não deve ter NatureLabel vazia", st)
+		}
+	}
+
+	invalidType := domain.SourceType("invalid_type")
+	if invalidType.IsValid() {
+		t.Errorf("SourceType %q não deveria ser válido", invalidType)
+	}
+
+	// Validação de documentos primários
+	primaryTypes := []domain.SourceType{
+		domain.SourceTypeCourtDocument,
+		domain.SourceTypePoliceReport,
+		domain.SourceTypeOfficialStatement,
+	}
+	for _, pt := range primaryTypes {
+		if !pt.IsPrimaryDocument() {
+			t.Errorf("SourceType %q deveria ser reconhecido como documento primário", pt)
+		}
+	}
+
+	secondaryTypes := []domain.SourceType{
+		domain.SourceTypeArticle,
+		domain.SourceTypeInterview,
+		domain.SourceTypeSocialMedia,
+	}
+	for _, st := range secondaryTypes {
+		if st.IsPrimaryDocument() {
+			t.Errorf("SourceType %q NÃO deveria ser reconhecido como documento primário", st)
+		}
+	}
+
+	// CanonicalSourceTypes deve conter exatamente os 6 tipos canônicos
+	if len(domain.CanonicalSourceTypes) != 6 {
+		t.Fatalf("esperado 6 tipos em CanonicalSourceTypes, obtido %d", len(domain.CanonicalSourceTypes))
+	}
+	for _, ct := range domain.CanonicalSourceTypes {
+		if !ct.IsValid() {
+			t.Errorf("tipo canônico %q deveria ser válido", ct)
+		}
+	}
+
+	// Tipo desconhecido deve permanecer neutro
+	unknown := domain.SourceType("blog_post_desconhecido")
+	if unknown.IsValid() {
+		t.Errorf("tipo desconhecido não deveria ser válido")
+	}
+	if unknown.IsPrimaryDocument() {
+		t.Errorf("tipo desconhecido não deve ser classificado como primário")
+	}
+	if unknown.Label() != "blog_post_desconhecido" {
+		t.Errorf("Label de tipo desconhecido deve retornar seu valor original, obtido: %q", unknown.Label())
+	}
+	if unknown.NatureLabel() != "Referência Documental" {
+		t.Errorf("NatureLabel de tipo desconhecido deve ser 'Referência Documental', obtido: %q", unknown.NatureLabel())
+	}
+}

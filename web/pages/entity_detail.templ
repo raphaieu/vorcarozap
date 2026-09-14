@@ -127,35 +127,50 @@ templ EntityDetail(vm EntityDetailVM) {
 											for _, src := range cl.SupportsSources {
 												<li class="source-item">
 													<div class="source-header-meta">
-														if src.IsTitleEnriched {
-															<strong class="source-title">{ src.Title }</strong>
-														} else {
-															<span class="source-title-pending">Título da publicação não enriquecido</span>
-														}
-
-														if src.IsAuthorEnriched {
-															<span class="source-publisher">&bull; { src.PublisherOrAuthor }</span>
-														} else {
-															<span class="source-publisher-pending">&bull; Veículo/autor não enriquecido</span>
-														}
-
-														if src.PublishedAtHuman != "" {
-															<span class="source-date">&bull; Publicado em { src.PublishedAtHuman }</span>
-														}
+														<div class="source-meta-top">
+															if src.IsPrimaryDocument {
+																<span class="source-type-badge source-type-primary" title={ src.NatureLabel }>{ src.SourceTypeHuman }</span>
+															} else if src.SourceTypeHuman != "" {
+																<span class="source-type-badge" title={ src.NatureLabel }>{ src.SourceTypeHuman }</span>
+															}
+															if src.IsTitleEnriched {
+																<strong class="source-title">{ src.Title }</strong>
+															} else {
+																<span class="source-title-pending">Título da publicação não enriquecido</span>
+															}
+														</div>
+														<div class="source-meta-sub">
+															if src.IsAuthorEnriched {
+																<span class="source-publisher">{ src.PublisherOrAuthor }</span>
+															} else {
+																<span class="source-publisher-pending">Veículo/autor não enriquecido</span>
+															}
+															if src.PublishedAtHuman != "" {
+																<span class="source-date">&bull; Publicado em { src.PublishedAtHuman }</span>
+															}
+														</div>
 													</div>
 
 													if src.Excerpt != "" {
 														<blockquote class="source-excerpt">
 															&ldquo;{ src.Excerpt }&rdquo;
-															if src.Locator != "" {
-																<cite class="source-locator">({ src.Locator })</cite>
-															}
 														</blockquote>
+													}
+
+													if src.Locator != "" {
+														<div class="source-locator-box">
+															<span class="source-locator-label">Localizador Documental:</span>
+															<span class="source-locator-chip">{ src.Locator }</span>
+														</div>
 													}
 
 													<div class="source-link-row">
 														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
-															Acessar documento/fonte original &nearr;
+															if src.IsPrimaryDocument {
+																Acessar documento oficial original &nearr;
+															} else {
+																Acessar documento/fonte original &nearr;
+															}
 														</a>
 													</div>
 												</li>
@@ -172,25 +187,39 @@ templ EntityDetail(vm EntityDetailVM) {
 											for _, src := range cl.ContradictsSources {
 												<li class="source-item defense-item">
 													<div class="source-header-meta">
-														if src.IsTitleEnriched {
-															<strong class="source-title">{ src.Title }</strong>
-														} else {
-															<span class="source-title-pending">Manifestação / nota de defesa</span>
-														}
-
-														if src.IsAuthorEnriched {
-															<span class="source-publisher">&bull; { src.PublisherOrAuthor }</span>
-														}
-
-														if src.PublishedAtHuman != "" {
-															<span class="source-date">&bull; Data: { src.PublishedAtHuman }</span>
-														}
+														<div class="source-meta-top">
+															if src.IsPrimaryDocument {
+																<span class="source-type-badge source-type-primary" title={ src.NatureLabel }>{ src.SourceTypeHuman }</span>
+															} else if src.SourceTypeHuman != "" {
+																<span class="source-type-badge" title={ src.NatureLabel }>{ src.SourceTypeHuman }</span>
+															}
+															if src.IsTitleEnriched {
+																<strong class="source-title">{ src.Title }</strong>
+															} else {
+																<span class="source-title-pending">Manifestação / nota de defesa</span>
+															}
+														</div>
+														<div class="source-meta-sub">
+															if src.IsAuthorEnriched {
+																<span class="source-publisher">{ src.PublisherOrAuthor }</span>
+															}
+															if src.PublishedAtHuman != "" {
+																<span class="source-date">&bull; Data: { src.PublishedAtHuman }</span>
+															}
+														</div>
 													</div>
 
 													if src.Excerpt != "" {
 														<blockquote class="source-excerpt">
 															&ldquo;{ src.Excerpt }&rdquo;
 														</blockquote>
+													}
+
+													if src.Locator != "" {
+														<div class="source-locator-box">
+															<span class="source-locator-label">Localizador Documental:</span>
+															<span class="source-locator-chip">{ src.Locator }</span>
+														</div>
 													}
 
 													<div class="source-link-row">
@@ -212,21 +241,36 @@ templ EntityDetail(vm EntityDetailVM) {
 											for _, src := range cl.ContextSources {
 												<li class="source-item">
 													<div class="source-header-meta">
-														if src.IsTitleEnriched {
-															<strong class="source-title">{ src.Title }</strong>
-														} else {
-															<span class="source-title-pending">Fonte de contexto</span>
-														}
-
-														if src.IsAuthorEnriched {
-															<span class="source-publisher">&bull; { src.PublisherOrAuthor }</span>
-														}
+														<div class="source-meta-top">
+															if src.IsPrimaryDocument {
+																<span class="source-type-badge source-type-primary" title={ src.NatureLabel }>{ src.SourceTypeHuman }</span>
+															} else if src.SourceTypeHuman != "" {
+																<span class="source-type-badge" title={ src.NatureLabel }>{ src.SourceTypeHuman }</span>
+															}
+															if src.IsTitleEnriched {
+																<strong class="source-title">{ src.Title }</strong>
+															} else {
+																<span class="source-title-pending">Fonte de contexto</span>
+															}
+														</div>
+														<div class="source-meta-sub">
+															if src.IsAuthorEnriched {
+																<span class="source-publisher">{ src.PublisherOrAuthor }</span>
+															}
+														</div>
 													</div>
 
 													if src.Excerpt != "" {
 														<blockquote class="source-excerpt">
 															&ldquo;{ src.Excerpt }&rdquo;
 														</blockquote>
+													}
+
+													if src.Locator != "" {
+														<div class="source-locator-box">
+															<span class="source-locator-label">Localizador Documental:</span>
+															<span class="source-locator-chip">{ src.Locator }</span>
+														</div>
 													}
 
 													<div class="source-link-row">

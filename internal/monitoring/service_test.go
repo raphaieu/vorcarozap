@@ -710,3 +710,162 @@ func TestCandidatesDoNotAffectPublicClaimsViewOrMetrics(t *testing.T) {
 			claimsCount, entitiesCount, sourcesCount)
 	}
 }
+
+func TestExecuteRun_InvalidLocatorFailsRunStrictly(t *testing.T) {
+	invalidLocators := []struct {
+		name    string
+		locator string
+	}{
+		{"html script tag", "<script>alert(1)</script>"},
+		{"html img tag", "<img src=x onerror=alert(1)>"},
+		{"javascript scheme", "javascript:alert(document.cookie)"},
+		{"data scheme", "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="},
+		{"vbscript scheme", "vbscript:msgbox(1)"},
+		{"file scheme", "file:///etc/passwd"},
+		{"path traversal unix", "../../etc/passwd"},
+		{"path traversal windows", "..\\..\\windows\\system32"},
+		{"control character null", "p. 42\x00malicious"},
+		{"control character bell", "p. 42\x07bell"},
+		{"excessive length", strings.Repeat("a", 201)},
+	}
+
+	for _, tc := range invalidLocators {
+		t.Run(tc.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+
+			mockProvider := &mockResearchProvider{
+				discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+					return &research.DiscoverResult{
+						Candidates: []research.CandidateExtraction{
+							{
+								EntityName:          "Daniel Vorcaro",
+								Proposition:         "Proposição de teste",
+								SuggestedGrade:      "A",
+								SourceURL:           "https://noticias.exemplo.com/materia-segura",
+								SourceTitle:         "Materia Segura",
+								PublisherOrAuthor:   "Veículo Z",
+								PublishedAt:         "2026-09-03",
+								Excerpt:             "Trecho seguro de teste...",
+								Locator:             tc.locator,
+								TechnicalConfidence: 0.95,
+							},
+						},
+						Model: "openai/gpt-4.1-mini",
+					}, nil
+				},
+			}
+
+			svc, err := monitoring.NewService(monitoring.ServiceConfig{
+				DB:       db,
+				Provider: mockProvider,
+			})
+			if err != nil {
+				t.Fatalf("erro ao criar Service: %v", err)
+			}
+
+			res, err := svc.ExecuteRun(ctx, monitoring.RunInput{Query: "teste locator"})
+			if err != nil {
+				t.Fatalf("ExecuteRun não deveria retornar erro fatal Go ao registrar falha de localizador: %v", err)
+			}
+
+			if res.Status != "failed" {
+				t.Errorf("status esperado 'failed' para localizador inseguro %q, obtido %q", tc.locator, res.Status)
+			}
+
+			run, err := svc.GetRun(ctx, res.RunID)
+			if err != nil {
+				t.Fatalf("GetRun falhou: %v", err)
+			}
+			if run.Status != "failed" {
+				t.Errorf("status no banco esperado 'failed', obtido %q", run.Status)
+			}
+
+			// Nenhum candidato deve ter sido persistido no banco
+			cands, err := svc.ListCandidates(ctx, res.RunID)
+			if err != nil {
+				t.Fatalf("ListCandidates falhou: %v", err)
+			}
+			if len(cands) != 0 {
+				t.Errorf("nenhum candidato deveria ter sido persistido para localizador inseguro, obtido %d", len(cands))
+			}
+		})
+	}
+}
+
+func TestExecuteRun_ValidLocatorNormalizedCorrectly(t *testing.T) {
+	db, ctx := setupTestDB(t)
+
+	mockProvider := &mockResearchProvider{
+		discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+			return &research.DiscoverResult{
+				Candidates: []research.CandidateExtraction{
+					{
+						EntityName:          "Daniel Vorcaro",
+						Proposition:         "Proposição 1",
+						SuggestedGrade:      "A",
+						SourceURL:           "https://noticias.exemplo.com/materia-1",
+						SourceTitle:         "Materia 1",
+						Excerpt:             "Trecho 1",
+						Locator:             "p. 42, figura 12",
+						TechnicalConfidence: 0.95,
+					},
+					{
+						EntityName:          "Daniel Vorcaro",
+						Proposition:         "Proposição 2",
+						SuggestedGrade:      "B",
+						SourceURL:           "https://noticias.exemplo.com/materia-2",
+						SourceTitle:         "Materia 2",
+						Excerpt:             "Trecho 2",
+						Locator:             "fls. 10-14",
+						TechnicalConfidence: 0.90,
+					},
+					{
+						EntityName:          "Daniel Vorcaro",
+						Proposition:         "Proposição 3",
+						SuggestedGrade:      "C",
+						SourceURL:           "https://noticias.exemplo.com/materia-3",
+						SourceTitle:         "Materia 3",
+						Excerpt:             "Trecho 3",
+						Locator:             "",
+						TechnicalConfidence: 0.85,
+					},
+				},
+				Model: "openai/gpt-4.1-mini",
+			}, nil
+		},
+	}
+
+	svc, err := monitoring.NewService(monitoring.ServiceConfig{
+		DB:       db,
+		Provider: mockProvider,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar Service: %v", err)
+	}
+
+	summary, err := svc.ExecuteRun(ctx, monitoring.RunInput{Query: "teste locator valido"})
+	if err != nil {
+		t.Fatalf("ExecuteRun falhou para localizadores válidos: %v", err)
+	}
+	if summary.Status != "completed" {
+		t.Fatalf("esperado status 'completed', obtido %q", summary.Status)
+	}
+
+	cands, err := svc.ListCandidates(ctx, summary.RunID)
+	if err != nil {
+		t.Fatalf("ListCandidates falhou: %v", err)
+	}
+	if len(cands) != 3 {
+		t.Fatalf("esperado 3 candidatos persistidos, obtido %d", len(cands))
+	}
+
+	if cands[0].Locator != "Pág. 42, Fig. 12" {
+		t.Errorf("candidato[0] locator esperado 'Pág. 42, Fig. 12', obtido %q", cands[0].Locator)
+	}
+	if cands[1].Locator != "Fls. 10–14" {
+		t.Errorf("candidato[1] locator esperado 'Fls. 10–14', obtido %q", cands[1].Locator)
+	}
+	if cands[2].Locator != "" {
+		t.Errorf("candidato[2] locator esperado '', obtido %q", cands[2].Locator)
+	}
+}

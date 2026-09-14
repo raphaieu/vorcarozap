@@ -641,3 +641,69 @@ func TestRunnerLeaseLossBetweenDiscoverAndIngestion(t *testing.T) {
 		t.Errorf("custo diário acumulado deve incluir a run falha: obtido %d, esperado >= 25000", dailyCost)
 	}
 }
+
+func TestRunner_InvalidLocatorFailsRunStrictly(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	seedEntity(t, db, "ent-1", "Daniel Vorcaro", "person")
+	seedCase(t, db, "case-1", "Operação Master")
+
+	provider := &mockResearchProvider{
+		discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+			return &research.DiscoverResult{
+				Candidates: []research.CandidateExtraction{
+					{
+						EntityName:          "Daniel Vorcaro",
+						CaseName:            "Operação Master",
+						RelationshipType:    "investigado",
+						Proposition:         "Investigado em inquérito com locator malicioso",
+						SuggestedGrade:      "A",
+						SourceURL:           "https://noticias.exemplo.com/materia-insegura",
+						SourceTitle:         "Inquérito Policial",
+						Excerpt:             "Conforme autos...",
+						Locator:             "<script>alert(1)</script>",
+						TechnicalConfidence: 0.95,
+					},
+				},
+				Model:            "openai/gpt-4.1-mini",
+				PromptTokens:     100,
+				CompletionTokens: 50,
+				TotalTokens:      150,
+				Cost:             0.001,
+				CostMicros:       1000,
+			}, nil
+		},
+	}
+
+	verifier := &mockSourceVerifier{}
+
+	runner, err := monitoring.NewRunner(monitoring.RunnerConfig{
+		DB:             db,
+		Provider:       provider,
+		SourceVerifier: verifier,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar Runner: %v", err)
+	}
+
+	summary, err := runner.Run(ctx, "pesquisa com locator malicioso")
+	if err == nil {
+		t.Fatal("esperava erro decorrente do localizador malicioso")
+	}
+
+	if summary == nil {
+		t.Fatal("summary não deve ser nil mesmo em caso de falha")
+	}
+	if summary.Status != "failed" {
+		t.Errorf("status esperado 'failed', obtido %q", summary.Status)
+	}
+
+	// Nenhum candidato ou claim deve ter sido persistido no banco
+	var count int
+	err = db.QueryRowContext(ctx, "SELECT count(*) FROM monitoring_candidates WHERE monitoring_run_id = ?", summary.RunID).Scan(&count)
+	if err != nil {
+		t.Fatalf("falha ao consultar candidatos: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("nenhum candidato deveria ter sido persistido para localizador malicioso, obtido %d", count)
+	}
+}

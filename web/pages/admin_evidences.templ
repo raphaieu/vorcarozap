@@ -213,9 +213,13 @@ templ AdminEvidences(vm AdminEvidenceListVM) {
 									if es.Excerpt != "" {
 										<div class="source-excerpt">
 											&ldquo;{ es.Excerpt }&rdquo;
-											if es.Locator != "" {
-												<span class="source-locator">{ es.Locator }</span>
-											}
+										</div>
+									}
+
+									if es.Locator != "" {
+										<div class="source-locator-box" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+											<span class="source-locator-label">Localizador:</span>
+											<span class="source-locator-chip"><strong>{ es.Locator }</strong></span>
 										</div>
 									}
 
@@ -230,6 +234,11 @@ templ AdminEvidences(vm AdminEvidenceListVM) {
 												<span>({ es.SourcePublisher })</span>
 											}
 										</span>
+										if es.SourceTypeHuman != "" {
+											<span class={ "source-type-badge", templ.KV("source-type-primary", es.IsPrimaryDocument) } style="font-size: 0.75rem; padding: 0.15rem 0.4rem;">
+												{ es.SourceTypeHuman }
+											</span>
+										}
 										<span class="meta-item">
 											Acessibilidade: <strong>{ es.SourceAccessStatusHuman }</strong>
 										</span>

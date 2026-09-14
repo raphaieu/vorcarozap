@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/metrics"
+	"github.com/raphaieu/vorcarozap/internal/normalize"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
@@ -181,6 +183,9 @@ type PublicSourceVM struct {
 	PublishedAtHuman  string
 	AccessedAtHuman   string
 	SourceType        string
+	SourceTypeHuman   string
+	IsPrimaryDocument bool
+	NatureLabel       string
 	Excerpt           string
 	Locator           string
 	Role              string
@@ -248,6 +253,12 @@ func ToEntityCardVM(row sqlc.ListPublicEntitiesRow) EntityCardVM {
 func ToPublicSourceVM(row sqlc.ListPublicEvidenceSourcesByClaimIDRow) PublicSourceVM {
 	title := strings.TrimSpace(row.Title)
 	publisher := strings.TrimSpace(row.PublisherOrAuthor)
+	st := domain.SourceType(strings.ToLower(strings.TrimSpace(row.SourceType)))
+	loc := strings.TrimSpace(row.Locator)
+	if formattedLoc, err := normalize.Locator(loc); err == nil && formattedLoc != "" {
+		loc = formattedLoc
+	}
+
 	return PublicSourceVM{
 		ID:                row.SourceID,
 		Title:             title,
@@ -256,9 +267,12 @@ func ToPublicSourceVM(row sqlc.ListPublicEvidenceSourcesByClaimIDRow) PublicSour
 		CanonicalURL:      row.CanonicalUrl,
 		PublishedAtHuman:  FormatDate(row.PublishedAt.String),
 		AccessedAtHuman:   FormatDate(row.AccessedAt.String),
-		SourceType:        row.SourceType,
+		SourceType:        string(st),
+		SourceTypeHuman:   st.Label(),
+		IsPrimaryDocument: st.IsPrimaryDocument(),
+		NatureLabel:       st.NatureLabel(),
 		Excerpt:           strings.TrimSpace(row.Excerpt),
-		Locator:           strings.TrimSpace(row.Locator),
+		Locator:           loc,
 		Role:              row.Role,
 		IsTitleEnriched:   title != "",
 		IsAuthorEnriched:  publisher != "",

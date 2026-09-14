@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
 
@@ -68,35 +69,22 @@ type AdminSourceTypeOption struct {
 	Label string
 }
 
-// adminSourceTypeOptions define a lista canônica, ordenada e imutável de tipos administrativos de fonte.
-var adminSourceTypeOptions = []AdminSourceTypeOption{
-	{Value: "article", Label: "Artigo / Notícia"},
-	{Value: "official_statement", Label: "Nota Oficial / Comunicado"},
-	{Value: "court_document", Label: "Peça Judicial / Decisão"},
-	{Value: "police_report", Label: "Relatório Policial / Pericial"},
-	{Value: "interview", Label: "Entrevista"},
-	{Value: "social_media", Label: "Rede Social"},
-}
-
-// allowedAdminSourceTypesSet é o mapa de consulta rápida derivado da lista canônica ordenada.
-var allowedAdminSourceTypesSet = func() map[string]bool {
-	m := make(map[string]bool, len(adminSourceTypeOptions))
-	for _, opt := range adminSourceTypeOptions {
-		m[opt.Value] = true
-	}
-	return m
-}()
-
-// GetAdminSourceTypeOptions retorna uma cópia segura e ordenada das opções canônicas de tipos de fonte.
+// GetAdminSourceTypeOptions retorna uma cópia segura e ordenada das opções canônicas de tipos de fonte derivadas do domínio.
 func GetAdminSourceTypeOptions() []AdminSourceTypeOption {
-	out := make([]AdminSourceTypeOption, len(adminSourceTypeOptions))
-	copy(out, adminSourceTypeOptions)
+	types := domain.CanonicalSourceTypes
+	out := make([]AdminSourceTypeOption, len(types))
+	for i, st := range types {
+		out[i] = AdminSourceTypeOption{
+			Value: string(st),
+			Label: st.Label(),
+		}
+	}
 	return out
 }
 
-// IsAllowedAdminSourceType valida se um valor de source_type faz parte da allowlist canônica.
+// IsAllowedAdminSourceType valida se um valor de source_type faz parte da allowlist canônica do domínio.
 func IsAllowedAdminSourceType(sourceType string) bool {
-	return allowedAdminSourceTypesSet[strings.ToLower(strings.TrimSpace(sourceType))]
+	return domain.SourceType(strings.ToLower(strings.TrimSpace(sourceType))).IsValid()
 }
 
 // AdminCandidateFilter encapsula os parâmetros de filtro para a listagem de candidatos de monitoramento.

@@ -189,7 +189,12 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 		cleanExcerpt := normalize.String(normalize.Unicode(rawCand.Excerpt))
 		cleanTitle := normalize.String(rawCand.SourceTitle)
 		cleanPublisher := normalize.String(rawCand.PublisherOrAuthor)
-		cleanLocator := normalize.String(rawCand.Locator)
+		cleanLocator, locErr := normalize.Locator(rawCand.Locator)
+		if locErr != nil {
+			return s.failRun(ctx, queries, runID, run.CreatedAt,
+				fmt.Errorf("monitoring: candidato[%d] com localizador inválido %q: %w", i, rawCand.Locator, locErr),
+				"Falha na normalização do localizador da fonte")
+		}
 		cleanLimits := normalize.String(rawCand.ContextLimits)
 
 		// Fingerprint versionado v1

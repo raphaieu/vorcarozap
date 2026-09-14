@@ -172,6 +172,83 @@ func (s SourceAccessStatus) IsValid() bool {
 	}
 }
 
+// SourceType define a natureza e o tipo canônico de uma fonte documental registrada.
+type SourceType string
+
+const (
+	SourceTypeArticle           SourceType = "article"
+	SourceTypeOfficialStatement SourceType = "official_statement"
+	SourceTypeCourtDocument     SourceType = "court_document"
+	SourceTypePoliceReport      SourceType = "police_report"
+	SourceTypeInterview         SourceType = "interview"
+	SourceTypeSocialMedia       SourceType = "social_media"
+)
+
+// CanonicalSourceTypes define a lista canônica, ordenada e imutável de todos os tipos de fonte reconhecidos.
+var CanonicalSourceTypes = []SourceType{
+	SourceTypeArticle,
+	SourceTypeOfficialStatement,
+	SourceTypeCourtDocument,
+	SourceTypePoliceReport,
+	SourceTypeInterview,
+	SourceTypeSocialMedia,
+}
+
+func (t SourceType) IsValid() bool {
+	switch t {
+	case SourceTypeArticle, SourceTypeOfficialStatement, SourceTypeCourtDocument,
+		SourceTypePoliceReport, SourceTypeInterview, SourceTypeSocialMedia:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsPrimaryDocument indica se o tipo de fonte é um documento primário oficial (peça judicial, laudo pericial ou comunicado oficial).
+func (t SourceType) IsPrimaryDocument() bool {
+	switch t {
+	case SourceTypeCourtDocument, SourceTypePoliceReport, SourceTypeOfficialStatement:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label retorna o rótulo descritivo em português para o tipo de fonte.
+func (t SourceType) Label() string {
+	switch t {
+	case SourceTypeArticle:
+		return "Artigo / Notícia"
+	case SourceTypeOfficialStatement:
+		return "Nota Oficial / Comunicado"
+	case SourceTypeCourtDocument:
+		return "Peça Judicial / Decisão"
+	case SourceTypePoliceReport:
+		return "Relatório Policial / Pericial"
+	case SourceTypeInterview:
+		return "Entrevista"
+	case SourceTypeSocialMedia:
+		return "Rede Social"
+	default:
+		return string(t)
+	}
+}
+
+// NatureLabel retorna a classificação documental da fonte (primária vs secundária).
+func (t SourceType) NatureLabel() string {
+	if t.IsPrimaryDocument() {
+		return "Documento Oficial / Primário"
+	}
+	switch t {
+	case SourceTypeArticle, SourceTypeInterview:
+		return "Reportagem / Apuração Jornalística"
+	case SourceTypeSocialMedia:
+		return "Publicação em Rede Social"
+	default:
+		return "Referência Documental"
+	}
+}
+
 // ImportRunStatus define o estado operacional de uma execução de importação.
 type ImportRunStatus string
 

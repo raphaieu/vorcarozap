@@ -183,9 +183,13 @@ templ AdminCandidates(vm AdminCandidateListVM) {
 									if c.Excerpt != "" {
 										<div class="source-excerpt">
 											&ldquo;{ c.Excerpt }&rdquo;
-											if c.Locator != "" {
-												<span class="source-locator">{ c.Locator }</span>
-											}
+										</div>
+									}
+
+									if c.Locator != "" {
+										<div class="source-locator-box" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+											<span class="source-locator-label">Localizador:</span>
+											<span class="source-locator-chip"><strong>{ c.Locator }</strong></span>
 										</div>
 									}
 

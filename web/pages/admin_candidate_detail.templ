@@ -97,9 +97,15 @@ templ AdminCandidateDetail(vm AdminCandidateDetailVM) {
 								<span class="fact-label">Trecho Literal (Citação)</span>
 								<div class="source-excerpt" style="margin-top: 0.25rem;">
 									&ldquo;{ vm.Candidate.Excerpt }&rdquo;
-									if vm.Candidate.Locator != "" {
-										<span class="source-locator">Localizador: { vm.Candidate.Locator }</span>
-									}
+								</div>
+							</div>
+						}
+
+						if vm.Candidate.Locator != "" {
+							<div class="form-group" style="margin-bottom: 1rem;">
+								<span class="fact-label">Localizador Cirúrgico</span>
+								<div class="source-locator-box" style="margin-top: 0.25rem;">
+									<span class="source-locator-chip"><strong>{ vm.Candidate.Locator }</strong></span>
 								</div>
 							</div>
 						}

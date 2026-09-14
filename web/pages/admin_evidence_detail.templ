@@ -112,14 +112,16 @@ templ AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) {
 					if vm.Excerpt != "" {
 						<div class="source-excerpt" style="font-size: 1.05rem; line-height: 1.6; margin: 1rem 0;">
 							&ldquo;{ vm.Excerpt }&rdquo;
-							if vm.Locator != "" {
-								<span class="source-locator" style="margin-top: 0.5rem; display: inline-block;">
-									Localizador: <strong>{ vm.Locator }</strong>
-								</span>
-							}
 						</div>
 					} else {
 						<p class="admin-reasons-empty">Nenhum trecho literal registrado para esta citação (legado curated_seed).</p>
+					}
+
+					if vm.Locator != "" {
+						<div class="source-locator-box" style="margin-top: 0.75rem;">
+							<span class="source-locator-label">Localizador Cirúrgico:</span>
+							<span class="source-locator-chip"><strong>{ vm.Locator }</strong></span>
+						</div>
 					}
 
 					if vm.EvidenceSummary != "" {
@@ -219,7 +221,11 @@ templ AdminEvidenceDetail(vm AdminEvidenceSourceDetailVM) {
 						</div>
 						<div class="fact-item">
 							<span class="fact-label">Tipo de Documento</span>
-							<span class="fact-value">{ vm.SourceType }</span>
+							<span class="fact-value">
+								<span class={ "source-type-badge", templ.KV("source-type-primary", vm.IsPrimaryDocument) }>
+									{ vm.SourceTypeHuman }
+								</span>
+							</span>
 						</div>
 						<div class="fact-item">
 							<span class="fact-label">Acessibilidade</span>

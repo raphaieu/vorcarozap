@@ -120,8 +120,8 @@ templ AdminSources(vm AdminSourceListVM) {
 											if s.PublisherOrAuthor != "" {
 												<span class="category-badge">{ s.PublisherOrAuthor }</span>
 											}
-											if s.SourceType != "" {
-												<span class="status-tag">{ s.SourceType }</span>
+											if s.SourceTypeHuman != "" {
+												<span class={ "source-type-badge", templ.KV("source-type-primary", s.IsPrimaryDocument) }>{ s.SourceTypeHuman }</span>
 											}
 										</div>
 										<div class="admin-item-meta-row">

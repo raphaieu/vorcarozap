@@ -347,7 +347,12 @@ func (r *Runner) Run(ctx context.Context, query string) (*RunSummary, error) {
 		cleanExcerpt := normalize.String(normalize.Unicode(rawCand.Excerpt))
 		cleanTitle := normalize.String(rawCand.SourceTitle)
 		cleanPublisher := normalize.String(rawCand.PublisherOrAuthor)
-		cleanLocator := normalize.String(rawCand.Locator)
+		cleanLocator, locErr := normalize.Locator(rawCand.Locator)
+		if locErr != nil {
+			return r.failRun(runID, cleanQuery, win, createdNow,
+				fmt.Errorf("monitoring: candidato[%d] com localizador inválido %q: %w", i, rawCand.Locator, locErr),
+				"Falha na normalização do localizador da fonte")
+		}
 		cleanLimits := normalize.String(rawCand.ContextLimits)
 
 		fp := normalize.FingerprintV1(canonicalURL, cleanEntity, cleanProp, cleanExcerpt)
