@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/domain"
+	"github.com/raphaieu/vorcarozap/internal/normalize"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
 
@@ -627,5 +629,100 @@ func ListAdminSources(ctx context.Context, db *sql.DB, rawFilter AdminSourceFilt
 		Page:       filter.Page,
 		PageSize:   filter.PageSize,
 		TotalPages: totalPages,
+	}, nil
+}
+
+// AdminSourceDetailResult agrega o detalhe administrativo da fonte e a sequência contextual completa de seus usos.
+type AdminSourceDetailResult struct {
+	Source   sqlc.GetAdminSourceDetailByIDRow
+	Sequence []domain.DocumentSequenceItem
+}
+
+// GetAdminSourceDetail busca o detalhe administrativo completo de uma fonte e todos os seus usos de evidência ordenados deterministicamente.
+func GetAdminSourceDetail(ctx context.Context, db *sql.DB, sourceID string) (*AdminSourceDetailResult, error) {
+	if strings.TrimSpace(sourceID) == "" {
+		return nil, ErrNotFound
+	}
+
+	q := sqlc.New(db)
+
+	src, err := q.GetAdminSourceDetailByID(ctx, sourceID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("store: falha ao buscar detalhe da fonte administrativa %s: %w", sourceID, err)
+	}
+
+	seqRows, err := q.ListAdminDocumentSequenceBySourceID(ctx, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao listar sequência administrativa do documento %s: %w", sourceID, err)
+	}
+
+	var items []domain.DocumentSequenceItem
+	for _, row := range seqRows {
+		targetID := ""
+		targetName := ""
+		targetSlug := ""
+		if row.TargetEntityID.Valid {
+			targetID = row.TargetEntityID.String
+			targetName = row.TargetEntityName.String
+			targetSlug = row.TargetEntitySlug.String
+		}
+
+		caseID := ""
+		caseName := ""
+		caseSlug := ""
+		if row.CaseID.Valid {
+			caseID = row.CaseID.String
+			caseName = row.CaseName.String
+			caseSlug = row.CaseSlug.String
+		}
+
+		items = append(items, domain.DocumentSequenceItem{
+			ID:                  row.EvidenceSourceID,
+			EvidenceID:          row.EvidenceID,
+			Excerpt:             row.Excerpt,
+			Locator:             row.Locator,
+			Role:                domain.EvidenceSourceRole(row.Role),
+			Status:              domain.EvidenceSourceStatus(row.EvidenceSourceStatus),
+			ClaimID:             row.ClaimID,
+			ClaimProposition:    row.ClaimProposition,
+			ClaimGrade:          domain.EvidenceGrade(row.ClaimGrade),
+			ClaimDisposition:    domain.ClaimDisposition(row.ClaimDisposition),
+			ClaimStatus:         domain.ClaimStatus(row.ClaimStatus),
+			ClaimMetricEligible: row.ClaimMetricEligible == 1,
+			RelationshipType:    row.RelationshipType,
+			RelationshipSummary: row.RelationshipSummary,
+			ContextLimits:       row.ContextLimits,
+			SubjectEntityID:     row.SubjectEntityID,
+			SubjectEntityName:   row.SubjectEntityName,
+			SubjectEntitySlug:   row.SubjectEntitySlug,
+			TargetEntityID:      targetID,
+			TargetEntityName:    targetName,
+			TargetEntitySlug:    targetSlug,
+			CaseID:              caseID,
+			CaseName:            caseName,
+			CaseSlug:            caseSlug,
+			CreatedAt:           row.EvidenceSourceCreatedAt,
+			UpdatedAt:           row.EvidenceSourceUpdatedAt,
+		})
+	}
+
+	// Ordenação determinística e natural
+	sort.SliceStable(items, func(i, j int) bool {
+		cmp := normalize.CompareLocators(items[i].Locator, items[j].Locator)
+		if cmp != 0 {
+			return cmp < 0
+		}
+		if items[i].CreatedAt != items[j].CreatedAt {
+			return items[i].CreatedAt < items[j].CreatedAt
+		}
+		return items[i].ID < items[j].ID
+	})
+
+	return &AdminSourceDetailResult{
+		Source:   src,
+		Sequence: items,
 	}, nil
 }

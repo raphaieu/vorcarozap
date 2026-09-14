@@ -786,6 +786,77 @@ func (q *Queries) GetAdminOverviewCounts(ctx context.Context) (GetAdminOverviewC
 	return i, err
 }
 
+const getAdminSourceDetailByID = `-- name: GetAdminSourceDetailByID :one
+SELECT
+    s.id,
+    s.title,
+    s.publisher_or_author,
+    s.original_url,
+    s.canonical_url,
+    s.published_at,
+    s.accessed_at,
+    s.source_type,
+    s.source_access_status,
+    s.source_access_checked_at,
+    s.http_status,
+    s.normalized_error_code,
+    s.created_at,
+    s.updated_at,
+    COUNT(es.id) AS total_uses,
+    COUNT(CASE WHEN es.status = 'active' THEN 1 END) AS active_uses,
+    COUNT(CASE WHEN es.status = 'rejected' THEN 1 END) AS rejected_uses
+FROM sources s
+LEFT JOIN evidence_sources es ON es.source_id = s.id
+WHERE s.id = ?
+GROUP BY s.id
+LIMIT 1
+`
+
+type GetAdminSourceDetailByIDRow struct {
+	ID                    string         `json:"id"`
+	Title                 string         `json:"title"`
+	PublisherOrAuthor     string         `json:"publisher_or_author"`
+	OriginalUrl           string         `json:"original_url"`
+	CanonicalUrl          string         `json:"canonical_url"`
+	PublishedAt           sql.NullString `json:"published_at"`
+	AccessedAt            sql.NullString `json:"accessed_at"`
+	SourceType            string         `json:"source_type"`
+	SourceAccessStatus    string         `json:"source_access_status"`
+	SourceAccessCheckedAt sql.NullString `json:"source_access_checked_at"`
+	HttpStatus            sql.NullInt64  `json:"http_status"`
+	NormalizedErrorCode   sql.NullString `json:"normalized_error_code"`
+	CreatedAt             string         `json:"created_at"`
+	UpdatedAt             string         `json:"updated_at"`
+	TotalUses             int64          `json:"total_uses"`
+	ActiveUses            int64          `json:"active_uses"`
+	RejectedUses          int64          `json:"rejected_uses"`
+}
+
+func (q *Queries) GetAdminSourceDetailByID(ctx context.Context, id string) (GetAdminSourceDetailByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getAdminSourceDetailByID, id)
+	var i GetAdminSourceDetailByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.PublisherOrAuthor,
+		&i.OriginalUrl,
+		&i.CanonicalUrl,
+		&i.PublishedAt,
+		&i.AccessedAt,
+		&i.SourceType,
+		&i.SourceAccessStatus,
+		&i.SourceAccessCheckedAt,
+		&i.HttpStatus,
+		&i.NormalizedErrorCode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TotalUses,
+		&i.ActiveUses,
+		&i.RejectedUses,
+	)
+	return i, err
+}
+
 const getCandidateFingerprintByPublishedClaimID = `-- name: GetCandidateFingerprintByPublishedClaimID :one
 SELECT fingerprint
 FROM monitoring_candidates
@@ -1027,6 +1098,132 @@ func (q *Queries) ListAdminCandidates(ctx context.Context, arg ListAdminCandidat
 			&i.UpdatedAt,
 			&i.RunQuery,
 			&i.RunDiscoveryModel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAdminDocumentSequenceBySourceID = `-- name: ListAdminDocumentSequenceBySourceID :many
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    c.id AS claim_id,
+    c.proposition AS claim_proposition,
+    c.grade AS claim_grade,
+    c.disposition AS claim_disposition,
+    c.status AS claim_status,
+    c.metric_eligible AS claim_metric_eligible,
+    r.relationship_type,
+    r.summary AS relationship_summary,
+    r.context_limits,
+    sub.id AS subject_entity_id,
+    sub.name AS subject_entity_name,
+    sub.slug AS subject_entity_slug,
+    te.id AS target_entity_id,
+    te.name AS target_entity_name,
+    te.slug AS target_entity_slug,
+    cs.id AS case_id,
+    cs.name AS case_name,
+    cs.slug AS case_slug
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN claims c ON c.id = ev.claim_id
+JOIN relationships r ON r.id = c.relationship_id
+JOIN entities sub ON sub.id = r.subject_entity_id
+LEFT JOIN entities te ON te.id = r.target_entity_id
+LEFT JOIN cases cs ON cs.id = r.case_id
+WHERE es.source_id = ?
+ORDER BY
+    es.created_at ASC,
+    es.id ASC
+`
+
+type ListAdminDocumentSequenceBySourceIDRow struct {
+	EvidenceSourceID        string         `json:"evidence_source_id"`
+	EvidenceID              string         `json:"evidence_id"`
+	Excerpt                 string         `json:"excerpt"`
+	Locator                 string         `json:"locator"`
+	Role                    string         `json:"role"`
+	EvidenceSourceStatus    string         `json:"evidence_source_status"`
+	EvidenceSourceCreatedAt string         `json:"evidence_source_created_at"`
+	EvidenceSourceUpdatedAt string         `json:"evidence_source_updated_at"`
+	EvidenceSummary         string         `json:"evidence_summary"`
+	EvidenceType            string         `json:"evidence_type"`
+	ClaimID                 string         `json:"claim_id"`
+	ClaimProposition        string         `json:"claim_proposition"`
+	ClaimGrade              string         `json:"claim_grade"`
+	ClaimDisposition        string         `json:"claim_disposition"`
+	ClaimStatus             string         `json:"claim_status"`
+	ClaimMetricEligible     int64          `json:"claim_metric_eligible"`
+	RelationshipType        string         `json:"relationship_type"`
+	RelationshipSummary     string         `json:"relationship_summary"`
+	ContextLimits           string         `json:"context_limits"`
+	SubjectEntityID         string         `json:"subject_entity_id"`
+	SubjectEntityName       string         `json:"subject_entity_name"`
+	SubjectEntitySlug       string         `json:"subject_entity_slug"`
+	TargetEntityID          sql.NullString `json:"target_entity_id"`
+	TargetEntityName        sql.NullString `json:"target_entity_name"`
+	TargetEntitySlug        sql.NullString `json:"target_entity_slug"`
+	CaseID                  sql.NullString `json:"case_id"`
+	CaseName                sql.NullString `json:"case_name"`
+	CaseSlug                sql.NullString `json:"case_slug"`
+}
+
+func (q *Queries) ListAdminDocumentSequenceBySourceID(ctx context.Context, sourceID string) ([]ListAdminDocumentSequenceBySourceIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAdminDocumentSequenceBySourceID, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminDocumentSequenceBySourceIDRow
+	for rows.Next() {
+		var i ListAdminDocumentSequenceBySourceIDRow
+		if err := rows.Scan(
+			&i.EvidenceSourceID,
+			&i.EvidenceID,
+			&i.Excerpt,
+			&i.Locator,
+			&i.Role,
+			&i.EvidenceSourceStatus,
+			&i.EvidenceSourceCreatedAt,
+			&i.EvidenceSourceUpdatedAt,
+			&i.EvidenceSummary,
+			&i.EvidenceType,
+			&i.ClaimID,
+			&i.ClaimProposition,
+			&i.ClaimGrade,
+			&i.ClaimDisposition,
+			&i.ClaimStatus,
+			&i.ClaimMetricEligible,
+			&i.RelationshipType,
+			&i.RelationshipSummary,
+			&i.ContextLimits,
+			&i.SubjectEntityID,
+			&i.SubjectEntityName,
+			&i.SubjectEntitySlug,
+			&i.TargetEntityID,
+			&i.TargetEntityName,
+			&i.TargetEntitySlug,
+			&i.CaseID,
+			&i.CaseName,
+			&i.CaseSlug,
 		); err != nil {
 			return nil, err
 		}

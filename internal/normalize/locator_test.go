@@ -214,3 +214,41 @@ func TestSafeLocator(t *testing.T) {
 		t.Errorf("SafeLocator('') = %q, want empty string", got)
 	}
 }
+
+func TestCompareLocators(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected int // -1, 0, 1
+	}{
+		{"iguais idênticos", "Pág. 42", "Pág. 42", 0},
+		{"número simples menor", "Pág. 5", "Pág. 12", -1},
+		{"número simples maior", "Pág. 42", "Pág. 5", 1},
+		{"número de 3 dígitos", "Pág. 99", "Pág. 100", -1},
+		{"mesma página vs intervalo", "Pág. 42", "Págs. 42–44", -1},
+		{"intervalos diferentes início igual", "Págs. 42–44", "Págs. 42–48", -1},
+		{"intervalos diferentes início maior", "Págs. 50–52", "Págs. 42–48", 1},
+		{"folhas numéricas", "Fl. 2", "Fl. 10", -1},
+		{"página vs figura", "Pág. 42", "Fig. 1", -1},
+		{"figura vs tabela", "Fig. 10", "Tabela 2", -1},
+		{"tabela vs anexo", "Tabela 5", "Anexo A", -1},
+		{"subcomponente igual no início", "Pág. 10, Fig. 2", "Pág. 10, Fig. 5", -1},
+		{"subcomponente menor em página", "Pág. 5, Fig. 10", "Pág. 10, Fig. 1", -1},
+		{"anexos alfabéticos", "Anexo A", "Anexo B", -1},
+		{"vazio vs preenchido", "", "Pág. 1", 1},
+		{"preenchido vs vazio", "Pág. 1", "", -1},
+		{"ambos vazios", "", "", 0},
+		{"espaços apenas", "   ", "", 0},
+		{"artigos e parágrafos", "Art. 5º", "Art. 10", -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalize.CompareLocators(tt.a, tt.b)
+			if (tt.expected < 0 && got >= 0) || (tt.expected > 0 && got <= 0) || (tt.expected == 0 && got != 0) {
+				t.Errorf("CompareLocators(%q, %q) = %d, esperado sinal %d", tt.a, tt.b, got, tt.expected)
+			}
+		})
+	}
+}

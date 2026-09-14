@@ -282,3 +282,152 @@ func normalizeRangeValue(val string) string {
 	val = rangeHyphenRegex.ReplaceAllString(val, "$1–$2")
 	return val
 }
+
+var (
+	digitsRegex = regexp.MustCompile(`\d+`)
+)
+
+// getLocatorComponentRank classifica a hierarquia de segmentos documentais para ordenação canônica:
+// 1. Páginas / Folhas (conteúdo principal sequencial)
+// 2. Artigos / Parágrafos / Seções
+// 3. Figuras / Imagens
+// 4. Tabelas
+// 5. Anexos / Itens / Outros
+func getLocatorComponentRank(comp string) int {
+	c := strings.ToLower(comp)
+	switch {
+	case strings.HasPrefix(c, "pág") || strings.HasPrefix(c, "pp") || strings.HasPrefix(c, "fl"):
+		return 1
+	case strings.HasPrefix(c, "art") || strings.HasPrefix(c, "§") || strings.HasPrefix(c, "seç"):
+		return 2
+	case strings.HasPrefix(c, "fig"):
+		return 3
+	case strings.HasPrefix(c, "tab"):
+		return 4
+	case strings.HasPrefix(c, "anex") || strings.HasPrefix(c, "it"):
+		return 5
+	default:
+		return 6
+	}
+}
+
+// CompareLocators compara dois localizadores documentais retornando:
+// -1 se a precede b
+//
+//	0 se a e b são equivalentes na ordenação
+//	1 se a sucede b
+//
+// A ordenação é determinística e natural:
+// - Localizadores vazios são posicionados no final.
+// - Segmentos de páginas/folhas precedem figuras, tabelas e anexos.
+// - Números são ordenados pelo seu valor inteiro (ex: 5 < 12 < 42).
+// - Intervalos são desempatados pelo limite final (ex: 42–44 < 42–48).
+// - Subcomponentes múltiplos ("Pág. 10, Fig. 2" vs "Pág. 10, Fig. 5") são comparados em cascata.
+func CompareLocators(a, b string) int {
+	if a == b {
+		return 0
+	}
+
+	normA := SafeLocator(a)
+	normB := SafeLocator(b)
+
+	// Itens vazios vão para o final
+	if normA == "" && normB != "" {
+		return 1
+	}
+	if normA != "" && normB == "" {
+		return -1
+	}
+	if normA == "" && normB == "" {
+		return strings.Compare(strings.TrimSpace(a), strings.TrimSpace(b))
+	}
+
+	// Divide em múltiplos componentes separados por vírgula ou ponto-e-vírgula
+	splitComps := func(s string) []string {
+		var parts []string
+		for _, p := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ';' }) {
+			t := strings.TrimSpace(p)
+			if t != "" {
+				parts = append(parts, t)
+			}
+		}
+		if len(parts) == 0 && s != "" {
+			parts = append(parts, s)
+		}
+		return parts
+	}
+
+	partsA := splitComps(normA)
+	partsB := splitComps(normB)
+
+	minLen := len(partsA)
+	if len(partsB) < minLen {
+		minLen = len(partsB)
+	}
+
+	for i := 0; i < minLen; i++ {
+		compA := partsA[i]
+		compB := partsB[i]
+
+		rankA := getLocatorComponentRank(compA)
+		rankB := getLocatorComponentRank(compB)
+
+		if rankA != rankB {
+			if rankA < rankB {
+				return -1
+			}
+			return 1
+		}
+
+		// Extrai dígitos para comparação numérica
+		numsA := digitsRegex.FindAllString(compA, -1)
+		numsB := digitsRegex.FindAllString(compB, -1)
+
+		if len(numsA) > 0 && len(numsB) > 0 {
+			// Compara o primeiro número
+			var valA1, valB1 int
+			fmt.Sscanf(numsA[0], "%d", &valA1)
+			fmt.Sscanf(numsB[0], "%d", &valB1)
+
+			if valA1 != valB1 {
+				if valA1 < valB1 {
+					return -1
+				}
+				return 1
+			}
+
+			// Se ambos têm segundo número (intervalo)
+			if len(numsA) > 1 && len(numsB) > 1 {
+				var valA2, valB2 int
+				fmt.Sscanf(numsA[1], "%d", &valA2)
+				fmt.Sscanf(numsB[1], "%d", &valB2)
+
+				if valA2 != valB2 {
+					if valA2 < valB2 {
+						return -1
+					}
+					return 1
+				}
+			} else if len(numsA) > 1 {
+				// a é intervalo (42–44), b é número único (42) -> número único precede intervalo
+				return 1
+			} else if len(numsB) > 1 {
+				return -1
+			}
+		}
+
+		// Comparação lexicográfica do componente caso numérico não resolva
+		if compA != compB {
+			return strings.Compare(compA, compB)
+		}
+	}
+
+	if len(partsA) != len(partsB) {
+		if len(partsA) < len(partsB) {
+			return -1
+		}
+		return 1
+	}
+
+	return 0
+}

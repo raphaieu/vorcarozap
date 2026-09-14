@@ -207,6 +207,13 @@ templ AdminSources(vm AdminSourceListVM) {
 											</span>
 										</div>
 									</div>
+
+									<!-- Ações Administrativas -->
+									<div class="admin-item-actions-row" style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end;">
+										<a href={ templ.SafeURL("/admin/fontes/" + s.ID) } class="btn btn-subtle" style="font-size: 0.85rem;">
+											Inspecionar Fonte &amp; Usos &rarr;
+										</a>
+									</div>
 								</div>
 							</article>
 						}

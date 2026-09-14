@@ -184,6 +184,36 @@ func (h *Handlers) HandleEntityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleDocumentDetail renderiza a página pública SSR de um documento e sua sequência contextual.
+func (h *Handlers) HandleDocumentDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	doc, err := store.GetPublicDocumentDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get public document detail", "id", id, "error", err)
+		http.Error(w, "Erro interno ao carregar dados do documento", http.StatusInternalServerError)
+		return
+	}
+
+	vm := pages.ToDocumentDetailVM(doc)
+	component := pages.DocumentDetail(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render document detail template", "id", id, "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
 // HandleMethodology renderiza a página pública de metodologia e critérios editoriais.
 func (h *Handlers) HandleMethodology(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -435,6 +465,37 @@ func (h *Handlers) HandleAdminSources(w http.ResponseWriter, r *http.Request) {
 	component := pages.AdminSources(vm)
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render admin sources template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminSourceDetail renderiza o detalhe administrativo protegido SSR de uma fonte e sua sequência completa de usos.
+func (h *Handlers) HandleAdminSourceDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	res, err := store.GetAdminSourceDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get admin source detail", "id", id, "error", err)
+		http.Error(w, "Erro interno ao carregar dados da fonte", http.StatusInternalServerError)
+		return
+	}
+
+	vm := pages.ToAdminSourceDetailVM(res)
+	component := pages.AdminSourceDetail(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin source detail template", "id", id, "error", err)
 		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
 	}
 }

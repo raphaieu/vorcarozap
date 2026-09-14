@@ -1,0 +1,227 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ DocumentDetail(vm DocumentDetailVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content={ fmt.Sprintf("Inspeção documental e sequência contextual de %s no caso Daniel Vorcaro e Banco Master. Trechos literais, localizadores e fontes rastreáveis.", vm.Title) }/>
+			<title>{ vm.Title } — Documento — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.Header()
+			<main class="container">
+				<!-- Navegação e Voltar -->
+				<nav class="breadcrumb-nav" aria-label="Navegação estrutural">
+					<a href="/pessoas" class="back-link">&larr; Voltar para Pessoas e Organizações</a>
+				</nav>
+
+				<!-- Aviso Editorial Obrigatório -->
+				<section class="editorial-notice" aria-label="Aviso Legal e Editorial">
+					<strong>Aviso Editorial e Cadeia de Custódia</strong>
+					<p>
+						Projeto investigativo e documental independente. <strong>A menção de qualquer nome em relatório pericial, transcrição de mensagem ou matéria jornalística indica unicamente referência documental e não presume culpa, interlocução direta, conluio ou ilícito</strong>. A integridade registrada atesta o conteúdo técnico observado, sem substituir a fonte oficial. Conheça nossos critérios em <a href="/metodologia" class="notice-link">Metodologia</a>.
+					</p>
+				</section>
+
+				<!-- Cabeçalho do Documento -->
+				<header class="entity-profile-header card">
+					<div class="entity-profile-title-row">
+						<div>
+							<div class="badge-cluster" style="margin-bottom: 0.5rem;">
+								if vm.IsPrimaryDocument {
+									<span class="source-type-badge source-type-primary" title={ vm.NatureLabel }>{ vm.SourceTypeHuman }</span>
+								} else if vm.SourceTypeHuman != "" {
+									<span class="source-type-badge" title={ vm.NatureLabel }>{ vm.SourceTypeHuman }</span>
+								}
+								<span class="category-badge">{ vm.NatureLabel }</span>
+							</div>
+							<h1 class="entity-profile-name" style="font-size: 1.6rem; line-height: 1.3;">
+								if vm.IsTitleEnriched {
+									{ vm.Title }
+								} else {
+									<span class="source-title-pending">[Título pendente de enriquecimento]</span>
+								}
+							</h1>
+						</div>
+					</div>
+
+					<div class="entity-profile-facts">
+						if vm.IsAuthorEnriched {
+							<div class="fact-item">
+								<span class="fact-label">Veículo / Autor</span>
+								<span class="fact-value">{ vm.PublisherOrAuthor }</span>
+							</div>
+						}
+						if vm.PublishedAtHuman != "" {
+							<div class="fact-item">
+								<span class="fact-label">Data de Publicação</span>
+								<span class="fact-value">{ vm.PublishedAtHuman }</span>
+							</div>
+						}
+						if vm.AccessedAtHuman != "" {
+							<div class="fact-item">
+								<span class="fact-label">Data de Acesso / Coleta</span>
+								<span class="fact-value">{ vm.AccessedAtHuman }</span>
+							</div>
+						}
+						<div class="fact-item">
+							<span class="fact-label">Trechos Referenciados</span>
+							<span class="fact-value"><strong>{ fmt.Sprintf("%d", len(vm.Sequence)) }</strong> citações públicas</span>
+						</div>
+					</div>
+				</header>
+
+				<!-- Bloco de Integridade Técnica Observada e Link Externo Seguro -->
+				<section class="card" aria-label="Integridade e Acessibilidade do Documento">
+					<h2 class="card-title" style="font-size: 1.15rem; margin-bottom: 0.75rem;">Integridade do Conteúdo Observado</h2>
+					<div class="admin-detail-facts-grid" style="margin-bottom: 1rem;">
+						<div class="fact-item">
+							<span class="fact-label">Status de Acessibilidade</span>
+							<span class="fact-value">
+								if vm.SourceAccessStatus == "reachable" {
+									<span class="admin-status-badge status-published">Confirmada / Acessível</span>
+								} else if vm.SourceAccessStatus == "unreachable" {
+									<span class="admin-status-badge status-rejected">Inacessível na Origem</span>
+								} else if vm.SourceAccessStatus == "cited_by_provider" {
+									<span class="admin-status-badge" style="background-color: #cfe2ff; color: #084298;">Citada pelo Provedor</span>
+								} else {
+									<span class="admin-status-badge status-archived">Não Verificada</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Diagnóstico de Observabilidade</span>
+							<span class="fact-value">{ vm.IntegritySummary }</span>
+						</div>
+						if vm.SourceCheckedAtHuman != "" {
+							<div class="fact-item">
+								<span class="fact-label">Última Checagem Técnica (UTC)</span>
+								<span class="fact-value">{ vm.SourceCheckedAtHuman }</span>
+							</div>
+						}
+					</div>
+
+					<div class="source-link-row" style="padding-top: 0.75rem; border-top: 1px solid var(--color-border);">
+						if vm.CanonicalURL.IsValid {
+							<a
+								href={ templ.SafeURL(vm.CanonicalURL.SafeURL) }
+								target="_blank"
+								rel="noopener noreferrer"
+								class="source-external-link"
+								style="font-weight: 600; font-size: 0.95rem;"
+							>
+								if vm.IsPrimaryDocument {
+									Acessar documento oficial original no órgão emissor &nearr;
+								} else {
+									Acessar publicação original no veículo &nearr;
+								}
+							</a>
+						} else {
+							<span style="color: var(--color-text-muted); font-size: 0.9rem;">Endereço original não disponível ou inválido</span>
+						}
+					</div>
+				</section>
+
+				<!-- Sequência Contextual Documental -->
+				<section class="claims-section" aria-label="Sequência Contextual Documental">
+					<div class="section-heading-row" style="margin-bottom: 1rem;">
+						<h2 class="section-heading" style="margin: 0;">Sequência Contextual de Trechos Documentais</h2>
+						<p style="color: var(--color-text-muted); font-size: 0.9rem; margin: 0.25rem 0 0 0;">
+							Ordem determinística e cronológica por localizador cirúrgico (páginas, folhas, figuras e itens).
+						</p>
+					</div>
+
+					if len(vm.Sequence) > 0 {
+						<div class="document-sequence-list" style="display: flex; flex-direction: column; gap: 1.25rem;">
+							for idx, item := range vm.Sequence {
+								<article class="card claim-card" id={ fmt.Sprintf("trecho-%s", item.ID) }>
+									<div class="claim-header">
+										<div class="claim-relation">
+											<span class="relation-label">Item { fmt.Sprintf("%d", idx+1) } &bull; Vínculo:</span>
+											<strong class="relation-type">{ item.RelationshipType }</strong>
+											if item.SubjectEntityName != "" {
+												<span class="relation-target">
+													com <a href={ templ.SafeURL("/pessoas/" + item.SubjectEntitySlug) } class="notice-link">{ item.SubjectEntityName }</a>
+												</span>
+											}
+											if item.CaseName != "" {
+												<span class="relation-target">no contexto de <em>{ item.CaseName }</em></span>
+											} else if item.TargetEntityName != "" {
+												<span class="relation-target">e <em>{ item.TargetEntityName }</em></span>
+											}
+										</div>
+										<div class="badge-cluster">
+											if item.Role == "supports" {
+												<span class="disposition-badge" style="background-color: #d1e7dd; color: #0f5132;">Sustenta</span>
+											} else if item.Role == "contradicts" {
+												<span class="disposition-badge" style="background-color: #fff3cd; color: #664d03;">Contesta (Defesa)</span>
+											} else {
+												<span class="disposition-badge">Contexto</span>
+											}
+											<span class={ "grade-badge", fmt.Sprintf("grade-%s", item.ClaimGrade) } title={ item.ClaimGradeHuman }>
+												{ fmt.Sprintf("Grau %s", item.ClaimGrade) }
+											</span>
+										</div>
+									</div>
+
+									<!-- Localizador e Citação Literal -->
+									<div class="claim-body">
+										if item.Locator != "" {
+											<div class="source-locator-box" style="margin-bottom: 0.75rem;">
+												<span class="source-locator-label">Localizador no Documento:</span>
+												<span class="source-locator-chip"><strong>{ item.Locator }</strong></span>
+											</div>
+										}
+
+										if item.Excerpt != "" {
+											<blockquote class="source-excerpt" style="font-size: 1.05rem; line-height: 1.6; margin: 0.75rem 0;">
+												&ldquo;{ item.Excerpt }&rdquo;
+											</blockquote>
+										}
+
+										<div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border);">
+											<span class="fact-label">Alegação Documentada</span>
+											<p class="claim-proposition-text" style="margin: 0.25rem 0 0.5rem 0;">
+												{ item.ClaimProposition }
+											</p>
+
+											if item.ContextLimits != "" {
+												<div class="claim-limits-box" style="margin-top: 0.5rem;">
+													<strong>Limites e Contexto do Vínculo:</strong>
+													<p style="margin: 0.25rem 0 0 0;">{ item.ContextLimits }</p>
+												</div>
+											}
+										</div>
+
+										<div class="source-link-row" style="margin-top: 0.75rem;">
+											if item.SubjectEntitySlug != "" {
+												<a href={ templ.SafeURL("/pessoas/" + item.SubjectEntitySlug) } class="source-external-link" style="font-size: 0.85rem;">
+													Ver perfil completo de { item.SubjectEntityName } &rarr;
+												</a>
+											}
+										</div>
+									</div>
+								</article>
+							}
+						</div>
+					} else {
+						<div class="card empty-state">
+							<p>Nenhum trecho ou citação pública vinculada a este documento no momento.</p>
+						</div>
+					}
+				</section>
+			</main>
+			<footer class="site-footer">
+				<p>VorcaroZAP &bull; Base investigativa e documental independente &bull; <a href="/metodologia" style="color: inherit; text-decoration: underline;">Metodologia e Escala A–E</a></p>
+			</footer>
+		</body>
+	</html>
+}

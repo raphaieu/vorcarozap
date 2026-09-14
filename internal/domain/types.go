@@ -249,6 +249,69 @@ func (t SourceType) NatureLabel() string {
 	}
 }
 
+// DocumentSequenceItem representa um item atômico na sequência contextual de um documento.
+type DocumentSequenceItem struct {
+	ID                  string
+	EvidenceID          string
+	Excerpt             string
+	Locator             string
+	Role                EvidenceSourceRole
+	Status              EvidenceSourceStatus
+	ClaimID             string
+	ClaimProposition    string
+	ClaimGrade          EvidenceGrade
+	ClaimDisposition    ClaimDisposition
+	ClaimStatus         ClaimStatus
+	ClaimMetricEligible bool
+	RelationshipType    string
+	RelationshipSummary string
+	ContextLimits       string
+	SubjectEntityID     string
+	SubjectEntityName   string
+	SubjectEntitySlug   string
+	TargetEntityID      string
+	TargetEntityName    string
+	TargetEntitySlug    string
+	CaseID              string
+	CaseName            string
+	CaseSlug            string
+	CreatedAt           string
+	UpdatedAt           string
+}
+
+// DocumentSourceDetail representa uma fonte documental completa com sua sequência contextual de usos.
+type DocumentSourceDetail struct {
+	ID                    string
+	Title                 string
+	PublisherOrAuthor     string
+	OriginalURL           string
+	CanonicalURL          string
+	PublishedAt           string
+	AccessedAt            string
+	SourceType            SourceType
+	SourceAccessStatus    SourceAccessStatus
+	SourceAccessCheckedAt string
+	HTTPStatus            int
+	NormalizedErrorCode   string
+	CreatedAt             string
+	UpdatedAt             string
+	Sequence              []DocumentSequenceItem
+}
+
+// IntegritySummary retorna o resumo humano da integridade técnica observada para a fonte.
+func (d DocumentSourceDetail) IntegritySummary() string {
+	switch d.SourceAccessStatus {
+	case SourceAccessReachable:
+		return "Conteúdo observado acessível na checagem técnica"
+	case SourceAccessUnreachable:
+		return "Fonte indisponível ou inacessível na checagem técnica"
+	case SourceAccessCitedByProvider:
+		return "Citada pelo provedor na descoberta de monitoramento"
+	default:
+		return "Acessibilidade técnica pendente de verificação"
+	}
+}
+
 // ImportRunStatus define o estado operacional de uma execução de importação.
 type ImportRunStatus string
 

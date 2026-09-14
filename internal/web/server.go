@@ -39,10 +39,11 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Get("/health/live", handlers.HandleHealthLive)
 	r.Get("/health/ready", handlers.HandleHealthReady)
 
-	// Página pública inicial e navegação pública (VZ-006, VZ-007)
+	// Página pública inicial e navegação pública (VZ-006, VZ-007, VZ-023)
 	r.Get("/", handlers.HandleHome)
 	r.Get("/pessoas", handlers.HandleEntities)
 	r.Get("/pessoas/{slug}", handlers.HandleEntityDetail)
+	r.Get("/documentos/{id}", handlers.HandleDocumentDetail)
 	r.Get("/metodologia", handlers.HandleMethodology)
 
 	// Exportação pública de dados XLSX (VZ-009)
@@ -51,7 +52,7 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
-	// Área administrativa protegida (VZ-014, VZ-016)
+	// Área administrativa protegida (VZ-014, VZ-016, VZ-023)
 	if cfg.IsAdminEnabled() {
 		authMiddleware := BasicAuthMiddleware(cfg.AdminUser, cfg.AdminPasswordHash)
 		csrfMiddleware := AdminCSRFMiddleware(cfg.AdminAllowedOrigin)
@@ -89,6 +90,7 @@ func newAdminRouter(authMiddleware func(http.Handler) http.Handler, csrfMiddlewa
 	adminRouter.Get("/candidatos/{id}", handlers.HandleAdminCandidateDetail)
 	adminRouter.Get("/evidencias", handlers.HandleAdminEvidences)
 	adminRouter.Get("/fontes", handlers.HandleAdminSources)
+	adminRouter.Get("/fontes/{id}", handlers.HandleAdminSourceDetail)
 
 	// Rotas de usos de evidência e moderação granular (VZ-021)
 	adminRouter.Get("/evidencias/{id}", handlers.HandleAdminEvidenceSourceDetail)

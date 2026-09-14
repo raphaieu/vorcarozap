@@ -1,0 +1,240 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminSourceDetail(vm AdminSourceDetailVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Inspeção detalhada de fonte documental e sequência de usos no VorcaroZAP."/>
+			<title>{ "Fonte: " + vm.ID } — Admin — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("fontes")
+			<main class="container">
+				<!-- Navegação de Retorno -->
+				<div class="breadcrumb-nav" style="display: flex; justify-content: space-between; align-items: center;">
+					<a href="/admin/fontes" class="back-link">&larr; Voltar para catálogo de fontes</a>
+					<a
+						href={ templ.SafeURL("/documentos/" + vm.ID) }
+						target="_blank"
+						rel="noopener noreferrer"
+						class="btn btn-subtle"
+						style="font-size: 0.85rem;"
+					>
+						Abrir Visualizador Público &UpperRightArrow;
+					</a>
+				</div>
+
+				<!-- Cabeçalho da Fonte -->
+				<section class="card admin-detail-header-card" aria-label="Dados Principais da Fonte Documental">
+					<div class="admin-detail-title-row">
+						<div>
+							<div class="badge-cluster" style="margin-bottom: 0.5rem;">
+								if vm.SourceTypeHuman != "" {
+									<span class={ "source-type-badge", templ.KV("source-type-primary", vm.IsPrimaryDocument) }>{ vm.SourceTypeHuman }</span>
+								}
+								<span class="category-badge">{ vm.NatureLabel }</span>
+							</div>
+							<h1 class="page-title" style="margin-bottom: 0.25rem; font-size: 1.5rem;">
+								if vm.IsTitleEnriched {
+									{ vm.Title }
+								} else {
+									<span class="source-title-pending">[Título pendente de enriquecimento]</span>
+								}
+							</h1>
+							<p class="page-subtitle" style="margin: 0;">
+								ID: <code>{ vm.ID }</code> &bull; Cadastrado em: <strong>{ vm.CreatedAtHuman }</strong>
+							</p>
+						</div>
+
+						<div class="badge-cluster">
+							if vm.SourceAccessStatus == "reachable" {
+								<span class="admin-status-badge status-published">Acessível</span>
+							} else if vm.SourceAccessStatus == "unreachable" {
+								<span class="admin-status-badge status-rejected">Inacessível</span>
+							} else if vm.SourceAccessStatus == "cited_by_provider" {
+								<span class="admin-status-badge" style="background-color: #cfe2ff; color: #084298;">Citada Provedor</span>
+							} else {
+								<span class="admin-status-badge status-archived">Não Verificada</span>
+							}
+
+							<span class="status-tag">
+								Usos: <strong>{ fmt.Sprintf("%d", vm.TotalUses) }</strong> ({ fmt.Sprintf("%d", vm.ActiveUses) } ativos)
+							</span>
+						</div>
+					</div>
+
+					<div class="admin-detail-facts-grid">
+						<div class="fact-item">
+							<span class="fact-label">Veículo / Autor</span>
+							<span class="fact-value">
+								if vm.IsAuthorEnriched {
+									<strong>{ vm.PublisherOrAuthor }</strong>
+								} else {
+									<span style="color: var(--color-text-muted);">Pendente</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Data de Publicação</span>
+							<span class="fact-value">
+								if vm.PublishedAtHuman != "" {
+									{ vm.PublishedAtHuman }
+								} else {
+									<span style="color: var(--color-text-muted);">&mdash;</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Última Checagem Técnica</span>
+							<span class="fact-value">
+								if vm.SourceCheckedAtHuman != "" {
+									{ vm.SourceCheckedAtHuman }
+								} else {
+									<span style="color: var(--color-text-muted);">Não realizada</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item">
+							<span class="fact-label">Status HTTP</span>
+							<span class="fact-value">
+								if vm.HTTPStatus.Valid {
+									<code>{ fmt.Sprintf("%d", vm.HTTPStatus.Int64) }</code>
+								} else {
+									<span style="color: var(--color-text-muted);">&mdash;</span>
+								}
+							</span>
+						</div>
+						<div class="fact-item" style="grid-column: 1 / -1;">
+							<span class="fact-label">URL Canônica</span>
+							<span class="fact-value">
+								if vm.CanonicalURL.IsValid {
+									<a
+										href={ templ.SafeURL(vm.CanonicalURL.SafeURL) }
+										target="_blank"
+										rel="noopener noreferrer"
+										class="source-external-link"
+										style="word-break: break-all;"
+									>
+										{ vm.CanonicalURL.SafeURL } &UpperRightArrow;
+									</a>
+								} else {
+									<span style="color: var(--color-text-muted);">&mdash;</span>
+								}
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<!-- Sequência Completa de Usos de Evidência -->
+				<section class="claims-section" aria-label="Usos de Evidência da Fonte">
+					<div class="section-heading-row" style="margin-bottom: 1rem;">
+						<h2 class="section-heading" style="margin: 0;">Usos de Evidência Vinculados ({ fmt.Sprintf("%d", len(vm.Sequence)) })</h2>
+						<p style="color: var(--color-text-muted); font-size: 0.9rem; margin: 0.25rem 0 0 0;">
+							Lista de todas as citações literais, localizadores e alegações associadas (ativas e desaprovadas).
+						</p>
+					</div>
+
+					if len(vm.Sequence) > 0 {
+						<div class="admin-items-list">
+							for _, item := range vm.Sequence {
+								<article class="card admin-item-card" id={ fmt.Sprintf("ev-%s", item.ID) }>
+									<div class="admin-item-header">
+										<div class="admin-item-title-group">
+											<div class="admin-item-title-row">
+												<span class="admin-subject-name">Uso ID: <code>{ item.ID }</code></span>
+												if item.Locator != "" {
+													<span class="source-locator-chip"><strong>{ item.Locator }</strong></span>
+												}
+												if item.Role == "supports" {
+													<span class="disposition-badge" style="background-color: #d1e7dd; color: #0f5132;">Sustenta</span>
+												} else if item.Role == "contradicts" {
+													<span class="disposition-badge" style="background-color: #fff3cd; color: #664d03;">Contesta</span>
+												} else {
+													<span class="disposition-badge">Contexto</span>
+												}
+											</div>
+											<div class="admin-item-meta-row">
+												<span>Cadastrado em: <strong>{ item.CreatedAtHuman }</strong></span>
+												if item.ClaimStatus == "published" {
+													<span class="admin-status-badge status-published">Claim Publicado</span>
+												} else if item.ClaimStatus == "quarantined" {
+													<span class="admin-status-badge status-quarantined">Claim Quarentena</span>
+												} else if item.ClaimStatus == "rejected" {
+													<span class="admin-status-badge status-rejected">Claim Rejeitado</span>
+												} else {
+													<span class="admin-status-badge status-archived">Claim Arquivado</span>
+												}
+											</div>
+										</div>
+
+										<div class="badge-cluster">
+											if item.Status == "active" {
+												<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">Uso Ativo</span>
+											} else {
+												<span class="status-tag" style="background-color: #f8d7da; color: #842029;">Uso Desaprovado</span>
+											}
+										</div>
+									</div>
+
+									<div class="admin-item-body">
+										if item.Excerpt != "" {
+											<blockquote class="source-excerpt" style="margin: 0.5rem 0;">
+												&ldquo;{ item.Excerpt }&rdquo;
+											</blockquote>
+										}
+
+										<div class="admin-detail-facts-grid" style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border);">
+											<div class="fact-item" style="grid-column: 1 / -1;">
+												<span class="fact-label">Proposição do Claim</span>
+												<span class="fact-value"><strong>{ item.ClaimProposition }</strong></span>
+											</div>
+											<div class="fact-item">
+												<span class="fact-label">Grau</span>
+												<span class="fact-value">
+													<span class={ "grade-badge", fmt.Sprintf("grade-%s", item.ClaimGrade) }>
+														{ fmt.Sprintf("Grau %s", item.ClaimGrade) }
+													</span>
+												</span>
+											</div>
+											<div class="fact-item">
+												<span class="fact-label">Entidade Sujeito</span>
+												<span class="fact-value">
+													if item.SubjectEntityName != "" {
+														<strong>{ item.SubjectEntityName }</strong>
+													} else {
+														<span style="color: var(--color-text-muted);">&mdash;</span>
+													}
+												</span>
+											</div>
+										</div>
+
+										<div class="admin-item-actions-row" style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+											<a href={ templ.SafeURL("/admin/evidencias/" + item.ID) } class="btn btn-primary" style="font-size: 0.85rem;">
+												Moderar Este Uso de Evidência &rarr;
+											</a>
+											<a href={ templ.SafeURL("/admin/claims/" + item.ClaimID) } class="btn btn-subtle" style="font-size: 0.85rem;">
+												Inspecionar Claim &rarr;
+											</a>
+										</div>
+									</div>
+								</article>
+							}
+						</div>
+					} else {
+						<div class="card empty-state">
+							<p>Nenhum uso de evidência cadastrado para esta fonte documental.</p>
+						</div>
+					}
+				</section>
+			</main>
+		</body>
+	</html>
+}

@@ -2,6 +2,21 @@
 
 Todas as alterações notáveis deste projeto são registradas neste documento. O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [Não lançado] — VZ-023: Avaliação Técnica e Viewer SSR de Documentos e Sequências Contextuais
+
+### Adicionado
+- **Avaliação Técnica e de Segurança ([ADR-022](docs/adr/ADR-022-avaliacao-tecnica-e-viewer-ssr-de-sequencias-contextuais.md)):**
+  - Rejeição formal de download/proxying direto de PDFs/HTML remotos aos usuários finais, eliminando riscos críticos de DoS/OOM, SSRF reverso, injeção de conteúdo ativo e violação de direitos autorais.
+  - Definição estrita da integridade de fontes como comprovação técnica observada na data/hora do teste, explicitamente diferenciada de autenticidade jurídica.
+- **Viewer SSR de Documentos e Sequências Contextuais (`GET /documentos/{id}` e `GET /admin/fontes/{id}`):**
+  - Rotas dedicadas de navegação documental profunda conectando a fonte a todos os seus usos em evidências e alegações no banco relacional.
+  - Ordenação determinística natural por localizadores (`CompareLocators`), tratando números de páginas/folhas/figuras (ex.: 5 < 12 < 42), sufixos e segmentos compostos, com fallback seguro para data de criação e ID.
+  - Segregação de segurança e integridade: itens sob quarentena ou desaprovados são completamente invisíveis nas rotas públicas, enquanto o painel administrativo (`/admin/fontes/{id}`) exibe visão operacional completa com badges de status de moderação.
+  - Enriquecimento visual e navegação bidirecional: links contextualizados a partir dos cards de fontes em `/pessoas/{slug}` e no painel administrativo `/admin/fontes`.
+  - Invalidação dinâmica de cache via cabeçalhos `Cache-Control: no-cache, no-store, must-revalidate` (público) e `Cache-Control: no-store, Vary: Authorization` (admin).
+- **Atualização da Metodologia (`/metodologia`):**
+  - Inclusão da Seção 8 documentando os princípios do Viewer SSR de Sequências Contextuais, ordem determinística, diferença entre laudos primários e notícias, e princípio de não inferência probatória a partir de menções periféricas.
+
 ## [Não lançado] — VZ-020: Verificador GET Seguro e Política de Acessibilidade de Fontes
 
 ### Adicionado

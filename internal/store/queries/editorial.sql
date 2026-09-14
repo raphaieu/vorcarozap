@@ -436,3 +436,57 @@ WHERE subject_entity_id = ?
   AND ((target_entity_id = ? AND case_id IS NULL) OR (target_entity_id IS NULL AND case_id = ?))
   AND relationship_type = ?
 LIMIT 1;
+
+-- name: GetPublicDocumentSourceByID :one
+SELECT s.*
+FROM sources s
+WHERE s.id = ?
+  AND EXISTS (
+      SELECT 1 FROM evidence_sources es
+      JOIN evidence ev ON ev.id = es.evidence_id
+      JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+      WHERE es.source_id = s.id AND es.status = 'active'
+  )
+LIMIT 1;
+
+-- name: ListPublicDocumentSequenceBySourceID :many
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    pcv.claim_id,
+    pcv.proposition AS claim_proposition,
+    pcv.grade AS claim_grade,
+    pcv.disposition AS claim_disposition,
+    pcv.status AS claim_status,
+    pcv.metric_eligible AS claim_metric_eligible,
+    pcv.relationship_type,
+    pcv.relationship_summary,
+    pcv.context_limits,
+    pcv.entity_id AS subject_entity_id,
+    sub.name AS subject_entity_name,
+    sub.slug AS subject_entity_slug,
+    pcv.target_entity_id,
+    te.name AS target_entity_name,
+    te.slug AS target_entity_slug,
+    pcv.case_id,
+    cs.name AS case_name,
+    cs.slug AS case_slug
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+JOIN entities sub ON sub.id = pcv.entity_id
+LEFT JOIN entities te ON te.id = pcv.target_entity_id
+LEFT JOIN cases cs ON cs.id = pcv.case_id
+WHERE es.source_id = ?
+  AND es.status = 'active'
+ORDER BY
+    es.created_at ASC,
+    es.id ASC;

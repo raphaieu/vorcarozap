@@ -515,3 +515,115 @@ func clampPercent(p float64) float64 {
 	}
 	return p
 }
+
+// DocumentSequenceItemVM encapsula um item da sequência contextual para renderização SSR pública.
+type DocumentSequenceItemVM struct {
+	ID                    string
+	EvidenceID            string
+	Excerpt               string
+	Locator               string
+	Role                  string
+	RoleHuman             string
+	ClaimID               string
+	ClaimProposition      string
+	ClaimGrade            string
+	ClaimGradeHuman       string
+	ClaimDisposition      string
+	ClaimDispositionHuman string
+	RelationshipType      string
+	RelationshipSummary   string
+	ContextLimits         string
+	SubjectEntityName     string
+	SubjectEntitySlug     string
+	TargetEntityName      string
+	TargetEntitySlug      string
+	CaseName              string
+	CaseSlug              string
+	CreatedAtHuman        string
+}
+
+// DocumentDetailVM encapsula a visão detalhada de um documento e sua sequência contextual.
+type DocumentDetailVM struct {
+	ID                      string
+	Title                   string
+	PublisherOrAuthor       string
+	OriginalURL             string
+	CanonicalURL            ExternalLinkVM
+	PublishedAtHuman        string
+	AccessedAtHuman         string
+	SourceType              string
+	SourceTypeHuman         string
+	IsPrimaryDocument       bool
+	NatureLabel             string
+	SourceAccessStatus      string
+	SourceAccessStatusHuman string
+	SourceCheckedAtHuman    string
+	HTTPStatus              int
+	NormalizedErrorCode     string
+	IntegritySummary        string
+	IsTitleEnriched         bool
+	IsAuthorEnriched        bool
+	Sequence                []DocumentSequenceItemVM
+}
+
+// ToDocumentDetailVM converte o detalhe de domínio em ViewModel formatado para a página pública.
+func ToDocumentDetailVM(doc *domain.DocumentSourceDetail) DocumentDetailVM {
+	var seqVM []DocumentSequenceItemVM
+	for _, item := range doc.Sequence {
+		loc := strings.TrimSpace(item.Locator)
+		if formatted, err := normalize.Locator(loc); err == nil && formatted != "" {
+			loc = formatted
+		}
+
+		seqVM = append(seqVM, DocumentSequenceItemVM{
+			ID:                    item.ID,
+			EvidenceID:            item.EvidenceID,
+			Excerpt:               item.Excerpt,
+			Locator:               loc,
+			Role:                  string(item.Role),
+			RoleHuman:             FormatEvidenceRole(string(item.Role)),
+			ClaimID:               item.ClaimID,
+			ClaimProposition:      item.ClaimProposition,
+			ClaimGrade:            string(item.ClaimGrade),
+			ClaimGradeHuman:       FormatGrade(string(item.ClaimGrade)),
+			ClaimDisposition:      string(item.ClaimDisposition),
+			ClaimDispositionHuman: FormatDisposition(string(item.ClaimDisposition)),
+			RelationshipType:      item.RelationshipType,
+			RelationshipSummary:   item.RelationshipSummary,
+			ContextLimits:         item.ContextLimits,
+			SubjectEntityName:     item.SubjectEntityName,
+			SubjectEntitySlug:     item.SubjectEntitySlug,
+			TargetEntityName:      item.TargetEntityName,
+			TargetEntitySlug:      item.TargetEntitySlug,
+			CaseName:              item.CaseName,
+			CaseSlug:              item.CaseSlug,
+			CreatedAtHuman:        FormatDate(item.CreatedAt),
+		})
+	}
+
+	title := strings.TrimSpace(doc.Title)
+	publisher := strings.TrimSpace(doc.PublisherOrAuthor)
+
+	return DocumentDetailVM{
+		ID:                      doc.ID,
+		Title:                   title,
+		PublisherOrAuthor:       publisher,
+		OriginalURL:             doc.OriginalURL,
+		CanonicalURL:            SanitizeExternalLink(doc.CanonicalURL),
+		PublishedAtHuman:        FormatDate(doc.PublishedAt),
+		AccessedAtHuman:         FormatDate(doc.AccessedAt),
+		SourceType:              string(doc.SourceType),
+		SourceTypeHuman:         doc.SourceType.Label(),
+		IsPrimaryDocument:       doc.SourceType.IsPrimaryDocument(),
+		NatureLabel:             doc.SourceType.NatureLabel(),
+		SourceAccessStatus:      string(doc.SourceAccessStatus),
+		SourceAccessStatusHuman: FormatSourceAccessStatus(string(doc.SourceAccessStatus)),
+		SourceCheckedAtHuman:    FormatDate(doc.SourceAccessCheckedAt),
+		HTTPStatus:              doc.HTTPStatus,
+		NormalizedErrorCode:     doc.NormalizedErrorCode,
+		IntegritySummary:        doc.IntegritySummary(),
+		IsTitleEnriched:         title != "",
+		IsAuthorEnriched:        publisher != "",
+		Sequence:                seqVM,
+	}
+}

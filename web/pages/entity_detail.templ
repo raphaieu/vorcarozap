@@ -164,7 +164,11 @@ templ EntityDetail(vm EntityDetailVM) {
 														</div>
 													}
 
-													<div class="source-link-row">
+													<div class="source-link-row" style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+														<a href={ templ.SafeURL("/documentos/" + src.ID) } class="source-external-link" style="color: var(--color-primary); font-weight: 500;">
+															Ver contexto documental &rarr;
+														</a>
+														<span style="color: var(--color-border);">&bull;</span>
 														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
 															if src.IsPrimaryDocument {
 																Acessar documento oficial original &nearr;
@@ -222,7 +226,11 @@ templ EntityDetail(vm EntityDetailVM) {
 														</div>
 													}
 
-													<div class="source-link-row">
+													<div class="source-link-row" style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+														<a href={ templ.SafeURL("/documentos/" + src.ID) } class="source-external-link" style="color: var(--color-primary); font-weight: 500;">
+															Ver contexto documental &rarr;
+														</a>
+														<span style="color: var(--color-border);">&bull;</span>
 														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
 															Consultar manifestação na íntegra &nearr;
 														</a>
@@ -273,7 +281,11 @@ templ EntityDetail(vm EntityDetailVM) {
 														</div>
 													}
 
-													<div class="source-link-row">
+													<div class="source-link-row" style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+														<a href={ templ.SafeURL("/documentos/" + src.ID) } class="source-external-link" style="color: var(--color-primary); font-weight: 500;">
+															Ver contexto documental &rarr;
+														</a>
+														<span style="color: var(--color-border);">&bull;</span>
 														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
 															Consultar documento de contexto &nearr;
 														</a>

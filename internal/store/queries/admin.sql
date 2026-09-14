@@ -594,3 +594,70 @@ SELECT
 FROM moderation_decisions
 WHERE evidence_source_id = ?
 ORDER BY created_at DESC, id DESC;
+
+-- name: GetAdminSourceDetailByID :one
+SELECT
+    s.id,
+    s.title,
+    s.publisher_or_author,
+    s.original_url,
+    s.canonical_url,
+    s.published_at,
+    s.accessed_at,
+    s.source_type,
+    s.source_access_status,
+    s.source_access_checked_at,
+    s.http_status,
+    s.normalized_error_code,
+    s.created_at,
+    s.updated_at,
+    COUNT(es.id) AS total_uses,
+    COUNT(CASE WHEN es.status = 'active' THEN 1 END) AS active_uses,
+    COUNT(CASE WHEN es.status = 'rejected' THEN 1 END) AS rejected_uses
+FROM sources s
+LEFT JOIN evidence_sources es ON es.source_id = s.id
+WHERE s.id = ?
+GROUP BY s.id
+LIMIT 1;
+
+-- name: ListAdminDocumentSequenceBySourceID :many
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    c.id AS claim_id,
+    c.proposition AS claim_proposition,
+    c.grade AS claim_grade,
+    c.disposition AS claim_disposition,
+    c.status AS claim_status,
+    c.metric_eligible AS claim_metric_eligible,
+    r.relationship_type,
+    r.summary AS relationship_summary,
+    r.context_limits,
+    sub.id AS subject_entity_id,
+    sub.name AS subject_entity_name,
+    sub.slug AS subject_entity_slug,
+    te.id AS target_entity_id,
+    te.name AS target_entity_name,
+    te.slug AS target_entity_slug,
+    cs.id AS case_id,
+    cs.name AS case_name,
+    cs.slug AS case_slug
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN claims c ON c.id = ev.claim_id
+JOIN relationships r ON r.id = c.relationship_id
+JOIN entities sub ON sub.id = r.subject_entity_id
+LEFT JOIN entities te ON te.id = r.target_entity_id
+LEFT JOIN cases cs ON cs.id = r.case_id
+WHERE es.source_id = ?
+ORDER BY
+    es.created_at ASC,
+    es.id ASC;

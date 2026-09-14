@@ -208,6 +208,20 @@ templ Methodology() {
 							<li><strong>Retificação de status:</strong> Caso uma decisão judicial ou documento novo desqualifique a sustentação de um vínculo, a alegação correspondente é atualizada ou enviada para quarentena, alterando instantaneamente a visualização pública e recalculando os indicadores da rede.</li>
 						</ul>
 					</section>
+
+					<!-- 8. Navegação Documental, Sequências Contextuais e Integridade Observada -->
+					<section class="methodology-section" id="sequencias-contextuais">
+						<h2>8. Navegação Documental, Sequências Contextuais e Integridade Observada (VZ-023)</h2>
+						<p>
+							Para laudos periciais extensos, peças judiciais e apurações documentais complexas, a plataforma disponibiliza páginas dedicadas de <strong>Sequência Contextual Documental</strong> (<code>{ "/documentos/{id}" }</code>):
+						</p>
+						<ul>
+							<li><strong>Ordem Determinística e Localizadores Cirúrgicos:</strong> Todos os trechos literais extraídos de uma fonte são ordenados de forma natural e cronológica por localizadores precisos (números de páginas, folhas, figuras, itens ou anexos), preservando a sequência de fatos apresentada no documento original.</li>
+							<li><strong>Documentos Oficiais Primários vs. Apuração Secundária:</strong> Laudos policiais (como o IPJ-A nº 3298613/2026), decisões judiciais e comunicados oficiais são identificados como documentos primários, enquanto notícias e entrevistas são identificadas como reportagens secundárias.</li>
+							<li><strong>Integridade Técnica do Conteúdo Observado:</strong> Os registros de acessibilidade e diagnósticos de rede atestam estritamente o <em>conteúdo técnico observado na data e hora UTC da última checagem</em>, não constituindo certificação cartorial ou declaração de autenticidade jurídica.</li>
+							<li><strong>Princípio de Não Inferência Probatória:</strong> A presença de um nome em lista de contatos, imagem periciada ou despacho policial atesta exclusivamente a menção documental. É vedado ao sistema inferir interlocução bilateral direta, anuência ou culpa com base unicamente na menção em um arquivo.</li>
+						</ul>
+					</section>
 				</article>
 			</main>
 			<footer class="site-footer">

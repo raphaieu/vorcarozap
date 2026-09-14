@@ -909,6 +909,41 @@ func (q *Queries) GetImportRunByHashAndVersion(ctx context.Context, arg GetImpor
 	return i, err
 }
 
+const getPublicDocumentSourceByID = `-- name: GetPublicDocumentSourceByID :one
+SELECT s.id, s.title, s.publisher_or_author, s.original_url, s.canonical_url, s.published_at, s.accessed_at, s.source_type, s.source_access_status, s.source_access_checked_at, s.http_status, s.normalized_error_code, s.created_at, s.updated_at
+FROM sources s
+WHERE s.id = ?
+  AND EXISTS (
+      SELECT 1 FROM evidence_sources es
+      JOIN evidence ev ON ev.id = es.evidence_id
+      JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+      WHERE es.source_id = s.id AND es.status = 'active'
+  )
+LIMIT 1
+`
+
+func (q *Queries) GetPublicDocumentSourceByID(ctx context.Context, id string) (Source, error) {
+	row := q.db.QueryRowContext(ctx, getPublicDocumentSourceByID, id)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.PublisherOrAuthor,
+		&i.OriginalUrl,
+		&i.CanonicalUrl,
+		&i.PublishedAt,
+		&i.AccessedAt,
+		&i.SourceType,
+		&i.SourceAccessStatus,
+		&i.SourceAccessCheckedAt,
+		&i.HttpStatus,
+		&i.NormalizedErrorCode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPublicEntityBySlug = `-- name: GetPublicEntityBySlug :one
 SELECT
     e.id,
@@ -1292,6 +1327,132 @@ func (q *Queries) ListPublicClaimsByEntityID(ctx context.Context, entityID strin
 			&i.ContextStatus,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicDocumentSequenceBySourceID = `-- name: ListPublicDocumentSequenceBySourceID :many
+SELECT
+    es.id AS evidence_source_id,
+    es.evidence_id,
+    es.excerpt,
+    es.locator,
+    es.role,
+    es.status AS evidence_source_status,
+    es.created_at AS evidence_source_created_at,
+    es.updated_at AS evidence_source_updated_at,
+    ev.summary AS evidence_summary,
+    ev.evidence_type,
+    pcv.claim_id,
+    pcv.proposition AS claim_proposition,
+    pcv.grade AS claim_grade,
+    pcv.disposition AS claim_disposition,
+    pcv.status AS claim_status,
+    pcv.metric_eligible AS claim_metric_eligible,
+    pcv.relationship_type,
+    pcv.relationship_summary,
+    pcv.context_limits,
+    pcv.entity_id AS subject_entity_id,
+    sub.name AS subject_entity_name,
+    sub.slug AS subject_entity_slug,
+    pcv.target_entity_id,
+    te.name AS target_entity_name,
+    te.slug AS target_entity_slug,
+    pcv.case_id,
+    cs.name AS case_name,
+    cs.slug AS case_slug
+FROM evidence_sources es
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+JOIN entities sub ON sub.id = pcv.entity_id
+LEFT JOIN entities te ON te.id = pcv.target_entity_id
+LEFT JOIN cases cs ON cs.id = pcv.case_id
+WHERE es.source_id = ?
+  AND es.status = 'active'
+ORDER BY
+    es.created_at ASC,
+    es.id ASC
+`
+
+type ListPublicDocumentSequenceBySourceIDRow struct {
+	EvidenceSourceID        string         `json:"evidence_source_id"`
+	EvidenceID              string         `json:"evidence_id"`
+	Excerpt                 string         `json:"excerpt"`
+	Locator                 string         `json:"locator"`
+	Role                    string         `json:"role"`
+	EvidenceSourceStatus    string         `json:"evidence_source_status"`
+	EvidenceSourceCreatedAt string         `json:"evidence_source_created_at"`
+	EvidenceSourceUpdatedAt string         `json:"evidence_source_updated_at"`
+	EvidenceSummary         string         `json:"evidence_summary"`
+	EvidenceType            string         `json:"evidence_type"`
+	ClaimID                 string         `json:"claim_id"`
+	ClaimProposition        string         `json:"claim_proposition"`
+	ClaimGrade              string         `json:"claim_grade"`
+	ClaimDisposition        string         `json:"claim_disposition"`
+	ClaimStatus             string         `json:"claim_status"`
+	ClaimMetricEligible     int64          `json:"claim_metric_eligible"`
+	RelationshipType        string         `json:"relationship_type"`
+	RelationshipSummary     string         `json:"relationship_summary"`
+	ContextLimits           string         `json:"context_limits"`
+	SubjectEntityID         string         `json:"subject_entity_id"`
+	SubjectEntityName       string         `json:"subject_entity_name"`
+	SubjectEntitySlug       string         `json:"subject_entity_slug"`
+	TargetEntityID          sql.NullString `json:"target_entity_id"`
+	TargetEntityName        sql.NullString `json:"target_entity_name"`
+	TargetEntitySlug        sql.NullString `json:"target_entity_slug"`
+	CaseID                  sql.NullString `json:"case_id"`
+	CaseName                sql.NullString `json:"case_name"`
+	CaseSlug                sql.NullString `json:"case_slug"`
+}
+
+func (q *Queries) ListPublicDocumentSequenceBySourceID(ctx context.Context, sourceID string) ([]ListPublicDocumentSequenceBySourceIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicDocumentSequenceBySourceID, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicDocumentSequenceBySourceIDRow
+	for rows.Next() {
+		var i ListPublicDocumentSequenceBySourceIDRow
+		if err := rows.Scan(
+			&i.EvidenceSourceID,
+			&i.EvidenceID,
+			&i.Excerpt,
+			&i.Locator,
+			&i.Role,
+			&i.EvidenceSourceStatus,
+			&i.EvidenceSourceCreatedAt,
+			&i.EvidenceSourceUpdatedAt,
+			&i.EvidenceSummary,
+			&i.EvidenceType,
+			&i.ClaimID,
+			&i.ClaimProposition,
+			&i.ClaimGrade,
+			&i.ClaimDisposition,
+			&i.ClaimStatus,
+			&i.ClaimMetricEligible,
+			&i.RelationshipType,
+			&i.RelationshipSummary,
+			&i.ContextLimits,
+			&i.SubjectEntityID,
+			&i.SubjectEntityName,
+			&i.SubjectEntitySlug,
+			&i.TargetEntityID,
+			&i.TargetEntityName,
+			&i.TargetEntitySlug,
+			&i.CaseID,
+			&i.CaseName,
+			&i.CaseSlug,
 		); err != nil {
 			return nil, err
 		}

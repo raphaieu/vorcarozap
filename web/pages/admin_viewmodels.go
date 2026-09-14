@@ -1169,3 +1169,156 @@ func ToAdminEvidenceSourceDetailVM(detail *store.AdminEvidenceSourceDetail, flas
 		FlashError:                 flashErr,
 	}
 }
+
+// AdminDocumentSequenceItemVM encapsula um item de sequência documental para o painel administrativo.
+type AdminDocumentSequenceItemVM struct {
+	ID                    string
+	EvidenceID            string
+	Excerpt               string
+	Locator               string
+	Role                  string
+	RoleHuman             string
+	Status                string
+	StatusHuman           string
+	ClaimID               string
+	ClaimProposition      string
+	ClaimGrade            string
+	ClaimGradeHuman       string
+	ClaimDisposition      string
+	ClaimDispositionHuman string
+	ClaimStatus           string
+	ClaimStatusHuman      string
+	ClaimMetricEligible   bool
+	RelationshipType      string
+	RelationshipSummary   string
+	ContextLimits         string
+	SubjectEntityName     string
+	SubjectEntitySlug     string
+	TargetEntityName      string
+	TargetEntitySlug      string
+	CaseName              string
+	CaseSlug              string
+	CreatedAtHuman        string
+	UpdatedAtHuman        string
+}
+
+// AdminSourceDetailVM encapsula o detalhe de uma fonte e sua sequência completa de usos para o painel administrativo.
+type AdminSourceDetailVM struct {
+	ID                      string
+	Title                   string
+	PublisherOrAuthor       string
+	OriginalURL             ExternalLinkVM
+	CanonicalURL            ExternalLinkVM
+	PublishedAtHuman        string
+	AccessedAtHuman         string
+	SourceType              string
+	SourceTypeHuman         string
+	IsPrimaryDocument       bool
+	NatureLabel             string
+	SourceAccessStatus      string
+	SourceAccessStatusHuman string
+	SourceCheckedAtHuman    string
+	HTTPStatus              sql.NullInt64
+	NormalizedErrorCode     string
+	TotalUses               int64
+	ActiveUses              int64
+	RejectedUses            int64
+	CreatedAtHuman          string
+	UpdatedAtHuman          string
+	IsTitleEnriched         bool
+	IsAuthorEnriched        bool
+	Sequence                []AdminDocumentSequenceItemVM
+}
+
+// ToAdminSourceDetailVM converte o resultado do banco para o modelo administrativo de visualização de fonte e sequência.
+func ToAdminSourceDetailVM(res *store.AdminSourceDetailResult) AdminSourceDetailVM {
+	var seqVM []AdminDocumentSequenceItemVM
+	for _, item := range res.Sequence {
+		loc := strings.TrimSpace(item.Locator)
+		if formatted, err := normalize.Locator(loc); err == nil && formatted != "" {
+			loc = formatted
+		}
+
+		seqVM = append(seqVM, AdminDocumentSequenceItemVM{
+			ID:                    item.ID,
+			EvidenceID:            item.EvidenceID,
+			Excerpt:               item.Excerpt,
+			Locator:               loc,
+			Role:                  string(item.Role),
+			RoleHuman:             FormatEvidenceRole(string(item.Role)),
+			Status:                string(item.Status),
+			StatusHuman:           FormatEvidenceSourceStatus(string(item.Status)),
+			ClaimID:               item.ClaimID,
+			ClaimProposition:      item.ClaimProposition,
+			ClaimGrade:            string(item.ClaimGrade),
+			ClaimGradeHuman:       FormatGrade(string(item.ClaimGrade)),
+			ClaimDisposition:      string(item.ClaimDisposition),
+			ClaimDispositionHuman: FormatDisposition(string(item.ClaimDisposition)),
+			ClaimStatus:           string(item.ClaimStatus),
+			ClaimStatusHuman:      FormatEditorialStatus(string(item.ClaimStatus)),
+			ClaimMetricEligible:   item.ClaimMetricEligible,
+			RelationshipType:      item.RelationshipType,
+			RelationshipSummary:   item.RelationshipSummary,
+			ContextLimits:         item.ContextLimits,
+			SubjectEntityName:     item.SubjectEntityName,
+			SubjectEntitySlug:     item.SubjectEntitySlug,
+			TargetEntityName:      item.TargetEntityName,
+			TargetEntitySlug:      item.TargetEntitySlug,
+			CaseName:              item.CaseName,
+			CaseSlug:              item.CaseSlug,
+			CreatedAtHuman:        FormatDate(item.CreatedAt),
+			UpdatedAtHuman:        FormatDate(item.UpdatedAt),
+		})
+	}
+
+	title := strings.TrimSpace(res.Source.Title)
+	publisher := strings.TrimSpace(res.Source.PublisherOrAuthor)
+	st := domain.SourceType(strings.ToLower(strings.TrimSpace(res.Source.SourceType)))
+
+	var normErr string
+	if res.Source.NormalizedErrorCode.Valid {
+		normErr = res.Source.NormalizedErrorCode.String
+	}
+
+	var pubAt string
+	if res.Source.PublishedAt.Valid {
+		pubAt = FormatDate(res.Source.PublishedAt.String)
+	}
+
+	var accAt string
+	if res.Source.AccessedAt.Valid {
+		accAt = FormatDate(res.Source.AccessedAt.String)
+	}
+
+	var checkedAt string
+	if res.Source.SourceAccessCheckedAt.Valid {
+		checkedAt = FormatDate(res.Source.SourceAccessCheckedAt.String)
+	}
+
+	return AdminSourceDetailVM{
+		ID:                      res.Source.ID,
+		Title:                   title,
+		PublisherOrAuthor:       publisher,
+		OriginalURL:             SanitizeExternalLink(res.Source.OriginalUrl),
+		CanonicalURL:            SanitizeExternalLink(res.Source.CanonicalUrl),
+		PublishedAtHuman:        pubAt,
+		AccessedAtHuman:         accAt,
+		SourceType:              string(st),
+		SourceTypeHuman:         st.Label(),
+		IsPrimaryDocument:       st.IsPrimaryDocument(),
+		NatureLabel:             st.NatureLabel(),
+		SourceAccessStatus:      res.Source.SourceAccessStatus,
+		SourceAccessStatusHuman: FormatSourceAccessStatus(res.Source.SourceAccessStatus),
+		SourceCheckedAtHuman:    checkedAt,
+		HTTPStatus:              res.Source.HttpStatus,
+		NormalizedErrorCode:     normErr,
+		TotalUses:               res.Source.TotalUses,
+		ActiveUses:              res.Source.ActiveUses,
+		RejectedUses:            res.Source.RejectedUses,
+		CreatedAtHuman:          FormatDate(res.Source.CreatedAt),
+		UpdatedAtHuman:          FormatDate(res.Source.UpdatedAt),
+		IsTitleEnriched:         title != "",
+		IsAuthorEnriched:        publisher != "",
+		Sequence:                seqVM,
+	}
+}
