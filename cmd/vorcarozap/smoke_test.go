@@ -90,6 +90,7 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "smoke_app.db")
 	backupDir := filepath.Join(tempDir, "backups")
+	t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "12345678901234567890123456789012")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -128,16 +129,18 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 	allowedOrigin := "http://localhost:8090"
 
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "production",
-		DBPath:             dbPath,
-		PublicDataCutoff:   "2026-09-03",
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        60 * time.Second,
-		AdminUser:          "admin_smoke",
-		AdminPasswordHash:  adminHash,
-		AdminAllowedOrigin: allowedOrigin,
+		Port:                  8080,
+		Env:                   "production",
+		DBPath:                dbPath,
+		PublicDataCutoff:      "2026-09-03",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
+		AdminUser:             "admin_smoke",
+		AdminPasswordHash:     adminHash,
+		AdminAllowedOrigin:    allowedOrigin,
+		AdminMFARequired:      false,
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -339,10 +342,11 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 	})
 
 	// -------------------------------------------------------------------------
-	// SMOKE CHECKLIST ITEM 7 & 8: /admin exige Basic Auth e responde com credenciais
+	// SMOKE CHECKLIST ITEM 7 & 8: /admin exige sessão e MFA, rejeitando Basic Auth
 	// -------------------------------------------------------------------------
-	t.Run("Smoke 7 e 8: Admin Basic Auth", func(t *testing.T) {
-		// Sem autenticação -> 401
+	var adminSessionCookie *http.Cookie
+	t.Run("Smoke 7 e 8: Admin Auth & Session", func(t *testing.T) {
+		// 1. Sem autenticação -> 401
 		respNoAuth, err := client.Get(ts.URL + "/admin")
 		if err != nil {
 			t.Fatalf("requisição GET /admin (sem auth) falhou: %v", err)
@@ -352,16 +356,60 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 			t.Errorf("esperado status 401 em /admin sem auth, obtido %d", respNoAuth.StatusCode)
 		}
 
-		// Com autenticação válida -> 200
+		// 2. Com Basic Auth -> 401 (Basic Auth removido / não contorna MFA)
+		reqBasic, _ := http.NewRequest("GET", ts.URL+"/admin", nil)
+		reqBasic.SetBasicAuth(cfg.AdminUser, adminPassword)
+		respBasic, err := client.Do(reqBasic)
+		if err != nil {
+			t.Fatalf("requisição GET /admin (Basic Auth) falhou: %v", err)
+		}
+		defer respBasic.Body.Close()
+		if respBasic.StatusCode != http.StatusUnauthorized {
+			t.Errorf("esperado status 401 em /admin com Basic Auth, obtido %d", respBasic.StatusCode)
+		}
+
+		// 3. Login formal via POST /admin/login
+		loginForm := url.Values{
+			"username": {cfg.AdminUser},
+			"password": {adminPassword},
+		}
+		noFollowClient := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		loginReq, _ := http.NewRequest("POST", ts.URL+"/admin/login", strings.NewReader(loginForm.Encode()))
+		loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		loginReq.Header.Set("Origin", allowedOrigin)
+		respLogin, err := noFollowClient.Do(loginReq)
+		if err != nil {
+			t.Fatalf("login falhou: %v", err)
+		}
+		defer respLogin.Body.Close()
+		if respLogin.StatusCode != http.StatusSeeOther {
+			t.Fatalf("esperado status 303 no login, obtido %d", respLogin.StatusCode)
+		}
+
+		for _, c := range respLogin.Cookies() {
+			if c.Name == web.SessionCookieName && c.Value != "" {
+				adminSessionCookie = c
+				break
+			}
+		}
+		if adminSessionCookie == nil {
+			t.Fatalf("cookie de sessão não foi retornado após login")
+		}
+
+		// 4. Acesso a /admin com cookie de sessão -> 200
 		reqAuth, _ := http.NewRequest("GET", ts.URL+"/admin", nil)
-		reqAuth.SetBasicAuth(cfg.AdminUser, adminPassword)
+		reqAuth.AddCookie(adminSessionCookie)
 		respAuth, err := client.Do(reqAuth)
 		if err != nil {
-			t.Fatalf("requisição GET /admin (com auth) falhou: %v", err)
+			t.Fatalf("requisição GET /admin (com cookie) falhou: %v", err)
 		}
 		defer respAuth.Body.Close()
 		if respAuth.StatusCode != http.StatusOK {
-			t.Errorf("esperado status 200 em /admin autenticado, obtido %d", respAuth.StatusCode)
+			t.Errorf("esperado status 200 em /admin com cookie, obtido %d", respAuth.StatusCode)
 		}
 		bodyBytes, _ := io.ReadAll(respAuth.Body)
 		if !strings.Contains(string(bodyBytes), "Painel Administrativo") {
@@ -373,6 +421,10 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 	// SMOKE CHECKLIST ITEM 9 & 10: POST admin sem Origin rejeitado, com Origin aceito
 	// -------------------------------------------------------------------------
 	t.Run("Smoke 9 e 10: Protecao CSRF no Admin", func(t *testing.T) {
+		if adminSessionCookie == nil {
+			t.Fatal("cookie de sessão não disponível para teste de CSRF")
+		}
+
 		// Obtém um claim e sua versão atual para teste de moderação
 		var targetClaimID, expectedUpdatedAt string
 		err := db.QueryRowContext(ctx, "SELECT id, updated_at FROM claims WHERE status = 'quarantined' LIMIT 1;").Scan(&targetClaimID, &expectedUpdatedAt)
@@ -390,7 +442,7 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 
 		reqNoOrigin, _ := http.NewRequest("POST", moderateURL, strings.NewReader(form.Encode()))
 		reqNoOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		reqNoOrigin.SetBasicAuth(cfg.AdminUser, adminPassword)
+		reqNoOrigin.AddCookie(adminSessionCookie)
 
 		respNoOrigin, err := client.Do(reqNoOrigin)
 		if err != nil {
@@ -405,7 +457,7 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 		reqValidOrigin, _ := http.NewRequest("POST", moderateURL, strings.NewReader(form.Encode()))
 		reqValidOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		reqValidOrigin.Header.Set("Origin", allowedOrigin)
-		reqValidOrigin.SetBasicAuth(cfg.AdminUser, adminPassword)
+		reqValidOrigin.AddCookie(adminSessionCookie)
 
 		noFollowClient := &http.Client{
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {

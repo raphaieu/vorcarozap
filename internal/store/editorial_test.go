@@ -41,6 +41,11 @@ func TestMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao consultar entities após migrate: %v", err)
 	}
 
+	// Executa rollback da migration 00011
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00011: %v", err)
+	}
+
 	// Executa rollback da migration 00010
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00010: %v", err)
@@ -745,7 +750,10 @@ func TestMigration00004_SeedFidelity(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// 2. Reverte 00010, 00009, 00008, 00007, 00006, 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	// 2. Reverte 00011, 00010, 00009, 00008, 00007, 00006, 00005 e 00004 para simular estado do VZ-005 antes da 00004
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00011: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00010: %v", err)
 	}
@@ -850,7 +858,10 @@ func TestMigration00003_DownFailsOnIncompatibleData(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// Reverte 00010, 00009, 00008, 00007, 00006, 00005 e 00004 para ficar exatamente na 00003
+	// Reverte 00011, 00010, 00009, 00008, 00007, 00006, 00005 e 00004 para ficar exatamente na 00003
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter 00011: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter 00010: %v", err)
 	}
@@ -913,7 +924,10 @@ func TestMigration00007_RollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// Reverte migration 00010, 00009 e 00008 antes de testar a 00007
+	// Reverte migration 00011, 00010, 00009 e 00008 antes de testar a 00007
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00011: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00010: %v", err)
 	}
@@ -1014,7 +1028,10 @@ func TestMigration00008_RollbackAndReapply(t *testing.T) {
 		t.Fatalf("falha ao aplicar migrations: %v", err)
 	}
 
-	// Reverte migration 00010 e 00009 antes de testar a 00008
+	// Reverte migration 00011, 00010 e 00009 antes de testar a 00008
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00011: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00010: %v", err)
 	}
@@ -1079,7 +1096,10 @@ func TestMigration00009_RollbackAndReapply(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	// Reverte migration 00010 antes de testar a 00009
+	// Reverte migration 00011 e 00010 antes de testar a 00009
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00011: %v", err)
+	}
 	if err := store.Rollback(ctx, db); err != nil {
 		t.Fatalf("falha ao reverter migration 00010: %v", err)
 	}
@@ -1165,6 +1185,11 @@ func TestMigration00010_RollbackAndReapply(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
+	// Reverte migration 00011 antes de testar a 00010
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00011: %v", err)
+	}
+
 	// Inserir entidades, relacionamentos e claims para poder criar manifestação
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO entities (id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, created_at, updated_at)
@@ -1239,5 +1264,62 @@ func TestMigration00010_RollbackAndReapply(t *testing.T) {
 	// defense_statements deve existir novamente
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM defense_statements").Scan(&stmtCount); err != nil {
 		t.Fatalf("falha ao consultar defense_statements após re-migrate: %v", err)
+	}
+}
+
+func TestMigration00011_RollbackAndReapply(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_mig_00011_rollback.db")
+	ctx := context.Background()
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir banco: %v", err)
+	}
+	defer db.Close()
+
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao aplicar migrations: %v", err)
+	}
+
+	// Insere usuário e sessão para comprovar existência da 00011
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO admin_users (id, username, display_name, password_hash, role, status, created_at, updated_at)
+		VALUES ('u-mig-11', 'admin.mig', 'Admin Mig', 'hash', 'admin', 'active', ?, ?);
+	`, now, now)
+	if err != nil {
+		t.Fatalf("falha ao inserir admin_user: %v", err)
+	}
+
+	// Reverte migration 00011 (Rollback)
+	if err := store.Rollback(ctx, db); err != nil {
+		t.Fatalf("falha ao reverter migration 00011: %v", err)
+	}
+
+	// Tabelas admin_users, admin_sessions e admin_audit_logs devem ter sido removidas
+	var userCount int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM admin_users").Scan(&userCount); err == nil {
+		t.Fatal("esperava erro ao consultar admin_users após rollback da 00011, mas tabela ainda existe")
+	}
+
+	var sessCount int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM admin_sessions").Scan(&sessCount); err == nil {
+		t.Fatal("esperava erro ao consultar admin_sessions após rollback da 00011, mas tabela ainda existe")
+	}
+
+	var auditCount int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM admin_audit_logs").Scan(&auditCount); err == nil {
+		t.Fatal("esperava erro ao consultar admin_audit_logs após rollback da 00011, mas tabela ainda existe")
+	}
+
+	// Re-aplica as migrations
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao re-aplicar migrations após rollback 00011: %v", err)
+	}
+
+	// admin_users deve existir novamente
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM admin_users").Scan(&userCount); err != nil {
+		t.Fatalf("falha ao consultar admin_users após re-migrate: %v", err)
 	}
 }

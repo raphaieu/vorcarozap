@@ -158,6 +158,16 @@ func runServe() error {
 	}
 	slog.Info("migrations aplicadas com sucesso")
 
+	// 2.1 Bootstrap de conta de administrador inicial se configurada e base estiver vazia
+	if cfg.IsAdminEnabled() {
+		bootstrapped, err := store.BootstrapAdminUser(ctx, db, cfg.AdminUser, cfg.AdminPasswordHash, "Administrador Principal")
+		if err != nil {
+			slog.Warn("aviso durante bootstrap de usuário admin inicial", "error", err)
+		} else if bootstrapped {
+			slog.Info("conta administradora inicial criada com sucesso", "username", cfg.AdminUser)
+		}
+	}
+
 	// 3. Inicializa o servidor HTTP
 	server, err := web.NewServer(cfg, db)
 	if err != nil {

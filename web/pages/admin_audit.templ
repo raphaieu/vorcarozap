@@ -1,0 +1,153 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminAudit(vm AdminAuditListVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Trilha de Auditoria Administrativa — VorcaroZAP."/>
+			<title>Trilha de Auditoria — Painel Administrativo — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("auditoria")
+			<main class="container">
+				<section class="card" aria-label="Trilha de Auditoria">
+					<header style="margin-bottom: 1.25rem;">
+						<h1 class="page-title" style="margin: 0;">Trilha de Auditoria Administrativa</h1>
+						<p class="page-subtitle" style="margin: 0.25rem 0 0; color: var(--color-text-muted);">
+							Registro imutável de autenticações, eventos de segurança, alterações de acesso e deliberações
+						</p>
+					</header>
+
+					<!-- Formulário de Filtros -->
+					<form method="GET" action="/admin/auditoria" class="filter-panel" style="margin-bottom: 1.5rem;">
+						<div class="filters-row">
+							<div class="filter-group">
+								<label for="filter-action" class="filter-label">Tipo de Ação</label>
+								<select id="filter-action" name="action" class="filter-select">
+									<option value="" selected?={ vm.Filter.Action == "" }>Todas as ações</option>
+									<option value="login_password_success" selected?={ vm.Filter.Action == "login_password_success" }>Senha Validada</option>
+									<option value="login_failed_password" selected?={ vm.Filter.Action == "login_failed_password" }>Falha de Senha</option>
+									<option value="lockout_triggered" selected?={ vm.Filter.Action == "lockout_triggered" }>Bloqueio por Força Bruta</option>
+									<option value="mfa_verification_success" selected?={ vm.Filter.Action == "mfa_verification_success" }>MFA Validado</option>
+									<option value="mfa_verification_failed" selected?={ vm.Filter.Action == "mfa_verification_failed" }>Falha de MFA</option>
+									<option value="mfa_enrolled" selected?={ vm.Filter.Action == "mfa_enrolled" }>MFA Ativado</option>
+									<option value="mfa_disabled" selected?={ vm.Filter.Action == "mfa_disabled" }>MFA Desativado</option>
+									<option value="logout" selected?={ vm.Filter.Action == "logout" }>Logout</option>
+									<option value="user_created" selected?={ vm.Filter.Action == "user_created" }>Usuário Criado</option>
+									<option value="user_role_updated" selected?={ vm.Filter.Action == "user_role_updated" }>Papel Alterado</option>
+									<option value="user_status_updated" selected?={ vm.Filter.Action == "user_status_updated" }>Status Alterado</option>
+									<option value="password_reset_by_admin" selected?={ vm.Filter.Action == "password_reset_by_admin" }>Senha Redefinida por Admin</option>
+									<option value="password_changed_by_user" selected?={ vm.Filter.Action == "password_changed_by_user" }>Senha Alterada pelo Usuário</option>
+								</select>
+							</div>
+
+							<div class="filter-group">
+								<label for="filter-period" class="filter-label">Período</label>
+								<select id="filter-period" name="period" class="filter-select">
+									<option value="" selected?={ vm.Filter.Period == "" }>Todo o histórico</option>
+									<option value="24h" selected?={ vm.Filter.Period == "24h" }>Últimas 24 horas</option>
+									<option value="7d" selected?={ vm.Filter.Period == "7d" }>Últimos 7 dias</option>
+									<option value="30d" selected?={ vm.Filter.Period == "30d" }>Últimos 30 dias</option>
+								</select>
+							</div>
+
+							<div class="filter-group" style="flex-grow: 1;">
+								<label for="filter-q" class="filter-label">Buscar Registro</label>
+								<input
+									type="search"
+									id="filter-q"
+									name="q"
+									value={ vm.Filter.Search }
+									placeholder="Buscar por usuário, operador, alvo ou detalhe..."
+									class="filter-input"
+								/>
+							</div>
+
+							<div class="filter-actions">
+								<button type="submit" class="btn btn-secondary btn-sm">Filtrar</button>
+								<a href="/admin/auditoria" class="btn btn-outline btn-sm">Limpar</a>
+							</div>
+						</div>
+					</form>
+
+					<!-- Tabela de Logs -->
+					if len(vm.Logs) == 0 {
+						<div class="editorial-notice" style="text-align: center; padding: 2rem;">
+							<p style="margin: 0; color: var(--color-text-muted);">Nenhum registro de auditoria encontrado.</p>
+						</div>
+					} else {
+						<div class="table-responsive" style="overflow-x: auto;">
+							<table class="data-table" style="width: 100%; border-collapse: collapse;">
+								<thead>
+									<tr style="border-bottom: 2px solid var(--color-border); text-align: left;">
+										<th style="padding: 0.75rem;">Data/Hora (UTC)</th>
+										<th style="padding: 0.75rem;">Ação</th>
+										<th style="padding: 0.75rem;">Operador / Ator</th>
+										<th style="padding: 0.75rem;">Usuário Alvo</th>
+										<th style="padding: 0.75rem;">Detalhes</th>
+										<th style="padding: 0.75rem;">IP</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, log := range vm.Logs {
+										<tr style="border-bottom: 1px solid var(--color-border);">
+											<td style="padding: 0.75rem; font-size: 0.85rem; white-space: nowrap; color: var(--color-text-muted);">
+												{ log.CreatedAtHuman }
+											</td>
+											<td style="padding: 0.75rem;">
+												<span class="badge" style="background-color: var(--color-badge-bg); color: var(--color-badge-text);">
+													{ log.ActionHuman }
+												</span>
+											</td>
+											<td style="padding: 0.75rem; font-weight: 600;">
+												<code>{ log.ActorUsername }</code>
+											</td>
+											<td style="padding: 0.75rem;">
+												if log.Username != "" {
+													<code>{ log.Username }</code>
+												} else {
+													<span style="color: var(--color-text-muted);">-</span>
+												}
+											</td>
+											<td style="padding: 0.75rem; font-size: 0.85rem;">
+												{ log.Details }
+											</td>
+											<td style="padding: 0.75rem; font-size: 0.85rem; font-family: monospace;">
+												{ log.IPAddress }
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+
+						<!-- Paginação -->
+						if vm.Filter.TotalPages > 1 {
+							<div class="pagination" style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+								<span style="font-size: 0.85rem; color: var(--color-text-muted);">
+									Mostrando página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) } ({ fmt.Sprintf("%d", vm.Filter.TotalCount) } registros)
+								</span>
+								<div style="display: flex; gap: 0.5rem;">
+									if vm.Filter.Page > 1 {
+										<a href={ templ.SafeURL(vm.Filter.BuildQueryString(vm.Filter.Page - 1)) } class="btn btn-outline btn-sm">&larr; Anterior</a>
+									}
+									if vm.Filter.Page < vm.Filter.TotalPages {
+										<a href={ templ.SafeURL(vm.Filter.BuildQueryString(vm.Filter.Page + 1)) } class="btn btn-outline btn-sm">Próxima &rarr;</a>
+									}
+								</div>
+							</div>
+						}
+					}
+				</section>
+			</main>
+		</body>
+	</html>
+}

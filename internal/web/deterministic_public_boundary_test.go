@@ -3,7 +3,6 @@ package web_test
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,11 +12,12 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
 
-func setupBoundaryTestServer(t *testing.T) (*http.Server, *sql.DB, string, string) {
+func setupBoundaryTestServer(t *testing.T) (*http.Server, *sql.DB, string, *http.Cookie) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "boundary_test.db")
@@ -35,57 +35,57 @@ func setupBoundaryTestServer(t *testing.T) (*http.Server, *sql.DB, string, strin
 		t.Fatalf("falha nas migrations: %v", err)
 	}
 
-	// 1. Popula banco com diferentes estados editoriais
+	// Popula entidades e claims com diferentes estados
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO cases (id, name, slug, description)
-		VALUES ('case-bnd-1', 'Operação Fronteira', 'operacao-fronteira', 'Caso de teste de fronteira pública');
+		VALUES ('case-bound-1', 'Caso Fronteira', 'caso-fronteira', 'Descrição de teste');
 
 		INSERT INTO entities (id, type, name, normalized_name, slug, role_or_context, summary, relevance, relevance_rationale, category, reach)
 		VALUES
-			('ent-pub-1', 'person', 'Pessoa Publica 1', 'pessoa publica 1', 'pessoa-publica-1', 'Diretor', 'Resumo', 5, 'R1', 'Finanças', 'Nacional'),
-			('ent-pub-2', 'person', 'Pessoa Publica 2', 'pessoa publica 2', 'pessoa-publica-2', 'Sócio', 'Resumo', 4, 'R2', 'Politica', 'Nacional'),
-			('ent-quar-1', 'person', 'Pessoa Em Quarentena', 'pessoa em quarentena', 'pessoa-em-quarentena', 'Contato', 'Resumo', 3, 'R3', 'Setor Público', 'Regional'),
-			('ent-rej-1', 'person', 'Pessoa Rejeitada', 'pessoa rejeitada', 'pessoa-rejeitada', 'Representante', 'Resumo', 2, 'R4', 'Outros', 'Regional');
+			('ent-pub-1', 'person', 'Pessoa Pública 1', 'pessoa publica 1', 'pessoa-publica-1', 'Diretor', 'Resumo 1', 5, 'Figura central', 'Finanças', 'Nacional'),
+			('ent-pub-2', 'person', 'Pessoa Pública 2', 'pessoa publica 2', 'pessoa-publica-2', 'Sócio', 'Resumo 2', 4, 'Sócio principal', 'Empresarial', 'Nacional'),
+			('ent-quar-1', 'person', 'Pessoa em Quarentena', 'pessoa em quarentena', 'pessoa-em-quarentena', 'Investigado', 'Resumo 3', 3, 'Sob análise', 'Setor Público', 'Regional'),
+			('ent-rej-1', 'person', 'Pessoa Rejeitada', 'pessoa rejeitada', 'pessoa-rejeitada', 'Ex-diretor', 'Resumo 4', 2, 'Alegações refutadas', 'Finanças', 'Regional');
 
 		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary)
 		VALUES
-			('rel-pub-1', 'ent-pub-1', 'case-bnd-1', 'investigado', 'Vínculo 1'),
-			('rel-pub-2', 'ent-pub-2', 'case-bnd-1', 'investigado', 'Vínculo 2'),
-			('rel-quar-1', 'ent-quar-1', 'case-bnd-1', 'investigado', 'Vínculo 3'),
-			('rel-rej-1', 'ent-rej-1', 'case-bnd-1', 'investigado', 'Vínculo 4');
+			('rel-pub-1', 'ent-pub-1', 'case-bound-1', 'investigado', 'Resumo vínculo 1'),
+			('rel-pub-2', 'ent-pub-2', 'case-bound-1', 'investigado', 'Resumo vínculo 2'),
+			('rel-quar-1', 'ent-quar-1', 'case-bound-1', 'investigado', 'Resumo vínculo 3'),
+			('rel-rej-1', 'ent-rej-1', 'case-bound-1', 'investigado', 'Resumo vínculo 4');
 
 		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_access_status)
 		VALUES
-			('src-bnd-1', 'Notícia 1', 'Jornal 1', 'https://bnd1.com', 'https://bnd1.com', 'reachable'),
-			('src-bnd-2', 'Notícia 2', 'Jornal 2', 'https://bnd2.com', 'https://bnd2.com', 'reachable');
+			('src-bound-1', 'Notícia 1', 'Jornal 1', 'https://jornal1.com', 'https://jornal1.com', 'reachable'),
+			('src-bound-2', 'Notícia 2', 'Jornal 2', 'https://jornal2.com', 'https://jornal2.com', 'reachable');
 
 		-- Claim 1: Publicado
 		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
-		VALUES ('claim-pub-1', 'rel-pub-1', 'Proposição Pública 1', 'Jornal 1', 'curated_seed', 'A', 'supports_link', 1, 'published', 'ativo');
-		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-bnd-1', 'claim-pub-1', 'Ev 1');
+		VALUES ('claim-pub-1', 'rel-pub-1', 'Proposição Documentada 1', 'Jornal 1', 'curated_seed', 'A', 'supports_link', 1, 'published', 'ativo');
+		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-1', 'claim-pub-1', 'Evidência 1');
 		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
-		VALUES ('es-bnd-1', 'ev-bnd-1', 'src-bnd-1', 'Trecho 1', 'P.1', 'supports', 'active');
+		VALUES ('es-1', 'ev-1', 'src-bound-1', 'Trecho 1', 'Pág. 1', 'supports', 'active');
 
-		-- Claim 2: Publicado de Contexto
+		-- Claim 2: Publicado (Grau B)
 		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
-		VALUES ('claim-pub-2', 'rel-pub-2', 'Proposição Pública 2', 'Jornal 2', 'curated_seed', 'C', 'context_only', 0, 'published', 'ativo');
-		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-bnd-2', 'claim-pub-2', 'Ev 2');
+		VALUES ('claim-pub-2', 'rel-pub-2', 'Proposição Documentada 2', 'Jornal 2', 'curated_seed', 'B', 'supports_link', 1, 'published', 'ativo');
+		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-2', 'claim-pub-2', 'Evidência 2');
 		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
-		VALUES ('es-bnd-2', 'ev-bnd-2', 'src-bnd-2', 'Trecho 2', 'P.2', 'supports', 'active');
+		VALUES ('es-2', 'ev-2', 'src-bound-2', 'Trecho 2', 'Pág. 2', 'supports', 'active');
 
 		-- Claim 3: Em Quarentena
 		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
-		VALUES ('claim-quar-1', 'rel-quar-1', 'Proposição Quarentenada', 'Jornal 1', 'openrouter', 'D', 'possible_link', 1, 'quarantined', 'ativo');
-		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-bnd-3', 'claim-quar-1', 'Ev 3');
+		VALUES ('claim-quar-1', 'rel-quar-1', 'Proposição Sob Quarentena', 'Jornal 1', 'openrouter', 'C', 'possible_link', 1, 'quarantined', 'ativo');
+		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-3', 'claim-quar-1', 'Evidência 3');
 		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
-		VALUES ('es-bnd-3', 'ev-bnd-3', 'src-bnd-1', 'Trecho 3', 'P.3', 'supports', 'active');
+		VALUES ('es-3', 'ev-3', 'src-bound-1', 'Trecho 3', 'Pág. 3', 'supports', 'active');
 
 		-- Claim 4: Rejeitado
 		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status)
-		VALUES ('claim-rej-1', 'rel-rej-1', 'Proposição Rejeitada', 'Jornal 2', 'admin', 'E', 'possible_link', 1, 'rejected', 'ativo');
-		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-bnd-4', 'claim-rej-1', 'Ev 4');
+		VALUES ('claim-rej-1', 'rel-rej-1', 'Proposição Rejeitada', 'Jornal 2', 'curated_seed', 'D', 'supports_link', 0, 'rejected', 'ativo');
+		INSERT INTO evidence (id, claim_id, summary) VALUES ('ev-4', 'claim-rej-1', 'Evidência 4');
 		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
-		VALUES ('es-bnd-4', 'ev-bnd-4', 'src-bnd-2', 'Trecho 4', 'P.4', 'supports', 'active');
+		VALUES ('es-4', 'ev-4', 'src-bound-2', 'Trecho 4', 'Pág. 4', 'supports', 'rejected');
 	`)
 	if err != nil {
 		t.Fatalf("falha ao popular dados: %v", err)
@@ -95,11 +95,12 @@ func setupBoundaryTestServer(t *testing.T) (*http.Server, *sql.DB, string, strin
 	allowedOrigin := "http://localhost:8090"
 
 	cfg := &config.Config{
-		Port:               8090,
-		PublicDataCutoff:   "2026-09-03",
-		AdminUser:          "admin_editor",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: allowedOrigin,
+		Port:                  8090,
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    allowedOrigin,
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -107,14 +108,14 @@ func setupBoundaryTestServer(t *testing.T) (*http.Server, *sql.DB, string, strin
 		t.Fatalf("falha ao criar servidor web: %v", err)
 	}
 
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin_editor:password"))
-	return srv, db, allowedOrigin, authHeader
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
+	return srv, db, allowedOrigin, sessionCookie
 }
 
 // TestDeterministic_PublicBoundaryAndHeaders comprova todos os requisitos de cabeçalhos de cache,
 // isolamento de rotas públicas e proteção do admin.
 func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
-	srv, _, origin, authHeader := setupBoundaryTestServer(t)
+	srv, _, origin, sessionCookie := setupBoundaryTestServer(t)
 
 	t.Run("Rotas públicas dinâmicas SSR e XLSX contêm Cache-Control restritivo sem Vary: Authorization", func(t *testing.T) {
 		publicPaths := []struct {
@@ -162,7 +163,7 @@ func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
 		}
 	})
 
-	t.Run("Área Administrativa contém Cache-Control: no-store e Vary: Authorization", func(t *testing.T) {
+	t.Run("Área Administrativa contém Cache-Control: no-store e Vary", func(t *testing.T) {
 		adminPaths := []string{
 			"/admin",
 			"/admin/candidatos",
@@ -172,7 +173,7 @@ func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
 
 		for _, p := range adminPaths {
 			req := httptest.NewRequest(http.MethodGet, p, nil)
-			req.Header.Set("Authorization", authHeader)
+			req.AddCookie(sessionCookie)
 			rec := httptest.NewRecorder()
 			srv.Handler.ServeHTTP(rec, req)
 
@@ -182,8 +183,8 @@ func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
 			if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 				t.Errorf("GET %s: Cache-Control esperado 'no-store', obtido %q", p, cc)
 			}
-			if vary := rec.Header().Get("Vary"); vary != "Authorization" {
-				t.Errorf("GET %s: Vary esperado 'Authorization', obtido %q", p, vary)
+			if vary := rec.Header().Get("Vary"); vary != "Authorization" && !strings.Contains(vary, "Cookie") {
+				t.Errorf("GET %s: Vary esperado 'Authorization' ou conter 'Cookie', obtido %q", p, vary)
 			}
 		}
 	})
@@ -198,7 +199,7 @@ func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
 			"expected_updated_at": {"2026-09-03T00:00:00Z"},
 		}
 		reqNoOrigin := httptest.NewRequest(http.MethodPost, moderateURL, strings.NewReader(form.Encode()))
-		reqNoOrigin.Header.Set("Authorization", authHeader)
+		reqNoOrigin.AddCookie(sessionCookie)
 		reqNoOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		recNoOrigin := httptest.NewRecorder()
 		srv.Handler.ServeHTTP(recNoOrigin, reqNoOrigin)
@@ -209,7 +210,7 @@ func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
 
 		// 2. Com Origin divergente
 		reqEvilOrigin := httptest.NewRequest(http.MethodPost, moderateURL, strings.NewReader(form.Encode()))
-		reqEvilOrigin.Header.Set("Authorization", authHeader)
+		reqEvilOrigin.AddCookie(sessionCookie)
 		reqEvilOrigin.Header.Set("Origin", "http://atacante.com")
 		reqEvilOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		recEvilOrigin := httptest.NewRecorder()
@@ -221,7 +222,7 @@ func TestDeterministic_PublicBoundaryAndHeaders(t *testing.T) {
 
 		// 3. Com Origin autorizado
 		reqValidOrigin := httptest.NewRequest(http.MethodPost, moderateURL, strings.NewReader(form.Encode()))
-		reqValidOrigin.Header.Set("Authorization", authHeader)
+		reqValidOrigin.AddCookie(sessionCookie)
 		reqValidOrigin.Header.Set("Origin", origin)
 		reqValidOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		recValidOrigin := httptest.NewRecorder()

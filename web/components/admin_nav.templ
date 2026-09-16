@@ -9,7 +9,6 @@ templ AdminNav(currentTab string) {
 						<span>VorcaroZAP</span>
 						<span class="badge" style="background-color: #ffd580; color: #664d03;">Admin</span>
 					</a>
-					<span class="status-tag" style="background-color: rgba(255,255,255,0.15); color: #ffffff; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 4px;">Somente Leitura</span>
 				</div>
 				<nav class="site-nav" aria-label="Navegação Administrativa">
 					<a
@@ -23,7 +22,7 @@ templ AdminNav(currentTab string) {
 					<a
 						href="/admin/evidencias"
 						class={ "nav-link", templ.KV("active-nav", currentTab == "evidencias") }
-					>Usos de Evidência</a>
+					>Evidências</a>
 					<a
 						href="/admin/fontes"
 						class={ "nav-link", templ.KV("active-nav", currentTab == "fontes") }
@@ -32,6 +31,18 @@ templ AdminNav(currentTab string) {
 						href="/admin/manifestacoes"
 						class={ "nav-link", templ.KV("active-nav", currentTab == "manifestacoes") }
 					>Manifestações</a>
+					<a
+						href="/admin/usuarios"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "usuarios") }
+					>Usuários</a>
+					<a
+						href="/admin/auditoria"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "auditoria") }
+					>Auditoria</a>
+					<a
+						href="/admin/perfil"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "perfil") }
+					>Meu Perfil</a>
 					<a
 						href="/"
 						class="nav-link"

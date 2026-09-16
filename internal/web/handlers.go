@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/raphaieu/vorcarozap/internal/auth"
 	"github.com/raphaieu/vorcarozap/internal/contradiction"
 	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/exporter"
@@ -33,9 +34,10 @@ type Handlers struct {
 	moderation       *moderation.Service
 	contradiction    *contradiction.Service
 	rateLimiter      *contradiction.RateLimiter
+	authService      *auth.Service
 }
 
-func NewHandlers(db *sql.DB, cutoff string) *Handlers {
+func NewHandlers(db *sql.DB, cutoff string, authSvc *auth.Service) *Handlers {
 	return &Handlers{
 		db:               db,
 		queries:          sqlc.New(db),
@@ -43,6 +45,7 @@ func NewHandlers(db *sql.DB, cutoff string) *Handlers {
 		moderation:       moderation.NewService(db),
 		contradiction:    contradiction.NewService(db),
 		rateLimiter:      contradiction.NewRateLimiter(5, 10*time.Minute),
+		authService:      authSvc,
 	}
 }
 
@@ -563,6 +566,13 @@ func (h *Handlers) HandleAdminModerateClaim(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if currentUser, ok := CurrentUserFromContext(r.Context()); ok && currentUser != nil {
+		if !currentUser.Role.HasPermission(domain.PermModerateClaims) {
+			http.Error(w, "Forbidden: permissão insuficiente para moderar alegações", http.StatusForbidden)
+			return
+		}
+	}
+
 	if err := r.ParseForm(); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
@@ -676,6 +686,13 @@ func (h *Handlers) HandleAdminModerateEvidenceSource(w http.ResponseWriter, r *h
 	if !ok || strings.TrimSpace(actor) == "" {
 		sendUnauthorized(w)
 		return
+	}
+
+	if currentUser, ok := CurrentUserFromContext(r.Context()); ok && currentUser != nil {
+		if !currentUser.Role.HasPermission(domain.PermModerateEvidenceSources) {
+			http.Error(w, "Forbidden: permissão insuficiente para moderar usos de evidência", http.StatusForbidden)
+			return
+		}
 	}
 
 	if err := r.ParseForm(); err != nil {
@@ -941,6 +958,13 @@ func (h *Handlers) HandleAdminDefenseStatementDetail(w http.ResponseWriter, r *h
 	flashErr := r.URL.Query().Get("err")
 
 	vm := pages.ToAdminDefenseStatementDetailVM(detail, flashMsg, flashErr)
+
+	if currentUser, ok := CurrentUserFromContext(r.Context()); ok && currentUser != nil {
+		if !currentUser.Role.HasPermission(domain.PermViewManifestationContact) {
+			vm.ContactInfo = "[Acesso Restrito: Permissão Insuficiente]"
+		}
+	}
+
 	component := pages.AdminManifestationDetail(vm)
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("failed to render admin defense statement detail template", "id", id, "error", err)
@@ -963,6 +987,13 @@ func (h *Handlers) HandleAdminModerateDefenseStatement(w http.ResponseWriter, r 
 	if !ok || strings.TrimSpace(actor) == "" {
 		sendUnauthorized(w)
 		return
+	}
+
+	if currentUser, ok := CurrentUserFromContext(r.Context()); ok && currentUser != nil {
+		if !currentUser.Role.HasPermission(domain.PermModerateManifestations) {
+			http.Error(w, "Forbidden: permissão insuficiente para moderar manifestações", http.StatusForbidden)
+			return
+		}
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
@@ -1023,4 +1054,676 @@ func (h *Handlers) HandleAdminModerateDefenseStatement(w http.ResponseWriter, r 
 	successMsg := fmt.Sprintf("Manifestação moderada com sucesso: ação '%s' aplicada (novo status: %s).", actionStr, res.NewStatus)
 	redirectURL := fmt.Sprintf("/admin/manifestacoes/%s?msg=%s", id, url.QueryEscape(successMsg))
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+// HandleAdminLogin exibe o formulário SSR de login administrativo.
+func (h *Handlers) HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	// Se o usuário já tiver uma sessão válida e verificada, redireciona para o dashboard
+	if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
+		if _, session, err := h.authService.ValidateSession(r.Context(), cookie.Value); err == nil && session.MFAVerified {
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+			return
+		}
+	}
+
+	returnTo := r.URL.Query().Get("return_to")
+	flashErr := r.URL.Query().Get("err")
+
+	vm := pages.AdminLoginVM{
+		ReturnTo:   returnTo,
+		FlashError: flashErr,
+	}
+
+	component := pages.AdminLogin(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin login template", "error", err)
+		http.Error(w, "Erro ao carregar página de login", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminLoginSubmit processa a autenticação de login via POST com senha.
+func (h *Handlers) HandleAdminLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	returnTo := r.FormValue("return_to")
+	clientIP := getClientIP(r)
+
+	user, session, needsMFA, err := h.authService.AuthenticatePassword(r.Context(), username, password, clientIP, r.UserAgent())
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		errMsg := "Credenciais inválidas ou acesso não autorizado."
+		if errors.Is(err, auth.ErrAccountLocked) {
+			errMsg = "Conta temporariamente bloqueada por excesso de tentativas incorretas. Tente novamente mais tarde."
+		} else if errors.Is(err, auth.ErrAccountDisabled) {
+			errMsg = "Conta de usuário desativada. Contate o administrador."
+		}
+		vm := pages.AdminLoginVM{
+			ReturnTo:   returnTo,
+			FlashError: errMsg,
+		}
+		_ = pages.AdminLogin(vm).Render(r.Context(), w)
+		return
+	}
+
+	if needsMFA {
+		// Define cookie temporário para o passo do MFA
+		expiresAt := time.Now().UTC().Add(15 * time.Minute)
+		SetSessionCookie(w, r, session.ID, expiresAt)
+
+		if user.MFAEnabled {
+			challengeURL := "/admin/mfa/challenge"
+			if returnTo != "" {
+				challengeURL += "?return_to=" + url.QueryEscape(returnTo)
+			}
+			http.Redirect(w, r, challengeURL, http.StatusSeeOther)
+			return
+		}
+
+		// Se a conta exige MFA mas ainda não configurou, direciona para setup
+		http.Redirect(w, r, "/admin/mfa/setup", http.StatusSeeOther)
+		return
+	}
+
+	// Login direto sem MFA (se permitido por papel)
+	expiresAt, _ := time.Parse(time.RFC3339Nano, session.ExpiresAt)
+	SetSessionCookie(w, r, session.ID, expiresAt)
+
+	dest := "/admin"
+	if returnTo != "" && strings.HasPrefix(returnTo, "/admin") {
+		dest = returnTo
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// HandleAdminMFAChallenge exibe a tela para entrada do código TOTP.
+func (h *Handlers) HandleAdminMFAChallenge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	returnTo := r.URL.Query().Get("return_to")
+	flashErr := r.URL.Query().Get("err")
+
+	vm := pages.AdminMFAChallengeVM{
+		ReturnTo:   returnTo,
+		FlashError: flashErr,
+	}
+
+	if err := pages.AdminMFAChallenge(vm).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render mfa challenge template", "error", err)
+		http.Error(w, "Erro ao carregar página de verificação MFA", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminMFAChallengeSubmit valida o código TOTP no fluxo de login.
+func (h *Handlers) HandleAdminMFAChallengeSubmit(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	code := r.FormValue("code")
+	returnTo := r.FormValue("return_to")
+	clientIP := getClientIP(r)
+
+	_, newSession, err := h.authService.VerifyMFALogin(r.Context(), cookie.Value, code, clientIP)
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		errMsg := "Código de autenticação inválido ou expirado. Verifique o relógio do seu aplicativo e tente novamente."
+		if errors.Is(err, auth.ErrAccountLocked) {
+			ClearSessionCookie(w, r)
+			errMsg = "Conta temporariamente bloqueada por excesso de tentativas de autenticação inválidas. Tente novamente mais tarde."
+			vm := pages.AdminLoginVM{
+				ReturnTo:   returnTo,
+				FlashError: errMsg,
+			}
+			_ = pages.AdminLogin(vm).Render(r.Context(), w)
+			return
+		}
+		if errors.Is(err, auth.ErrAccountDisabled) {
+			ClearSessionCookie(w, r)
+			errMsg = "Conta de usuário desativada. Contate o administrador."
+			vm := pages.AdminLoginVM{
+				ReturnTo:   returnTo,
+				FlashError: errMsg,
+			}
+			_ = pages.AdminLogin(vm).Render(r.Context(), w)
+			return
+		}
+		if errors.Is(err, auth.ErrSessionNotFound) {
+			ClearSessionCookie(w, r)
+			http.Redirect(w, r, "/admin/login?err="+url.QueryEscape("Sessão expirada. Faça login novamente."), http.StatusSeeOther)
+			return
+		}
+		vm := pages.AdminMFAChallengeVM{
+			ReturnTo:   returnTo,
+			FlashError: errMsg,
+		}
+		_ = pages.AdminMFAChallenge(vm).Render(r.Context(), w)
+		return
+	}
+
+	expiresAt, _ := time.Parse(time.RFC3339Nano, newSession.ExpiresAt)
+	SetSessionCookie(w, r, newSession.ID, expiresAt)
+
+	dest := "/admin"
+	if returnTo != "" && strings.HasPrefix(returnTo, "/admin") {
+		dest = returnTo
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// HandleAdminMFASetup exibe a tela de configuração de novo MFA TOTP.
+func (h *Handlers) HandleAdminMFASetup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	swu, err := store.GetAdminSessionWithUser(r.Context(), h.db, cookie.Value)
+	if err != nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	if swu.User.MFAEnabled {
+		http.Redirect(w, r, "/admin/perfil?msg="+url.QueryEscape("MFA já está configurado e ativo para esta conta."), http.StatusSeeOther)
+		return
+	}
+
+	secret, uri, err := h.authService.GenerateMFASetup(r.Context(), swu.User.ID)
+	if err != nil {
+		slog.Error("failed to generate mfa setup", "error", err)
+		if errors.Is(err, auth.ErrAccountLocked) {
+			ClearSessionCookie(w, r)
+			http.Redirect(w, r, "/admin/login?err="+url.QueryEscape("Conta temporariamente bloqueada por excesso de tentativas. Tente novamente mais tarde."), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/admin/perfil?err="+url.QueryEscape("Não foi possível iniciar a configuração de MFA."), http.StatusSeeOther)
+		return
+	}
+
+	flashErr := r.URL.Query().Get("err")
+	vm := pages.AdminMFASetupVM{
+		Secret:     secret,
+		URI:        uri,
+		FlashError: flashErr,
+	}
+
+	if err := pages.AdminMFASetup(vm).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render mfa setup template", "error", err)
+		http.Error(w, "Erro ao carregar página de configuração MFA", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminMFASetupSubmit confirma a ativação de MFA validando o código inicial contra o segredo pendente server-side.
+func (h *Handlers) HandleAdminMFASetupSubmit(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	code := strings.TrimSpace(r.FormValue("code"))
+	clientIP := getClientIP(r)
+
+	_, newSession, err := h.authService.ConfirmMFASetup(r.Context(), cookie.Value, code, clientIP)
+	if err != nil {
+		if errors.Is(err, auth.ErrAccountLocked) {
+			ClearSessionCookie(w, r)
+			http.Redirect(w, r, "/admin/login?err="+url.QueryEscape("Conta temporariamente bloqueada por excesso de tentativas incorretas. Tente novamente mais tarde."), http.StatusSeeOther)
+			return
+		}
+		if errors.Is(err, auth.ErrAccountDisabled) {
+			ClearSessionCookie(w, r)
+			http.Redirect(w, r, "/admin/login?err="+url.QueryEscape("Conta de usuário desativada. Contate o administrador."), http.StatusSeeOther)
+			return
+		}
+		if errors.Is(err, auth.ErrSessionNotFound) {
+			ClearSessionCookie(w, r)
+			http.Redirect(w, r, "/admin/login?err="+url.QueryEscape("Sessão expirada. Faça login novamente."), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/admin/mfa/setup?err="+url.QueryEscape("Código incorreto ou expirado. Certifique-se de digitar o código de 6 dígitos gerado pelo seu app autenticador."), http.StatusSeeOther)
+		return
+	}
+
+	expiresAt, _ := time.Parse(time.RFC3339Nano, newSession.ExpiresAt)
+	SetSessionCookie(w, r, newSession.ID, expiresAt)
+	http.Redirect(w, r, "/admin?msg="+url.QueryEscape("Autenticação em dois fatores (MFA) ativada com sucesso!"), http.StatusSeeOther)
+}
+
+// HandleAdminLogout encerra a sessão ativa do operador.
+func (h *Handlers) HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
+		_ = h.authService.RevokeSession(r.Context(), cookie.Value, getClientIP(r))
+	}
+	ClearSessionCookie(w, r)
+	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+}
+
+// HandleAdminProfile renderiza a página de perfil do usuário conectado.
+func (h *Handlers) HandleAdminProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	user, ok := CurrentUserFromContext(r.Context())
+	if !ok || user == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
+
+	vm := pages.AdminProfileVM{
+		User:         pages.ToAdminUserItemVM(*user),
+		FlashMessage: flashMsg,
+		FlashError:   flashErr,
+	}
+
+	if err := pages.AdminProfile(vm).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin profile template", "error", err)
+		http.Error(w, "Erro ao carregar página de perfil", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminChangePassword processa a alteração de senha pelo próprio usuário conectado.
+func (h *Handlers) HandleAdminChangePassword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	user, ok := CurrentUserFromContext(r.Context())
+	if !ok || user == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	currentPassword := r.FormValue("current_password")
+	newPassword := r.FormValue("new_password")
+	clientIP := getClientIP(r)
+
+	if err := h.authService.ChangeOwnPassword(r.Context(), user.ID, currentPassword, newPassword, clientIP); err != nil {
+		errMsg := "Falha ao alterar senha: senha atual incorreta ou nova senha fora dos padrões."
+		http.Redirect(w, r, "/admin/perfil?err="+url.QueryEscape(errMsg), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/perfil?msg="+url.QueryEscape("Sua senha foi alterada com sucesso!"), http.StatusSeeOther)
+}
+
+// HandleAdminUsersList renderiza a listagem de usuários administrativos.
+func (h *Handlers) HandleAdminUsersList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
+	filter := store.AdminUserFilter{
+		Role:     q.Get("role"),
+		Status:   q.Get("status"),
+		Search:   q.Get("q"),
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	res, err := store.ListAdminUsers(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list admin users", "error", err)
+		http.Error(w, "Erro ao consultar usuários", http.StatusInternalServerError)
+		return
+	}
+
+	var userVMs []pages.AdminUserItemVM
+	for _, u := range res.Users {
+		userVMs = append(userVMs, pages.ToAdminUserItemVM(u))
+	}
+
+	sanitized := store.SanitizeUserFilter(filter)
+	currentUser, _ := CurrentUserFromContext(r.Context())
+	canCreate := currentUser != nil && currentUser.Role.HasPermission(domain.PermManageUsers)
+
+	vm := pages.AdminUserListVM{
+		Users: userVMs,
+		Filter: pages.AdminUserFilterVM{
+			Role:       sanitized.Role,
+			Status:     sanitized.Status,
+			Search:     sanitized.Search,
+			Page:       res.Page,
+			PageSize:   res.PageSize,
+			TotalPages: res.TotalPages,
+			TotalCount: res.TotalCount,
+		},
+		CanCreateUser: canCreate,
+		FlashMessage:  q.Get("msg"),
+		FlashError:    q.Get("err"),
+	}
+
+	if err := pages.AdminUsers(vm).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin users template", "error", err)
+		http.Error(w, "Erro ao renderizar lista de usuários", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminUserNew exibe o formulário para criação de novo usuário.
+func (h *Handlers) HandleAdminUserNew(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	flashErr := r.URL.Query().Get("err")
+	if err := pages.AdminUserNew(flashErr).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin user new template", "error", err)
+		http.Error(w, "Erro ao renderizar formulário de cadastro", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminUserCreate processa a criação de um novo usuário via POST.
+func (h *Handlers) HandleAdminUserCreate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	actor, ok := CurrentUserFromContext(r.Context())
+	if !ok || actor == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	username := r.FormValue("username")
+	displayName := r.FormValue("display_name")
+	roleStr := r.FormValue("role")
+	password := r.FormValue("password")
+	clientIP := getClientIP(r)
+
+	role, err := domain.ValidateUserRole(roleStr)
+	if err != nil {
+		http.Redirect(w, r, "/admin/usuarios/novo?err="+url.QueryEscape("Papel de usuário inválido."), http.StatusSeeOther)
+		return
+	}
+
+	created, err := h.authService.CreateUser(r.Context(), *actor, auth.CreateUserParams{
+		Username:    username,
+		DisplayName: displayName,
+		Password:    password,
+		Role:        role,
+		Status:      domain.UserStatusActive,
+	}, clientIP)
+	if err != nil {
+		http.Redirect(w, r, "/admin/usuarios/novo?err="+url.QueryEscape("Falha ao criar usuário: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/usuarios/"+created.ID+"?msg="+url.QueryEscape("Usuário cadastrado com sucesso!"), http.StatusSeeOther)
+}
+
+// HandleAdminUserDetail exibe os detalhes e opções de gestão de um usuário.
+func (h *Handlers) HandleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	uWithCreds, err := store.GetUserByID(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get admin user detail", "id", id, "error", err)
+		http.Error(w, "Erro ao carregar dados do usuário", http.StatusInternalServerError)
+		return
+	}
+
+	actor, _ := CurrentUserFromContext(r.Context())
+	canManage := actor != nil && actor.Role.HasPermission(domain.PermManageUsers)
+
+	vm := pages.AdminUserDetailVM{
+		User:             pages.ToAdminUserItemVM(uWithCreds.User),
+		CanEditRole:      canManage,
+		CanEditStatus:    canManage && actor.ID != uWithCreds.User.ID,
+		CanResetPassword: canManage,
+		CanDisableMFA:    canManage && uWithCreds.User.MFAEnabled,
+		FlashMessage:     r.URL.Query().Get("msg"),
+		FlashError:       r.URL.Query().Get("err"),
+	}
+
+	if err := pages.AdminUserDetail(vm).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin user detail template", "error", err)
+		http.Error(w, "Erro ao renderizar detalhes do usuário", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminUserUpdateRole processa a alteração de papel de um usuário via POST com OCC.
+func (h *Handlers) HandleAdminUserUpdateRole(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	actor, ok := CurrentUserFromContext(r.Context())
+	if !ok || actor == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	expectedUpdatedAt := r.FormValue("expected_updated_at")
+	newRole, err := domain.ValidateUserRole(r.FormValue("role"))
+	if err != nil {
+		http.Error(w, "Papel de usuário inválido", http.StatusBadRequest)
+		return
+	}
+
+	clientIP := getClientIP(r)
+	err = h.authService.UpdateUserRole(r.Context(), *actor, id, expectedUpdatedAt, newRole, clientIP)
+	if err != nil {
+		if errors.Is(err, auth.ErrConflict) {
+			http.Error(w, "Conflito de concorrência: o usuário foi modificado por outra operação.", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, auth.ErrForbidden) {
+			http.Error(w, "Forbidden: permissão insuficiente para alterar papéis", http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, "/admin/usuarios/"+id+"?err="+url.QueryEscape("Falha ao atualizar papel: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/usuarios/"+id+"?msg="+url.QueryEscape("Papel do usuário atualizado com sucesso!"), http.StatusSeeOther)
+}
+
+// HandleAdminUserUpdateStatus processa a alteração de status de um usuário via POST com OCC.
+func (h *Handlers) HandleAdminUserUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	actor, ok := CurrentUserFromContext(r.Context())
+	if !ok || actor == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	expectedUpdatedAt := r.FormValue("expected_updated_at")
+	newStatus, err := domain.ValidateUserStatus(r.FormValue("status"))
+	if err != nil {
+		http.Error(w, "Status de usuário inválido", http.StatusBadRequest)
+		return
+	}
+
+	clientIP := getClientIP(r)
+	err = h.authService.UpdateUserStatus(r.Context(), *actor, id, expectedUpdatedAt, newStatus, clientIP)
+	if err != nil {
+		if errors.Is(err, auth.ErrConflict) {
+			http.Error(w, "Conflito de concorrência: o usuário foi modificado por outra operação.", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, auth.ErrForbidden) {
+			http.Error(w, "Forbidden: permissão insuficiente para alterar status", http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, "/admin/usuarios/"+id+"?err="+url.QueryEscape("Falha ao atualizar status: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/usuarios/"+id+"?msg="+url.QueryEscape("Status do usuário atualizado com sucesso!"), http.StatusSeeOther)
+}
+
+// HandleAdminUserResetPassword processa a redefinição de senha de um usuário via POST.
+func (h *Handlers) HandleAdminUserResetPassword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	actor, ok := CurrentUserFromContext(r.Context())
+	if !ok || actor == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Requisição inválida", http.StatusBadRequest)
+		return
+	}
+
+	newPassword := r.FormValue("new_password")
+	clientIP := getClientIP(r)
+
+	err := h.authService.ResetUserPassword(r.Context(), *actor, id, newPassword, clientIP)
+	if err != nil {
+		if errors.Is(err, auth.ErrForbidden) {
+			http.Error(w, "Forbidden: permissão insuficiente para redefinir senhas", http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, "/admin/usuarios/"+id+"?err="+url.QueryEscape("Falha ao redefinir senha: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/usuarios/"+id+"?msg="+url.QueryEscape("Senha redefinida com sucesso!"), http.StatusSeeOther)
+}
+
+// HandleAdminUserDisableMFA desativa o MFA de um usuário por ação administrativa.
+func (h *Handlers) HandleAdminUserDisableMFA(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	actor, ok := CurrentUserFromContext(r.Context())
+	if !ok || actor == nil {
+		sendUnauthorized(w)
+		return
+	}
+
+	clientIP := getClientIP(r)
+	err := h.authService.DisableMFA(r.Context(), *actor, id, clientIP)
+	if err != nil {
+		if errors.Is(err, auth.ErrForbidden) {
+			http.Error(w, "Forbidden: permissão insuficiente para desativar MFA", http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, "/admin/usuarios/"+id+"?err="+url.QueryEscape("Falha ao desativar MFA: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/usuarios/"+id+"?msg="+url.QueryEscape("MFA desativado com sucesso! As sessões do usuário foram revogadas."), http.StatusSeeOther)
+}
+
+// HandleAdminAuditLogs renderiza a listagem paginada da trilha de auditoria administrativa.
+func (h *Handlers) HandleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
+	filter := store.AdminAuditFilter{
+		Action:   q.Get("action"),
+		Actor:    q.Get("actor"),
+		Period:   q.Get("period"),
+		Search:   q.Get("q"),
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	res, err := store.ListAdminAuditLogs(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list admin audit logs", "error", err)
+		http.Error(w, "Erro ao consultar trilha de auditoria", http.StatusInternalServerError)
+		return
+	}
+
+	var logVMs []pages.AdminAuditItemVM
+	for _, l := range res.Logs {
+		logVMs = append(logVMs, pages.ToAdminAuditItemVM(l))
+	}
+
+	sanitized := store.SanitizeAuditFilter(filter)
+	vm := pages.AdminAuditListVM{
+		Logs: logVMs,
+		Filter: pages.AdminAuditFilterVM{
+			Action:     sanitized.Action,
+			Actor:      sanitized.Actor,
+			Period:     sanitized.Period,
+			Search:     sanitized.Search,
+			Page:       res.Page,
+			PageSize:   res.PageSize,
+			TotalPages: res.TotalPages,
+			TotalCount: res.TotalCount,
+		},
+	}
+
+	if err := pages.AdminAudit(vm).Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin audit template", "error", err)
+		http.Error(w, "Erro ao renderizar trilha de auditoria", http.StatusInternalServerError)
+	}
 }

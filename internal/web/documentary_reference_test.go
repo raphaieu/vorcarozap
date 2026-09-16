@@ -3,7 +3,6 @@ package web_test
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,7 +17,7 @@ import (
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
 
-func setupDocumentaryReferenceTestServer(t *testing.T) (*http.Server, *sql.DB, string, string) {
+func setupDocumentaryReferenceTestServer(t *testing.T) (*http.Server, *sql.DB, *http.Cookie) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "doc_ref_test.db")
@@ -73,31 +72,34 @@ func setupDocumentaryReferenceTestServer(t *testing.T) (*http.Server, *sql.DB, s
 		VALUES ('es-doc-3', 'ev-doc-1', 'src-news-1', 'Veículo noticiou o desdobramento da operação.', 'págs. 15-18', 'contextualizes', 'active');
 	`)
 	if err != nil {
-		t.Fatalf("falha ao popular dados: %v", err)
+		t.Fatalf("falha ao popular banco de teste: %v", err)
 	}
 
 	passwordHash := getTestAdminHashCost12(t)
 	cfg := &config.Config{
-		Port:              8090,
-		Env:               "test",
-		DBPath:            dbPath,
-		PublicDataCutoff:  "2026-09-03",
-		AdminUser:         "admin_editor",
-		AdminPasswordHash: passwordHash,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		Port:                  8090,
+		Env:                   "test",
+		DBPath:                dbPath,
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://example.com",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
 	}
 
 	srv, err := web.NewServer(cfg, db)
 	if err != nil {
 		t.Fatalf("falha ao criar servidor web: %v", err)
 	}
-	return srv, db, "admin_editor", "password"
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
+	return srv, db, sessionCookie
 }
 
 func TestDocumentaryReference_PublicEntityDetailRendering(t *testing.T) {
-	srv, _, _, _ := setupDocumentaryReferenceTestServer(t)
+	srv, _, _ := setupDocumentaryReferenceTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/pessoas/investigado-primario", nil)
 	rec := httptest.NewRecorder()
@@ -113,12 +115,12 @@ func TestDocumentaryReference_PublicEntityDetailRendering(t *testing.T) {
 	// 1. Verifica se os localizadores foram normalizados determinísticamente
 	// "p. 42, figura 12" -> "Pág. 42, Fig. 12"
 	if !strings.Contains(body, "Pág. 42, Fig. 12") {
-		t.Errorf("esperava encontrar localizador normalizado 'Pág. 42, Fig. 12', corpo: %s", body)
+		t.Errorf("esperava localizador normalizado 'Pág. 42, Fig. 12', obtido no HTML")
 	}
 
 	// "fls. 10-14, tabela 3" -> "Fls. 10–14, Tabela 3" (com en-dash)
 	if !strings.Contains(body, "Fls. 10–14, Tabela 3") {
-		t.Errorf("esperava encontrar localizador normalizado 'Fls. 10–14, Tabela 3', corpo: %s", body)
+		t.Errorf("esperava localizador normalizado 'Fls. 10–14, Tabela 3', obtido no HTML")
 	}
 
 	// "págs. 15-18" -> "Págs. 15–18"
@@ -155,13 +157,11 @@ func TestDocumentaryReference_PublicEntityDetailRendering(t *testing.T) {
 }
 
 func TestDocumentaryReference_AdminViewsRendering(t *testing.T) {
-	srv, _, username, password := setupDocumentaryReferenceTestServer(t)
-
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	srv, _, sessionCookie := setupDocumentaryReferenceTestServer(t)
 
 	// 1. Detalhe de uso de evidência (admin_evidence_detail)
 	req := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-doc-1", nil)
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	rec := httptest.NewRecorder()
 
 	srv.Handler.ServeHTTP(rec, req)
@@ -183,7 +183,7 @@ func TestDocumentaryReference_AdminViewsRendering(t *testing.T) {
 
 	// 2. Detalhe de claim (admin_claim_detail)
 	reqClaim := httptest.NewRequest(http.MethodGet, "/admin/claims/claim-doc-1", nil)
-	reqClaim.Header.Set("Authorization", authHeader)
+	reqClaim.AddCookie(sessionCookie)
 	recClaim := httptest.NewRecorder()
 
 	srv.Handler.ServeHTTP(recClaim, reqClaim)
@@ -202,7 +202,7 @@ func TestDocumentaryReference_AdminViewsRendering(t *testing.T) {
 
 	// 3. Listagem de fontes (admin_sources)
 	reqSources := httptest.NewRequest(http.MethodGet, "/admin/fontes", nil)
-	reqSources.Header.Set("Authorization", authHeader)
+	reqSources.AddCookie(sessionCookie)
 	recSources := httptest.NewRecorder()
 
 	srv.Handler.ServeHTTP(recSources, reqSources)

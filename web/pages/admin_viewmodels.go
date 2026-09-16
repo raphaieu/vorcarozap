@@ -1607,3 +1607,269 @@ func GetAllowedStatementActions(current domain.StatementStatus) []AdminAllowedAc
 
 	return actions
 }
+
+// FormatUserRole retorna a descrição em português do papel administrativo.
+func FormatUserRole(r string) string {
+	switch domain.UserRole(r) {
+	case domain.RoleAdmin:
+		return "Administrador"
+	case domain.RoleEditor:
+		return "Editor"
+	case domain.RoleReviewer:
+		return "Revisor"
+	case domain.RoleAuditor:
+		return "Auditor"
+	default:
+		return r
+	}
+}
+
+// FormatUserStatus retorna a descrição em português do status da conta.
+func FormatUserStatus(s string) string {
+	switch domain.UserStatus(s) {
+	case domain.UserStatusActive:
+		return "Ativo"
+	case domain.UserStatusDisabled:
+		return "Desativado"
+	case domain.UserStatusLocked:
+		return "Bloqueado (Lockout)"
+	default:
+		return s
+	}
+}
+
+// FormatAuditAction retorna uma descrição legível para a ação registrada no log.
+func FormatAuditAction(a string) string {
+	switch a {
+	case "login_password_success":
+		return "Senha Validada"
+	case "login_failed_password":
+		return "Falha de Senha"
+	case "login_failed_unknown_user":
+		return "Usuário Desconhecido"
+	case "lockout_triggered":
+		return "Bloqueio por Força Bruta"
+	case "mfa_verification_success":
+		return "MFA Validado"
+	case "mfa_verification_failed":
+		return "Falha de MFA"
+	case "mfa_enrolled":
+		return "MFA Ativado"
+	case "mfa_disabled":
+		return "MFA Desativado"
+	case "logout":
+		return "Logout"
+	case "user_created":
+		return "Usuário Criado"
+	case "user_role_updated":
+		return "Papel Alterado"
+	case "user_status_updated":
+		return "Status Alterado"
+	case "password_reset_by_admin":
+		return "Senha Redefinida por Admin"
+	case "password_changed_by_user":
+		return "Senha Alterada pelo Usuário"
+	default:
+		return a
+	}
+}
+
+// AdminUserItemVM representa um usuário na listagem administrativa.
+type AdminUserItemVM struct {
+	ID              string
+	Username        string
+	DisplayName     string
+	Role            string
+	RoleHuman       string
+	Status          string
+	StatusHuman     string
+	MFAEnabled      bool
+	MFAEnabledHuman string
+	LastLoginHuman  string
+	CreatedAtHuman  string
+	UpdatedAtRaw    string
+}
+
+// ToAdminUserItemVM converte domain.AdminUser para AdminUserItemVM.
+func ToAdminUserItemVM(u domain.AdminUser) AdminUserItemVM {
+	lastLogin := "Nunca acessou"
+	if u.LastLoginAt != nil && *u.LastLoginAt != "" {
+		lastLogin = FormatDate(*u.LastLoginAt)
+	}
+
+	mfaHuman := "Desativado"
+	if u.MFAEnabled {
+		mfaHuman = "Ativado"
+	}
+
+	return AdminUserItemVM{
+		ID:              u.ID,
+		Username:        u.Username,
+		DisplayName:     u.DisplayName,
+		Role:            string(u.Role),
+		RoleHuman:       FormatUserRole(string(u.Role)),
+		Status:          string(u.Status),
+		StatusHuman:     FormatUserStatus(string(u.Status)),
+		MFAEnabled:      u.MFAEnabled,
+		MFAEnabledHuman: mfaHuman,
+		LastLoginHuman:  lastLogin,
+		CreatedAtHuman:  FormatDate(u.CreatedAt),
+		UpdatedAtRaw:    u.UpdatedAt,
+	}
+}
+
+// AdminUserListVM modelo para tela de listagem de usuários.
+type AdminUserListVM struct {
+	Users         []AdminUserItemVM
+	Filter        AdminUserFilterVM
+	CanCreateUser bool
+	FlashMessage  string
+	FlashError    string
+}
+
+// AdminUserFilterVM filtros da listagem de usuários.
+type AdminUserFilterVM struct {
+	Role       string
+	Status     string
+	Search     string
+	Page       int
+	PageSize   int
+	TotalPages int
+	TotalCount int64
+}
+
+// BuildQueryString gera URL preservando filtros de usuários.
+func (f AdminUserFilterVM) BuildQueryString(page int) string {
+	v := url.Values{}
+	if f.Role != "" {
+		v.Set("role", f.Role)
+	}
+	if f.Status != "" {
+		v.Set("status", f.Status)
+	}
+	if f.Search != "" {
+		v.Set("q", f.Search)
+	}
+	if page > 1 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	encoded := v.Encode()
+	if encoded == "" {
+		return "/admin/usuarios"
+	}
+	return "/admin/usuarios?" + encoded
+}
+
+// AdminUserDetailVM modelo para detalhes e edição de usuário.
+type AdminUserDetailVM struct {
+	User             AdminUserItemVM
+	CanEditRole      bool
+	CanEditStatus    bool
+	CanResetPassword bool
+	CanDisableMFA    bool
+	FlashMessage     string
+	FlashError       string
+}
+
+// AdminAuditItemVM representa uma entrada de auditoria formatada para a UI.
+type AdminAuditItemVM struct {
+	ID             string
+	UserID         string
+	Username       string
+	Action         string
+	ActionHuman    string
+	ActorUsername  string
+	TargetID       string
+	Details        string
+	IPAddress      string
+	CreatedAtHuman string
+}
+
+// ToAdminAuditItemVM converte domain.AdminAuditLog para AdminAuditItemVM.
+func ToAdminAuditItemVM(l domain.AdminAuditLog) AdminAuditItemVM {
+	uID := ""
+	if l.UserID != nil {
+		uID = *l.UserID
+	}
+	return AdminAuditItemVM{
+		ID:             l.ID,
+		UserID:         uID,
+		Username:       l.Username,
+		Action:         l.Action,
+		ActionHuman:    FormatAuditAction(l.Action),
+		ActorUsername:  l.ActorUsername,
+		TargetID:       l.TargetID,
+		Details:        l.Details,
+		IPAddress:      l.IPAddress,
+		CreatedAtHuman: FormatDate(l.CreatedAt),
+	}
+}
+
+// AdminAuditListVM modelo para tela de consulta à trilha de auditoria.
+type AdminAuditListVM struct {
+	Logs   []AdminAuditItemVM
+	Filter AdminAuditFilterVM
+}
+
+// AdminAuditFilterVM filtros para auditoria.
+type AdminAuditFilterVM struct {
+	Action     string
+	Actor      string
+	Period     string
+	Search     string
+	Page       int
+	PageSize   int
+	TotalPages int
+	TotalCount int64
+}
+
+// BuildQueryString gera URL preservando filtros de auditoria.
+func (f AdminAuditFilterVM) BuildQueryString(page int) string {
+	v := url.Values{}
+	if f.Action != "" {
+		v.Set("action", f.Action)
+	}
+	if f.Actor != "" {
+		v.Set("actor", f.Actor)
+	}
+	if f.Period != "" {
+		v.Set("period", f.Period)
+	}
+	if f.Search != "" {
+		v.Set("q", f.Search)
+	}
+	if page > 1 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	encoded := v.Encode()
+	if encoded == "" {
+		return "/admin/auditoria"
+	}
+	return "/admin/auditoria?" + encoded
+}
+
+// AdminLoginVM modelo para tela de login administrativo.
+type AdminLoginVM struct {
+	ReturnTo   string
+	FlashError string
+}
+
+// AdminMFAChallengeVM modelo para tela de validação de MFA durante o login.
+type AdminMFAChallengeVM struct {
+	ReturnTo   string
+	FlashError string
+}
+
+// AdminMFASetupVM modelo para tela de configuração de novo MFA TOTP.
+type AdminMFASetupVM struct {
+	Secret     string
+	URI        string
+	FlashError string
+}
+
+// AdminProfileVM modelo para tela de perfil do operador conectado.
+type AdminProfileVM struct {
+	User         AdminUserItemVM
+	FlashMessage string
+	FlashError   string
+}

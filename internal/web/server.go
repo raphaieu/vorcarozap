@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io/fs"
@@ -8,7 +9,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/raphaieu/vorcarozap/internal/auth"
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
+	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/web/static"
 )
 
@@ -24,6 +28,10 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 
 // NewServer inicializa e configura o servidor HTTP da aplicação.
 func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
+	if cfg.IsAdminEnabled() {
+		_, _ = store.BootstrapAdminUser(context.Background(), db, cfg.AdminUser, cfg.AdminPasswordHash, "Administrador Principal")
+	}
+
 	r := chi.NewRouter()
 
 	// Middlewares padrão
@@ -32,7 +40,17 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Use(middleware.Recoverer)
 	r.Use(SecurityHeadersMiddleware)
 
-	handlers := NewHandlers(db, cfg.PublicDataCutoff)
+	var authSvc *auth.Service
+	if cfg.AdminMFAEncryptionKey != "" {
+		var err error
+		authSvc, err = auth.NewService(db, cfg.AdminSessionTTL, cfg.AdminLockoutDuration, cfg.AdminMaxLoginAttempts, cfg.AdminMFARequired, cfg.AdminMFAEncryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("web: falha ao inicializar serviço de autenticação: %w", err)
+		}
+	} else if cfg.IsAdminEnabled() {
+		return nil, fmt.Errorf("web: ADMIN_MFA_ENCRYPTION_KEY é obrigatório quando a área administrativa está habilitada")
+	}
+	handlers := NewHandlers(db, cfg.PublicDataCutoff, authSvc)
 
 	// Endpoints de saúde
 	r.Get("/health/live", handlers.HandleHealthLive)
@@ -55,11 +73,12 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
-	// Área administrativa protegida (VZ-014, VZ-016, VZ-023, VZ-025)
+	// Área administrativa protegida (VZ-014, VZ-016, VZ-023, VZ-025, VZ-026)
 	if cfg.IsAdminEnabled() {
-		authMiddleware := BasicAuthMiddleware(cfg.AdminUser, cfg.AdminPasswordHash)
+		authMiddleware := SessionAuthMiddleware(authSvc)
 		csrfMiddleware := AdminCSRFMiddleware(cfg.AdminAllowedOrigin)
-		r.Mount("/admin", newAdminRouter(authMiddleware, csrfMiddleware, handlers))
+		mfaMiddleware := RequireMFAVerified()
+		r.Mount("/admin", newAdminRouter(authMiddleware, csrfMiddleware, mfaMiddleware, handlers))
 	}
 
 	// Arquivos estáticos embutidos (/static/*)
@@ -83,30 +102,73 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 // newAdminRouter cria o roteador dedicado à área administrativa.
 // O middleware de autenticação é executado incondicionalmente no topo de toda a árvore /admin,
 // garantindo que qualquer requisição (qualquer método HTTP ou subrota) seja autenticada antes
-// de qualquer decisão de handler, 404 ou 405.
-func newAdminRouter(authMiddleware func(http.Handler) http.Handler, csrfMiddleware func(http.Handler) http.Handler, handlers *Handlers) http.Handler {
+// de qualquer decisão de handler, 404 ou 405 (com exceção de /admin/login que é permitida para não-autenticados).
+func newAdminRouter(
+	authMiddleware func(http.Handler) http.Handler,
+	csrfMiddleware func(http.Handler) http.Handler,
+	mfaMiddleware func(http.Handler) http.Handler,
+	handlers *Handlers,
+) http.Handler {
 	adminRouter := chi.NewRouter()
 	adminRouter.Use(authMiddleware)
 
-	adminRouter.Get("/", handlers.HandleAdmin)
-	adminRouter.Get("/candidatos", handlers.HandleAdminCandidates)
-	adminRouter.Get("/candidatos/{id}", handlers.HandleAdminCandidateDetail)
-	adminRouter.Get("/evidencias", handlers.HandleAdminEvidences)
-	adminRouter.Get("/fontes", handlers.HandleAdminSources)
-	adminRouter.Get("/fontes/{id}", handlers.HandleAdminSourceDetail)
+	// 1. Rotas de autenticação (não exigem sessão prévia)
+	adminRouter.Get("/login", handlers.HandleAdminLogin)
+	adminRouter.With(csrfMiddleware).Post("/login", handlers.HandleAdminLoginSubmit)
 
-	// Rotas de usos de evidência e moderação granular (VZ-021)
-	adminRouter.Get("/evidencias/{id}", handlers.HandleAdminEvidenceSourceDetail)
-	adminRouter.With(csrfMiddleware).Post("/evidencias/{id}/moderate", handlers.HandleAdminModerateEvidenceSource)
+	// 2. Rotas de desafio/setup de MFA e logout (exigem sessão autenticada, mas permitem MFA pendente)
+	adminRouter.Get("/mfa/challenge", handlers.HandleAdminMFAChallenge)
+	adminRouter.With(csrfMiddleware).Post("/mfa/challenge", handlers.HandleAdminMFAChallengeSubmit)
+	adminRouter.Get("/mfa/setup", handlers.HandleAdminMFASetup)
+	adminRouter.With(csrfMiddleware).Post("/mfa/setup", handlers.HandleAdminMFASetupSubmit)
+	adminRouter.With(csrfMiddleware).Post("/logout", handlers.HandleAdminLogout)
 
-	// Rotas de alegações e moderação editorial (VZ-016)
-	adminRouter.Get("/claims/{id}", handlers.HandleAdminClaimDetail)
-	adminRouter.With(csrfMiddleware).Post("/claims/{id}/moderate", handlers.HandleAdminModerateClaim)
+	// 3. Rotas administrativas protegidas (exigem sessão autenticada + MFA verificado)
+	adminRouter.Group(func(protected chi.Router) {
+		protected.Use(mfaMiddleware)
 
-	// Rotas de manifestações de defesa e contraditório (VZ-025)
-	adminRouter.Get("/manifestacoes", handlers.HandleAdminDefenseStatements)
-	adminRouter.Get("/manifestacoes/{id}", handlers.HandleAdminDefenseStatementDetail)
-	adminRouter.With(csrfMiddleware).Post("/manifestacoes/{id}/moderate", handlers.HandleAdminModerateDefenseStatement)
+		// Dashboard
+		protected.With(RequirePermission(domain.PermViewDashboard)).Get("/", handlers.HandleAdmin)
+
+		// Candidatos e Monitoramento
+		protected.With(RequirePermission(domain.PermViewCandidates)).Get("/candidatos", handlers.HandleAdminCandidates)
+		protected.With(RequirePermission(domain.PermViewCandidates)).Get("/candidatos/{id}", handlers.HandleAdminCandidateDetail)
+
+		// Evidências e Fontes
+		protected.With(RequirePermission(domain.PermViewEvidences)).Get("/evidencias", handlers.HandleAdminEvidences)
+		protected.With(RequirePermission(domain.PermViewSources)).Get("/fontes", handlers.HandleAdminSources)
+		protected.With(RequirePermission(domain.PermViewSources)).Get("/fontes/{id}", handlers.HandleAdminSourceDetail)
+		protected.With(RequirePermission(domain.PermViewEvidences)).Get("/evidencias/{id}", handlers.HandleAdminEvidenceSourceDetail)
+
+		// Moderação de Evidências (Admin e Editor)
+		protected.With(RequirePermission(domain.PermModerateEvidenceSources), csrfMiddleware).Post("/evidencias/{id}/moderate", handlers.HandleAdminModerateEvidenceSource)
+
+		// Alegações e Moderação de Claims (PermViewClaims / PermModerateClaims)
+		protected.With(RequirePermission(domain.PermViewClaims)).Get("/claims/{id}", handlers.HandleAdminClaimDetail)
+		protected.With(RequirePermission(domain.PermModerateClaims), csrfMiddleware).Post("/claims/{id}/moderate", handlers.HandleAdminModerateClaim)
+
+		// Manifestações de Defesa e Contraditório (PermViewManifestations / PermModerateManifestations)
+		protected.With(RequirePermission(domain.PermViewManifestations)).Get("/manifestacoes", handlers.HandleAdminDefenseStatements)
+		protected.With(RequirePermission(domain.PermViewManifestations)).Get("/manifestacoes/{id}", handlers.HandleAdminDefenseStatementDetail)
+		protected.With(RequirePermission(domain.PermModerateManifestations), csrfMiddleware).Post("/manifestacoes/{id}/moderate", handlers.HandleAdminModerateDefenseStatement)
+
+		// Perfil do Usuário Autenticado
+		protected.Get("/perfil", handlers.HandleAdminProfile)
+		protected.With(csrfMiddleware).Post("/perfil/senha", handlers.HandleAdminChangePassword)
+
+		// Gestão de Usuários (Apenas Admin)
+		protected.With(RequirePermission(domain.PermManageUsers)).Get("/usuarios", handlers.HandleAdminUsersList)
+		protected.With(RequirePermission(domain.PermManageUsers)).Get("/usuarios/novo", handlers.HandleAdminUserNew)
+		protected.With(RequirePermission(domain.PermManageUsers), csrfMiddleware).Post("/usuarios", handlers.HandleAdminUserCreate)
+		protected.With(RequirePermission(domain.PermManageUsers)).Get("/usuarios/{id}", handlers.HandleAdminUserDetail)
+		protected.With(RequirePermission(domain.PermManageUsers), csrfMiddleware).Post("/usuarios/{id}/role", handlers.HandleAdminUserUpdateRole)
+		protected.With(RequirePermission(domain.PermManageUsers), csrfMiddleware).Post("/usuarios/{id}/status", handlers.HandleAdminUserUpdateStatus)
+		protected.With(RequirePermission(domain.PermManageUsers), csrfMiddleware).Post("/usuarios/{id}/reset-password", handlers.HandleAdminUserResetPassword)
+		protected.With(RequirePermission(domain.PermManageUsers), csrfMiddleware).Post("/usuarios/{id}/disable-mfa", handlers.HandleAdminUserDisableMFA)
+
+		// Trilha de Auditoria (Admin e Auditor)
+		protected.With(RequirePermission(domain.PermViewAuditLogs)).Get("/auditoria", handlers.HandleAdminAuditLogs)
+	})
 
 	adminRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

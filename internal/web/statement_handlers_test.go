@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raphaieu/vorcarozap/internal/auth"
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/contradiction"
 	"github.com/raphaieu/vorcarozap/internal/domain"
@@ -105,13 +106,14 @@ func setupStatementWebTest(t *testing.T) (*http.Server, *sql.DB, string, string)
 	passwordHash := getTestAdminHashCost12(t)
 
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "testing",
-		DBPath:             dbPath,
-		PublicDataCutoff:   "2026-09-03",
-		AdminUser:          "admin",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: "http://localhost:8080",
+		Port:                  8080,
+		Env:                   "testing",
+		DBPath:                dbPath,
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://localhost:8080",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -350,9 +352,46 @@ func TestAdminDefenseStatements_AuthAndModeration(t *testing.T) {
 		t.Fatalf("esperado 401 Unauthorized sem auth, obtido %d", wUnauth.Code)
 	}
 
+	// 1b. Tentativa com Basic Auth deve retornar 401 (Basic Auth não contorna MFA/sessão)
+	reqBasic := httptest.NewRequest(http.MethodGet, "/admin/manifestacoes", nil)
+	reqBasic.SetBasicAuth("admin", "password")
+	wBasic := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wBasic, reqBasic)
+	if wBasic.Code != http.StatusUnauthorized {
+		t.Fatalf("esperado 401 para Basic Auth em rota protegida, obtido %d", wBasic.Code)
+	}
+
+	// Cria sessão admin válida com MFA verificado
+	uAdmin, err := store.GetUserByUsername(context.Background(), db, "admin")
+	if err != nil {
+		t.Fatalf("falha ao buscar admin: %v", err)
+	}
+	sessionToken, err := auth.GenerateSessionToken()
+	if err != nil {
+		t.Fatalf("falha ao gerar token de sessão: %v", err)
+	}
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := store.CreateAdminSession(context.Background(), db, domain.AdminSession{
+		ID:             sessionToken,
+		UserID:         uAdmin.User.ID,
+		MFAVerified:    true,
+		IPAddress:      "127.0.0.1",
+		UserAgent:      "TestAgent",
+		ExpiresAt:      time.Now().UTC().Add(8 * time.Hour).Format(time.RFC3339Nano),
+		LastActivityAt: nowStr,
+		CreatedAt:      nowStr,
+	}); err != nil {
+		t.Fatalf("falha ao criar sessão: %v", err)
+	}
+	sessionCookie := &http.Cookie{
+		Name:  web.SessionCookieName,
+		Value: sessionToken,
+		Path:  "/admin",
+	}
+
 	// 2. Acesso autenticado ao detalhe da manifestação
 	reqAuth := httptest.NewRequest(http.MethodGet, "/admin/manifestacoes/"+subRes.ID, nil)
-	reqAuth.SetBasicAuth("admin", "password")
+	reqAuth.AddCookie(sessionCookie)
 	wAuth := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAuth, reqAuth)
 
@@ -379,7 +418,7 @@ func TestAdminDefenseStatements_AuthAndModeration(t *testing.T) {
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/manifestacoes/"+subRes.ID+"/moderate", strings.NewReader(modForm.Encode()))
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	reqMod.Header.Set("Origin", "http://localhost:8080")
-	reqMod.SetBasicAuth("admin", "password")
+	reqMod.AddCookie(sessionCookie)
 	wMod := httptest.NewRecorder()
 
 	srv.Handler.ServeHTTP(wMod, reqMod)
@@ -393,7 +432,7 @@ func TestAdminDefenseStatements_AuthAndModeration(t *testing.T) {
 	reqModConflict := httptest.NewRequest(http.MethodPost, "/admin/manifestacoes/"+subRes.ID+"/moderate", strings.NewReader(modForm.Encode()))
 	reqModConflict.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	reqModConflict.Header.Set("Origin", "http://localhost:8080")
-	reqModConflict.SetBasicAuth("admin", "password")
+	reqModConflict.AddCookie(sessionCookie)
 	srv.Handler.ServeHTTP(wModConflict, reqModConflict)
 
 	if wModConflict.Code != http.StatusConflict {

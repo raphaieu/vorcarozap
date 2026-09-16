@@ -96,9 +96,10 @@ func TestConfigValidation_TableDriven(t *testing.T) {
 		{
 			name: "Configuração válida com admin e origin",
 			envMods: map[string]string{
-				"ADMIN_USER":           "admin_operador",
-				"ADMIN_PASSWORD_HASH":  validHash,
-				"ADMIN_ALLOWED_ORIGIN": "https://vorcarozap.exemplo.org",
+				"ADMIN_USER":               "admin_operador",
+				"ADMIN_PASSWORD_HASH":      validHash,
+				"ADMIN_ALLOWED_ORIGIN":     "https://vorcarozap.exemplo.org",
+				"ADMIN_MFA_ENCRYPTION_KEY": "12345678901234567890123456789012",
 			},
 			expectError: false,
 		},

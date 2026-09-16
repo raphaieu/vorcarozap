@@ -334,6 +334,7 @@ func TestConfigCustomEnv(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("DB_PATH", "/tmp/custom.db")
 	t.Setenv("APP_READ_TIMEOUT", "2s")
+	t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "12345678901234567890123456789012")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -352,6 +353,89 @@ func TestConfigCustomEnv(t *testing.T) {
 	if cfg.ReadTimeout != 2*time.Second {
 		t.Errorf("ReadTimeout: esperado 2s, obtido %v", cfg.ReadTimeout)
 	}
+	if cfg.AdminMFAEncryptionKey != "12345678901234567890123456789012" {
+		t.Errorf("AdminMFAEncryptionKey incorreto: %q", cfg.AdminMFAEncryptionKey)
+	}
+}
+
+func TestConfigMFAEncryptionKeyValidation(t *testing.T) {
+	hashCost12, _ := bcrypt.GenerateFromPassword([]byte("senha_segura_12345"), 12)
+
+	t.Run("admin habilitado sem chave MFA falha", func(t *testing.T) {
+		t.Setenv("ADMIN_USER", "admin")
+		t.Setenv("ADMIN_PASSWORD_HASH", string(hashCost12))
+		t.Setenv("ADMIN_ALLOWED_ORIGIN", "http://localhost:8090")
+		t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "")
+		t.Setenv("MFA_ENCRYPTION_KEY", "")
+
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro ao carregar config com admin habilitado sem chave MFA")
+		}
+		if !strings.Contains(err.Error(), "ADMIN_MFA_ENCRYPTION_KEY é obrigatório") {
+			t.Errorf("mensagem de erro inesperada: %v", err)
+		}
+	})
+
+	t.Run("chave com tamanho invalido falha", func(t *testing.T) {
+		t.Setenv("ADMIN_USER", "admin")
+		t.Setenv("ADMIN_PASSWORD_HASH", string(hashCost12))
+		t.Setenv("ADMIN_ALLOWED_ORIGIN", "http://localhost:8090")
+		t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "chave-curta-16b!")
+
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro para chave com tamanho diferente de 32 bytes ou 64 hex")
+		}
+		if !strings.Contains(err.Error(), "chave operacional deve ter exatamente 32 bytes ou 64 caracteres hexadecimais") {
+			t.Errorf("mensagem de erro inesperada: %v", err)
+		}
+	})
+
+	t.Run("chave hex de 64 caracteres com caracteres invalidos falha", func(t *testing.T) {
+		t.Setenv("ADMIN_USER", "admin")
+		t.Setenv("ADMIN_PASSWORD_HASH", string(hashCost12))
+		t.Setenv("ADMIN_ALLOWED_ORIGIN", "http://localhost:8090")
+		t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789zzzzzz")
+
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("esperava erro para chave hex com caracteres invalidos")
+		}
+		if !strings.Contains(err.Error(), "string hexadecimal de 64 caracteres contém formato inválido") {
+			t.Errorf("mensagem de erro inesperada: %v", err)
+		}
+	})
+
+	t.Run("chave hex valida de 64 caracteres sucesso", func(t *testing.T) {
+		t.Setenv("ADMIN_USER", "admin")
+		t.Setenv("ADMIN_PASSWORD_HASH", string(hashCost12))
+		t.Setenv("ADMIN_ALLOWED_ORIGIN", "http://localhost:8090")
+		t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+
+		cfg, err := config.Load()
+		if err != nil {
+			t.Fatalf("esperava sucesso para chave hex valida de 64 caracteres, erro: %v", err)
+		}
+		if cfg.AdminMFAEncryptionKey != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+			t.Errorf("AdminMFAEncryptionKey incorreto: %q", cfg.AdminMFAEncryptionKey)
+		}
+	})
+
+	t.Run("chave ascii valida de 32 bytes sucesso", func(t *testing.T) {
+		t.Setenv("ADMIN_USER", "admin")
+		t.Setenv("ADMIN_PASSWORD_HASH", string(hashCost12))
+		t.Setenv("ADMIN_ALLOWED_ORIGIN", "http://localhost:8090")
+		t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "12345678901234567890123456789012")
+
+		cfg, err := config.Load()
+		if err != nil {
+			t.Fatalf("esperava sucesso para chave de 32 bytes, erro: %v", err)
+		}
+		if cfg.AdminMFAEncryptionKey != "12345678901234567890123456789012" {
+			t.Errorf("AdminMFAEncryptionKey incorreto: %q", cfg.AdminMFAEncryptionKey)
+		}
+	})
 }
 
 func TestConfigInvalidPort(t *testing.T) {
@@ -876,6 +960,7 @@ func TestConfigAdminVariables(t *testing.T) {
 			t.Setenv("ADMIN_USER", tt.adminUser)
 			t.Setenv("ADMIN_PASSWORD_HASH", tt.adminHash)
 			t.Setenv("ADMIN_ALLOWED_ORIGIN", tt.adminOrigin)
+			t.Setenv("ADMIN_MFA_ENCRYPTION_KEY", "12345678901234567890123456789012")
 
 			cfg, err := config.Load()
 			if (err != nil) != tt.expectErr {

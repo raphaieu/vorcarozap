@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -48,6 +49,11 @@ type Config struct {
 	AdminUser                          string
 	AdminPasswordHash                  string
 	AdminAllowedOrigin                 string
+	AdminSessionTTL                    time.Duration
+	AdminLockoutDuration               time.Duration
+	AdminMaxLoginAttempts              int
+	AdminMFARequired                   bool
+	AdminMFAEncryptionKey              string
 }
 
 // Constantes para validação de segurança de senha administrativa (VZ-014).
@@ -258,6 +264,46 @@ func Load() (*Config, error) {
 		adminAllowedOrigin = originCanonical
 	}
 
+	adminSessionTTL, err := parseDurationMax("ADMIN_SESSION_TTL", os.Getenv("ADMIN_SESSION_TTL"), 8*time.Hour, 15*time.Minute, 168*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
+	adminLockoutDuration, err := parseDurationMax("ADMIN_LOCKOUT_DURATION", os.Getenv("ADMIN_LOCKOUT_DURATION"), 15*time.Minute, 1*time.Minute, 24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
+	adminMaxLoginAttempts, err := parseInt("ADMIN_MAX_LOGIN_ATTEMPTS", os.Getenv("ADMIN_MAX_LOGIN_ATTEMPTS"), 5, 1, 20)
+	if err != nil {
+		return nil, err
+	}
+
+	adminMFARequired := true
+	if mfaReqStr := os.Getenv("ADMIN_MFA_REQUIRED"); mfaReqStr != "" {
+		if mfaReqStr == "false" || mfaReqStr == "0" {
+			adminMFARequired = false
+		}
+	}
+
+	adminMFAKey := strings.TrimSpace(os.Getenv("ADMIN_MFA_ENCRYPTION_KEY"))
+	if adminMFAKey == "" {
+		adminMFAKey = strings.TrimSpace(os.Getenv("MFA_ENCRYPTION_KEY"))
+	}
+	if adminUser != "" && adminMFAKey == "" {
+		return nil, fmt.Errorf("config: ADMIN_MFA_ENCRYPTION_KEY é obrigatório quando a área administrativa está habilitada")
+	}
+	if adminMFAKey != "" {
+		if len(adminMFAKey) != 32 && len(adminMFAKey) != 64 {
+			return nil, fmt.Errorf("config: ADMIN_MFA_ENCRYPTION_KEY inválida: chave operacional deve ter exatamente 32 bytes ou 64 caracteres hexadecimais (256 bits)")
+		}
+		if len(adminMFAKey) == 64 {
+			if _, err := hex.DecodeString(adminMFAKey); err != nil {
+				return nil, fmt.Errorf("config: ADMIN_MFA_ENCRYPTION_KEY inválida: string hexadecimal de 64 caracteres contém formato inválido")
+			}
+		}
+	}
+
 	return &Config{
 		Port:                               port,
 		Env:                                env,
@@ -290,6 +336,11 @@ func Load() (*Config, error) {
 		AdminUser:                          adminUser,
 		AdminPasswordHash:                  adminPasswordHash,
 		AdminAllowedOrigin:                 adminAllowedOrigin,
+		AdminSessionTTL:                    adminSessionTTL,
+		AdminLockoutDuration:               adminLockoutDuration,
+		AdminMaxLoginAttempts:              adminMaxLoginAttempts,
+		AdminMFARequired:                   adminMFARequired,
+		AdminMFAEncryptionKey:              adminMFAKey,
 	}, nil
 }
 

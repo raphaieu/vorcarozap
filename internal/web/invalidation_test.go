@@ -3,7 +3,6 @@ package web_test
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,11 +16,12 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
 
-func setupInvalidationTestServer(t *testing.T) (*http.Server, *sql.DB, string, string) {
+func setupInvalidationTestServer(t *testing.T) (*http.Server, *sql.DB, string, *http.Cookie) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "invalidation_test.db")
@@ -97,11 +97,12 @@ func setupInvalidationTestServer(t *testing.T) (*http.Server, *sql.DB, string, s
 	allowedOrigin := "http://localhost:8090"
 
 	cfg := &config.Config{
-		Port:               8090,
-		PublicDataCutoff:   "2026-09-03",
-		AdminUser:          "admin_editor",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: allowedOrigin,
+		Port:                  8090,
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    allowedOrigin,
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -109,8 +110,8 @@ func setupInvalidationTestServer(t *testing.T) (*http.Server, *sql.DB, string, s
 		t.Fatalf("falha ao instanciar web server: %v", err)
 	}
 
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin_editor:password"))
-	return srv, db, allowedOrigin, authHeader
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
+	return srv, db, allowedOrigin, sessionCookie
 }
 
 func getClaimUpdatedAt(t *testing.T, db *sql.DB, claimID string) string {
@@ -127,7 +128,7 @@ func getClaimUpdatedAt(t *testing.T, db *sql.DB, claimID string) string {
 // de um claim (quarentena -> aprovado -> rejeitado -> restaurado) e comprova que cada mudança
 // reflete imediatamente na Home, na listagem /pessoas, nos detalhes /pessoas/{slug} e no XLSX.
 func TestInvalidation_ClaimLifecycle_ImmediatePublicConsistency(t *testing.T) {
-	srv, db, origin, authHeader := setupInvalidationTestServer(t)
+	srv, db, origin, sessionCookie := setupInvalidationTestServer(t)
 
 	// --- ESTADO INICIAL ---
 	// ent-inv-1 (Alfa) e ent-inv-3 (Gama) são públicos. ent-inv-2 (Beta) está em quarentena (invisível).
@@ -180,7 +181,7 @@ func TestInvalidation_ClaimLifecycle_ImmediatePublicConsistency(t *testing.T) {
 		"expected_updated_at": {updatedAtBeta},
 	}
 	reqApprove := httptest.NewRequest(http.MethodPost, "/admin/claims/claim-inv-2/moderate", strings.NewReader(formApprove.Encode()))
-	reqApprove.Header.Set("Authorization", authHeader)
+	reqApprove.AddCookie(sessionCookie)
 	reqApprove.Header.Set("Origin", origin)
 	reqApprove.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recApprove := httptest.NewRecorder()
@@ -222,7 +223,7 @@ func TestInvalidation_ClaimLifecycle_ImmediatePublicConsistency(t *testing.T) {
 		"expected_updated_at": {updatedAtBeta2},
 	}
 	reqReject := httptest.NewRequest(http.MethodPost, "/admin/claims/claim-inv-2/moderate", strings.NewReader(formReject.Encode()))
-	reqReject.Header.Set("Authorization", authHeader)
+	reqReject.AddCookie(sessionCookie)
 	reqReject.Header.Set("Origin", origin)
 	reqReject.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recReject := httptest.NewRecorder()
@@ -261,7 +262,7 @@ func TestInvalidation_ClaimLifecycle_ImmediatePublicConsistency(t *testing.T) {
 		"expected_updated_at": {updatedAtBeta3},
 	}
 	reqRestore := httptest.NewRequest(http.MethodPost, "/admin/claims/claim-inv-2/moderate", strings.NewReader(formRestore.Encode()))
-	reqRestore.Header.Set("Authorization", authHeader)
+	reqRestore.AddCookie(sessionCookie)
 	reqRestore.Header.Set("Origin", origin)
 	reqRestore.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recRestore := httptest.NewRecorder()
@@ -285,7 +286,7 @@ func TestInvalidation_ClaimLifecycle_ImmediatePublicConsistency(t *testing.T) {
 // imediatamente o claim de todas as visualizações públicas, métricas e exportação XLSX,
 // mantendo a fonte documental global intacta.
 func TestInvalidation_EvidenceSource_QuarantineOnLastSupportLoss(t *testing.T) {
-	srv, db, origin, authHeader := setupInvalidationTestServer(t)
+	srv, db, origin, sessionCookie := setupInvalidationTestServer(t)
 
 	// Claim 3 (Gama) tem apenas es-inv-3 como suporte. Inicialmente publicado.
 	reqGama := httptest.NewRequest(http.MethodGet, "/pessoas/investigado-gama", nil)
@@ -303,7 +304,7 @@ func TestInvalidation_EvidenceSource_QuarantineOnLastSupportLoss(t *testing.T) {
 		"expected_updated_at": {updatedAtES},
 	}
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-inv-3/moderate", strings.NewReader(form.Encode()))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", origin)
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recMod := httptest.NewRecorder()
@@ -352,7 +353,7 @@ func TestInvalidation_EvidenceSource_QuarantineOnLastSupportLoss(t *testing.T) {
 // rejeitar um suporte secundário mantém o claim publicado, mas remove imediatamente a fonte rejeitada
 // da exibição pública e da exportação.
 func TestInvalidation_EvidenceSource_RejectNonLastSupport_SourceOmittedClaimRemains(t *testing.T) {
-	srv, db, origin, authHeader := setupInvalidationTestServer(t)
+	srv, db, origin, sessionCookie := setupInvalidationTestServer(t)
 
 	// Claim 1 (Alfa) possui es-inv-1a (src-inv-1a) e es-inv-1b (src-inv-1b). Ambos ativos.
 	reqAlfa := httptest.NewRequest(http.MethodGet, "/pessoas/investigado-alfa", nil)
@@ -370,7 +371,7 @@ func TestInvalidation_EvidenceSource_RejectNonLastSupport_SourceOmittedClaimRema
 		"expected_updated_at": {updatedAtES},
 	}
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-inv-1a/moderate", strings.NewReader(form.Encode()))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", origin)
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recMod := httptest.NewRecorder()
@@ -418,7 +419,7 @@ func TestInvalidation_EvidenceSource_RejectNonLastSupport_SourceOmittedClaimRema
 // TestInvalidation_Rollback_PreservesCleanState comprova que falhas durante moderação
 // (ex: OCC mismatch) não provocam mutações parciais ou descompasso de dados públicos.
 func TestInvalidation_Rollback_PreservesCleanState(t *testing.T) {
-	srv, _, origin, authHeader := setupInvalidationTestServer(t)
+	srv, _, origin, sessionCookie := setupInvalidationTestServer(t)
 
 	// Submete moderação com versão esperada inválida / stale
 	form := url.Values{
@@ -427,7 +428,7 @@ func TestInvalidation_Rollback_PreservesCleanState(t *testing.T) {
 		"expected_updated_at": {"2000-01-01T00:00:00Z"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/claim-inv-1/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -452,7 +453,7 @@ func TestInvalidation_Rollback_PreservesCleanState(t *testing.T) {
 // TestInvalidation_ConcurrentReadsDuringModeration valida que leituras públicas concorrentes
 // durante ações de moderação são executadas com sucesso sem corrupção ou panics.
 func TestInvalidation_ConcurrentReadsDuringModeration(t *testing.T) {
-	srv, db, origin, authHeader := setupInvalidationTestServer(t)
+	srv, db, origin, sessionCookie := setupInvalidationTestServer(t)
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -502,7 +503,7 @@ func TestInvalidation_ConcurrentReadsDuringModeration(t *testing.T) {
 					"expected_updated_at": {updatedAt},
 				}
 				req := httptest.NewRequest(http.MethodPost, "/admin/claims/claim-inv-1/moderate", strings.NewReader(form.Encode()))
-				req.Header.Set("Authorization", authHeader)
+				req.AddCookie(sessionCookie)
 				req.Header.Set("Origin", origin)
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				rec := httptest.NewRecorder()
@@ -521,7 +522,7 @@ func TestInvalidation_ConcurrentReadsDuringModeration(t *testing.T) {
 // TestInvalidation_CacheControlHeaders valida os cabeçalhos de controle de cache restritivos
 // na área administrativa e na exportação XLSX.
 func TestInvalidation_CacheControlHeaders(t *testing.T) {
-	srv, _, _, authHeader := setupInvalidationTestServer(t)
+	srv, _, _, sessionCookie := setupInvalidationTestServer(t)
 
 	// 1. /admin/* deve conter Cache-Control: no-store e Vary: Authorization
 	adminPaths := []string{
@@ -535,7 +536,7 @@ func TestInvalidation_CacheControlHeaders(t *testing.T) {
 
 	for _, p := range adminPaths {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
-		req.Header.Set("Authorization", authHeader)
+		req.AddCookie(sessionCookie)
 		rec := httptest.NewRecorder()
 		srv.Handler.ServeHTTP(rec, req)
 
@@ -545,8 +546,8 @@ func TestInvalidation_CacheControlHeaders(t *testing.T) {
 		if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 			t.Errorf("GET %s Cache-Control esperado 'no-store', obtido %q", p, cc)
 		}
-		if vary := rec.Header().Get("Vary"); vary != "Authorization" {
-			t.Errorf("GET %s Vary esperado 'Authorization', obtido %q", p, vary)
+		if vary := rec.Header().Get("Vary"); vary != "Authorization" && !strings.Contains(vary, "Cookie") {
+			t.Errorf("GET %s Vary esperado 'Authorization' ou conter 'Cookie', obtido %q", p, vary)
 		}
 	}
 

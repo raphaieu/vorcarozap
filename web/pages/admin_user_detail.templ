@@ -1,0 +1,149 @@
+package pages
+
+import (
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminUserDetail(vm AdminUserDetailVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Detalhes e Gestão de Usuário — VorcaroZAP."/>
+			<title>Gerenciar Usuário — { vm.User.Username } — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("usuarios")
+			<main class="container">
+				<section class="card" style="max-width: 800px; margin: 0 auto;">
+					<header style="margin-bottom: 1.5rem;">
+						<a href="/admin/usuarios" class="nav-link" style="font-size: 0.85rem; color: var(--color-text-muted);">&larr; Voltar para Usuários</a>
+						<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+							<div>
+								<h1 class="page-title" style="margin: 0;">{ vm.User.DisplayName }</h1>
+								<p class="page-subtitle" style="margin: 0.25rem 0 0; color: var(--color-text-muted);">
+									<code>{ vm.User.Username }</code> &bull; Criado em { vm.User.CreatedAtHuman }
+								</p>
+							</div>
+							<div>
+								if vm.User.Status == "active" {
+									<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">Ativo</span>
+								} else if vm.User.Status == "disabled" {
+									<span class="status-tag" style="background-color: #e2e3e5; color: #41464b;">Desativado</span>
+								} else {
+									<span class="status-tag" style="background-color: #f8d7da; color: #842029;">Bloqueado</span>
+								}
+							</div>
+						</div>
+					</header>
+
+					if vm.FlashMessage != "" {
+						<div class="editorial-notice" style="border-left-color: #198754; background-color: #f0fdf4; color: #0f5132; margin-bottom: 1.25rem;">
+							<strong>Sucesso</strong>
+							<p style="margin-top: 0.25rem;">{ vm.FlashMessage }</p>
+						</div>
+					}
+
+					if vm.FlashError != "" {
+						<div class="editorial-notice" style="border-left-color: #dc3545; background-color: #fff5f5; color: #721c24; margin-bottom: 1.25rem;">
+							<strong>Aviso</strong>
+							<p style="margin-top: 0.25rem;">{ vm.FlashError }</p>
+						</div>
+					}
+
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+						<div class="metric-box">
+							<div class="metric-label">Papel / Função</div>
+							<div class="metric-value" style="font-size: 1.15rem;">{ vm.User.RoleHuman }</div>
+						</div>
+						<div class="metric-box">
+							<div class="metric-label">Status MFA</div>
+							<div class="metric-value" style="font-size: 1.15rem;">{ vm.User.MFAEnabledHuman }</div>
+						</div>
+						<div class="metric-box">
+							<div class="metric-label">Último Acesso</div>
+							<div class="metric-value" style="font-size: 1.15rem;">{ vm.User.LastLoginHuman }</div>
+						</div>
+					</div>
+
+					<hr style="border: 0; border-top: 1px solid var(--color-border); margin: 1.5rem 0;"/>
+
+					<!-- Seção 1: Alteração de Papel (RBAC) com OCC -->
+					if vm.CanEditRole {
+						<div style="margin-bottom: 2rem;">
+							<h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Alterar Papel / Permissões</h2>
+							<p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+								A alteração de papel revoga sessões ativas do usuário forçando reautenticação com as novas permissões.
+							</p>
+							<form method="POST" action={ templ.SafeURL("/admin/usuarios/" + vm.User.ID + "/role") } style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+								<input type="hidden" name="expected_updated_at" value={ vm.User.UpdatedAtRaw }/>
+								<select name="role" class="filter-select" style="min-width: 220px;">
+									<option value="editor" selected?={ vm.User.Role == "editor" }>Editor</option>
+									<option value="reviewer" selected?={ vm.User.Role == "reviewer" }>Revisor</option>
+									<option value="auditor" selected?={ vm.User.Role == "auditor" }>Auditor</option>
+									<option value="admin" selected?={ vm.User.Role == "admin" }>Administrador</option>
+								</select>
+								<button type="submit" class="btn btn-secondary btn-sm">Atualizar Papel</button>
+							</form>
+						</div>
+					}
+
+					<!-- Seção 2: Alteração de Status com OCC -->
+					if vm.CanEditStatus {
+						<div style="margin-bottom: 2rem;">
+							<h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Status da Conta</h2>
+							<p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+								Desativar ou bloquear o usuário encerra imediatamente todas as sessões ativas.
+							</p>
+							<form method="POST" action={ templ.SafeURL("/admin/usuarios/" + vm.User.ID + "/status") } style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+								<input type="hidden" name="expected_updated_at" value={ vm.User.UpdatedAtRaw }/>
+								<select name="status" class="filter-select" style="min-width: 220px;">
+									<option value="active" selected?={ vm.User.Status == "active" }>Ativo</option>
+									<option value="disabled" selected?={ vm.User.Status == "disabled" }>Desativado</option>
+									<option value="locked" selected?={ vm.User.Status == "locked" }>Bloqueado (Lockout)</option>
+								</select>
+								<button type="submit" class="btn btn-secondary btn-sm">Atualizar Status</button>
+							</form>
+						</div>
+					}
+
+					<!-- Seção 3: Redefinição de Senha -->
+					if vm.CanResetPassword {
+						<div style="margin-bottom: 2rem;">
+							<h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Redefinir Senha do Usuário</h2>
+							<p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+								Define uma nova senha para a conta. Todas as sessões existentes serão invalidadas.
+							</p>
+							<form method="POST" action={ templ.SafeURL("/admin/usuarios/" + vm.User.ID + "/reset-password") } style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+								<input
+									type="password"
+									name="new_password"
+									placeholder="Nova senha (mínimo 10 caracteres)..."
+									class="filter-input"
+									style="min-width: 260px;"
+									required
+								/>
+								<button type="submit" class="btn btn-danger btn-sm">Redefinir Senha</button>
+							</form>
+						</div>
+					}
+
+					<!-- Seção 4: Desativação de MFA por Admin -->
+					if vm.CanDisableMFA && vm.User.MFAEnabled {
+						<div style="margin-bottom: 1.5rem; background-color: #fff8f8; border: 1px dashed #f5c2c7; padding: 1rem; border-radius: 4px;">
+							<h2 style="font-size: 1.05rem; margin: 0 0 0.35rem; color: #842029;">Recuperação de Acesso: Desativar MFA</h2>
+							<p style="color: #842029; font-size: 0.85rem; margin-bottom: 0.75rem;">
+								Caso o operador tenha perdido o aplicativo autenticador, desative o MFA para permitir que ele reconfigure no próximo login.
+							</p>
+							<form method="POST" action={ templ.SafeURL("/admin/usuarios/" + vm.User.ID + "/disable-mfa") } onsubmit="return confirm('Tem certeza que deseja desativar o MFA deste usuário?');">
+								<button type="submit" class="btn btn-danger btn-sm">Desativar MFA e Revogar Sessões</button>
+							</form>
+						</div>
+					}
+				</section>
+			</main>
+		</body>
+	</html>
+}

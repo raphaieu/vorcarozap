@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // EntityType define a natureza de uma entidade registrada.
@@ -863,4 +864,263 @@ func ValidateStatementActor(rawActor string) (string, error) {
 		return "", fmt.Errorf("domain: identificador do operador (actor) excede o limite de %d caracteres", MaxStatementActorLength)
 	}
 	return trimmed, nil
+}
+
+// UserRole define o papel institucional atribuído a uma conta administrativa (VZ-026).
+type UserRole string
+
+const (
+	RoleAdmin    UserRole = "admin"
+	RoleEditor   UserRole = "editor"
+	RoleReviewer UserRole = "reviewer"
+	RoleAuditor  UserRole = "auditor"
+)
+
+func (r UserRole) IsValid() bool {
+	switch r {
+	case RoleAdmin, RoleEditor, RoleReviewer, RoleAuditor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Permission enumera as permissões operacionais do painel administrativo.
+type Permission string
+
+const (
+	PermViewDashboard            Permission = "view_dashboard"
+	PermViewCandidates           Permission = "view_candidates"
+	PermViewSources              Permission = "view_sources"
+	PermViewEvidences            Permission = "view_evidences"
+	PermViewClaims               Permission = "view_claims"
+	PermViewManifestations       Permission = "view_manifestations"
+	PermViewManifestationContact Permission = "view_manifestation_contact"
+	PermModerateClaims           Permission = "moderate_claims"
+	PermModerateEvidenceSources  Permission = "moderate_evidence_sources"
+	PermModerateManifestations   Permission = "moderate_manifestations"
+	PermManageUsers              Permission = "manage_users"
+	PermViewAuditLogs            Permission = "view_audit_logs"
+)
+
+func (p Permission) IsValid() bool {
+	switch p {
+	case PermViewDashboard, PermViewCandidates, PermViewSources, PermViewEvidences,
+		PermViewClaims, PermViewManifestations, PermViewManifestationContact,
+		PermModerateClaims, PermModerateEvidenceSources, PermModerateManifestations,
+		PermManageUsers, PermViewAuditLogs:
+		return true
+	default:
+		return false
+	}
+}
+
+// HasPermission avalia a matriz de RBAC para determinar se o papel possui a permissão requerida.
+func (r UserRole) HasPermission(p Permission) bool {
+	switch r {
+	case RoleAdmin:
+		// Admin possui todas as permissões
+		return p.IsValid()
+
+	case RoleEditor:
+		// Editor possui acesso editorial completo e pode ver contatos de manifestação,
+		// mas não gerencia usuários nem consulta logs restritos de auditoria administrativa.
+		switch p {
+		case PermViewDashboard, PermViewCandidates, PermViewSources, PermViewEvidences,
+			PermViewClaims, PermViewManifestations, PermViewManifestationContact,
+			PermModerateClaims, PermModerateEvidenceSources, PermModerateManifestations:
+			return true
+		default:
+			return false
+		}
+
+	case RoleReviewer:
+		// Reviewer tem acesso de leitura amplo, incluindo contatos de manifestação,
+		// sem permissão para mutações ou gestão de usuários/auditoria.
+		switch p {
+		case PermViewDashboard, PermViewCandidates, PermViewSources, PermViewEvidences,
+			PermViewClaims, PermViewManifestations, PermViewManifestationContact:
+			return true
+		default:
+			return false
+		}
+
+	case RoleAuditor:
+		// Auditor tem acesso de leitura ao painel e à trilha de auditoria administrativa privada,
+		// mas não tem acesso a dados de contato pessoal de terceiros nem permissões de mutação.
+		switch p {
+		case PermViewDashboard, PermViewCandidates, PermViewSources, PermViewEvidences,
+			PermViewClaims, PermViewManifestations, PermViewAuditLogs:
+			return true
+		default:
+			return false
+		}
+
+	default:
+		return false
+	}
+}
+
+// RequiresMFA determina se o papel exige compulsoriamente autenticação reforçada por MFA.
+func (r UserRole) RequiresMFA() bool {
+	switch r {
+	case RoleAdmin, RoleEditor:
+		return true
+	default:
+		return false
+	}
+}
+
+// UserStatus define o estado operacional da conta do usuário.
+type UserStatus string
+
+const (
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
+	UserStatusLocked   UserStatus = "locked"
+)
+
+func (s UserStatus) IsValid() bool {
+	switch s {
+	case UserStatusActive, UserStatusDisabled, UserStatusLocked:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s UserStatus) CanAuthenticate() bool {
+	return s == UserStatusActive
+}
+
+// Constantes de limites para usuários.
+const (
+	MinUsernameLength    = 3
+	MaxUsernameLength    = 64
+	MinDisplayNameLength = 2
+	MaxDisplayNameLength = 128
+	MinPasswordLength    = 10
+	MaxPasswordLength    = 128
+)
+
+// ValidateUsername normaliza e valida o nome de usuário (login).
+func ValidateUsername(raw string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "" {
+		return "", fmt.Errorf("domain: nome de usuário é obrigatório")
+	}
+	if len(trimmed) < MinUsernameLength || len(trimmed) > MaxUsernameLength {
+		return "", fmt.Errorf("domain: nome de usuário deve ter entre %d e %d caracteres", MinUsernameLength, MaxUsernameLength)
+	}
+	if strings.Contains(trimmed, ":") {
+		return "", fmt.Errorf("domain: nome de usuário não pode conter o caractere ':'")
+	}
+	for _, r := range trimmed {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '.' && r != '-' {
+			return "", fmt.Errorf("domain: nome de usuário contém caractere inválido %q (permitidos: letras minúsculas, números, '_', '.' e '-')", r)
+		}
+	}
+	return trimmed, nil
+}
+
+// ValidateDisplayName valida e normaliza o nome de exibição do usuário.
+func ValidateDisplayName(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("domain: nome de exibição é obrigatório")
+	}
+	if len(trimmed) < MinDisplayNameLength || len(trimmed) > MaxDisplayNameLength {
+		return "", fmt.Errorf("domain: nome de exibição deve ter entre %d e %d caracteres", MinDisplayNameLength, MaxDisplayNameLength)
+	}
+	if strings.Contains(trimmed, "<") || strings.Contains(trimmed, ">") {
+		return "", fmt.Errorf("domain: nome de exibição não pode conter tags ou caracteres '<' e '>'")
+	}
+	return trimmed, nil
+}
+
+// ValidatePasswordStrength valida requisitos mínimos de complexidade da senha.
+func ValidatePasswordStrength(password string) error {
+	if len(password) < MinPasswordLength {
+		return fmt.Errorf("domain: a senha deve conter no mínimo %d caracteres", MinPasswordLength)
+	}
+	if len(password) > MaxPasswordLength {
+		return fmt.Errorf("domain: a senha não pode exceder %d caracteres", MaxPasswordLength)
+	}
+	return nil
+}
+
+// ValidateUserRole valida e converte uma string para UserRole.
+func ValidateUserRole(raw string) (UserRole, error) {
+	role := UserRole(strings.TrimSpace(raw))
+	if !role.IsValid() {
+		return "", fmt.Errorf("domain: papel de usuário inválido %q (válidos: admin, editor, reviewer, auditor)", raw)
+	}
+	return role, nil
+}
+
+// ValidateUserStatus valida e converte uma string para UserStatus.
+func ValidateUserStatus(raw string) (UserStatus, error) {
+	status := UserStatus(strings.TrimSpace(raw))
+	if !status.IsValid() {
+		return "", fmt.Errorf("domain: status de usuário inválido %q (válidos: active, disabled, locked)", raw)
+	}
+	return status, nil
+}
+
+// AdminUser representa uma conta administrativa do sistema sem dados sensíveis de credenciais.
+type AdminUser struct {
+	ID                  string     `json:"id"`
+	Username            string     `json:"username"`
+	DisplayName         string     `json:"display_name"`
+	Role                UserRole   `json:"role"`
+	Status              UserStatus `json:"status"`
+	FailedLoginAttempts int        `json:"failed_login_attempts"`
+	MFAFailedAttempts   int        `json:"mfa_failed_attempts"`
+	LockedUntil         *string    `json:"locked_until,omitempty"`
+	MFAEnabled          bool       `json:"mfa_enabled"`
+	MFAEnrolledAt       *string    `json:"mfa_enrolled_at,omitempty"`
+	LastLoginAt         *string    `json:"last_login_at,omitempty"`
+	CreatedAt           string     `json:"created_at"`
+	UpdatedAt           string     `json:"updated_at"`
+}
+
+// IsLocked verifica se o usuário está com status locked e se o tempo de bloqueio ainda está ativo.
+func (u AdminUser) IsLocked() bool {
+	if u.Status != UserStatusLocked {
+		return false
+	}
+	if u.LockedUntil == nil || *u.LockedUntil == "" {
+		return true
+	}
+	lockedTime, err := time.Parse(time.RFC3339Nano, *u.LockedUntil)
+	if err != nil {
+		return true
+	}
+	return time.Now().UTC().Before(lockedTime)
+}
+
+// AdminSession representa uma sessão ativa no servidor.
+type AdminSession struct {
+	ID             string `json:"id"`
+	UserID         string `json:"user_id"`
+	MFAVerified    bool   `json:"mfa_verified"`
+	IPAddress      string `json:"ip_address"`
+	UserAgent      string `json:"user_agent"`
+	ExpiresAt      string `json:"expires_at"`
+	LastActivityAt string `json:"last_activity_at"`
+	CreatedAt      string `json:"created_at"`
+}
+
+// AdminAuditLog representa uma entrada imutável na trilha de auditoria administrativa.
+type AdminAuditLog struct {
+	ID            string  `json:"id"`
+	UserID        *string `json:"user_id,omitempty"`
+	Username      string  `json:"username"`
+	Action        string  `json:"action"`
+	ActorID       *string `json:"actor_id,omitempty"`
+	ActorUsername string  `json:"actor_username"`
+	TargetID      string  `json:"target_id"`
+	Details       string  `json:"details"`
+	IPAddress     string  `json:"ip_address"`
+	CreatedAt     string  `json:"created_at"`
 }

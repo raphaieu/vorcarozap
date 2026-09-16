@@ -1,0 +1,111 @@
+package pages
+
+import (
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminUserNew(flashErr string) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Novo Usuário — Painel Administrativo VorcaroZAP."/>
+			<title>Novo Usuário — Painel Administrativo — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("usuarios")
+			<main class="container">
+				<section class="card" style="max-width: 600px; margin: 0 auto;">
+					<header style="margin-bottom: 1.5rem;">
+						<a href="/admin/usuarios" class="nav-link" style="font-size: 0.85rem; color: var(--color-text-muted);">&larr; Voltar para Usuários</a>
+						<h1 class="page-title" style="margin: 0.5rem 0 0.25rem;">Cadastrar Novo Usuário</h1>
+						<p class="page-subtitle" style="margin: 0; color: var(--color-text-muted);">
+							Crie uma conta administrativa com papel e credenciais iniciais
+						</p>
+					</header>
+
+					if flashErr != "" {
+						<div class="editorial-notice" style="border-left-color: #dc3545; background-color: #fff5f5; color: #721c24; margin-bottom: 1.25rem;">
+							<strong>Aviso</strong>
+							<p style="margin-top: 0.25rem;">{ flashErr }</p>
+						</div>
+					}
+
+					<form method="POST" action="/admin/usuarios/novo" novalidate>
+						<div class="form-group" style="margin-bottom: 1.25rem;">
+							<label for="username" style="display: block; font-weight: 600; margin-bottom: 0.35rem;">
+								Login / Nome de Usuário (único)
+							</label>
+							<input
+								type="text"
+								id="username"
+								name="username"
+								class="filter-input"
+								style="width: 100%; box-sizing: border-box;"
+								placeholder="ex: maria.editora"
+								required
+								autocomplete="off"
+							/>
+							<small style="color: var(--color-text-muted); display: block; margin-top: 0.25rem;">
+								Apenas letras minúsculas, números, '.', '_' e '-'.
+							</small>
+						</div>
+
+						<div class="form-group" style="margin-bottom: 1.25rem;">
+							<label for="display_name" style="display: block; font-weight: 600; margin-bottom: 0.35rem;">
+								Nome Completo de Exibição
+							</label>
+							<input
+								type="text"
+								id="display_name"
+								name="display_name"
+								class="filter-input"
+								style="width: 100%; box-sizing: border-box;"
+								placeholder="ex: Maria Silva"
+								required
+								autocomplete="off"
+							/>
+						</div>
+
+						<div class="form-group" style="margin-bottom: 1.25rem;">
+							<label for="role" style="display: block; font-weight: 600; margin-bottom: 0.35rem;">
+								Papel / Função Inicial
+							</label>
+							<select id="role" name="role" class="filter-select" style="width: 100%; box-sizing: border-box;">
+								<option value="editor">Editor (Moderação de claims, evidências e defesas)</option>
+								<option value="reviewer">Revisor (Leitura ampla e contatos, sem mutações)</option>
+								<option value="auditor">Auditor (Leitura ampla e trilha de auditoria)</option>
+								<option value="admin">Administrador (Gestão total do sistema)</option>
+							</select>
+						</div>
+
+						<div class="form-group" style="margin-bottom: 1.5rem;">
+							<label for="password" style="display: block; font-weight: 600; margin-bottom: 0.35rem;">
+								Senha Inicial Provisória
+							</label>
+							<input
+								type="password"
+								id="password"
+								name="password"
+								class="filter-input"
+								style="width: 100%; box-sizing: border-box;"
+								required
+								autocomplete="new-password"
+							/>
+							<small style="color: var(--color-text-muted); display: block; margin-top: 0.25rem;">
+								Mínimo de 10 caracteres. O usuário ativará o MFA no primeiro acesso.
+							</small>
+						</div>
+
+						<div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+							<a href="/admin/usuarios" class="btn btn-outline">Cancelar</a>
+							<button type="submit" class="btn btn-primary">Salvar Usuário &rarr;</button>
+						</div>
+					</form>
+				</section>
+			</main>
+		</body>
+	</html>
+}

@@ -1,0 +1,175 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminUsers(vm AdminUserListVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Gestão de Usuários e Permissões RBAC — VorcaroZAP."/>
+			<title>Gestão de Usuários — Painel Administrativo — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("usuarios")
+			<main class="container">
+				<section class="card" aria-label="Gestão de Usuários">
+					<header style="margin-bottom: 1.25rem;">
+						<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.5rem;">
+							<div>
+								<h1 class="page-title" style="margin: 0;">Gestão de Contas e Acessos (RBAC)</h1>
+								<p class="page-subtitle" style="margin: 0.25rem 0 0; color: var(--color-text-muted);">
+									Controle individual de operadores, papéis, status e segundo fator (MFA)
+								</p>
+							</div>
+							if vm.CanCreateUser {
+								<a href="/admin/usuarios/novo" class="btn btn-primary btn-sm">+ Novo Usuário</a>
+							}
+						</div>
+					</header>
+
+					if vm.FlashMessage != "" {
+						<div class="editorial-notice" style="border-left-color: #198754; background-color: #f0fdf4; color: #0f5132; margin-bottom: 1.25rem;">
+							<strong>Sucesso</strong>
+							<p style="margin-top: 0.25rem;">{ vm.FlashMessage }</p>
+						</div>
+					}
+
+					if vm.FlashError != "" {
+						<div class="editorial-notice" style="border-left-color: #dc3545; background-color: #fff5f5; color: #721c24; margin-bottom: 1.25rem;">
+							<strong>Aviso</strong>
+							<p style="margin-top: 0.25rem;">{ vm.FlashError }</p>
+						</div>
+					}
+
+					<!-- Formulário de Filtros -->
+					<form method="GET" action="/admin/usuarios" class="filter-panel" style="margin-bottom: 1.5rem;">
+						<div class="filters-row">
+							<div class="filter-group">
+								<label for="filter-role" class="filter-label">Papel / Função</label>
+								<select id="filter-role" name="role" class="filter-select">
+									<option value="" selected?={ vm.Filter.Role == "" }>Todos os papéis</option>
+									<option value="admin" selected?={ vm.Filter.Role == "admin" }>Administrador</option>
+									<option value="editor" selected?={ vm.Filter.Role == "editor" }>Editor</option>
+									<option value="reviewer" selected?={ vm.Filter.Role == "reviewer" }>Revisor</option>
+									<option value="auditor" selected?={ vm.Filter.Role == "auditor" }>Auditor</option>
+								</select>
+							</div>
+
+							<div class="filter-group">
+								<label for="filter-status" class="filter-label">Status da Conta</label>
+								<select id="filter-status" name="status" class="filter-select">
+									<option value="" selected?={ vm.Filter.Status == "" }>Todos os status</option>
+									<option value="active" selected?={ vm.Filter.Status == "active" }>Ativo</option>
+									<option value="disabled" selected?={ vm.Filter.Status == "disabled" }>Desativado</option>
+									<option value="locked" selected?={ vm.Filter.Status == "locked" }>Bloqueado</option>
+								</select>
+							</div>
+
+							<div class="filter-group" style="flex-grow: 1;">
+								<label for="filter-q" class="filter-label">Buscar Usuário</label>
+								<input
+									type="search"
+									id="filter-q"
+									name="q"
+									value={ vm.Filter.Search }
+									placeholder="Buscar por login ou nome de exibição..."
+									class="filter-input"
+								/>
+							</div>
+
+							<div class="filter-actions">
+								<button type="submit" class="btn btn-secondary btn-sm">Filtrar</button>
+								<a href="/admin/usuarios" class="btn btn-outline btn-sm">Limpar</a>
+							</div>
+						</div>
+					</form>
+
+					<!-- Tabela de Usuários -->
+					if len(vm.Users) == 0 {
+						<div class="editorial-notice" style="text-align: center; padding: 2rem;">
+							<p style="margin: 0; color: var(--color-text-muted);">Nenhum usuário encontrado com os filtros selecionados.</p>
+						</div>
+					} else {
+						<div class="table-responsive" style="overflow-x: auto;">
+							<table class="data-table" style="width: 100%; border-collapse: collapse;">
+								<thead>
+									<tr style="border-bottom: 2px solid var(--color-border); text-align: left;">
+										<th style="padding: 0.75rem;">Login</th>
+										<th style="padding: 0.75rem;">Nome de Exibição</th>
+										<th style="padding: 0.75rem;">Papel</th>
+										<th style="padding: 0.75rem;">Status</th>
+										<th style="padding: 0.75rem;">MFA</th>
+										<th style="padding: 0.75rem;">Último Acesso</th>
+										<th style="padding: 0.75rem; text-align: right;">Ações</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, u := range vm.Users {
+										<tr style="border-bottom: 1px solid var(--color-border);">
+											<td style="padding: 0.75rem; font-weight: 600;">
+												<code>{ u.Username }</code>
+											</td>
+											<td style="padding: 0.75rem;">{ u.DisplayName }</td>
+											<td style="padding: 0.75rem;">
+												<span class="badge" style="background-color: var(--color-badge-bg); color: var(--color-badge-text);">
+													{ u.RoleHuman }
+												</span>
+											</td>
+											<td style="padding: 0.75rem;">
+												if u.Status == "active" {
+													<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">Ativo</span>
+												} else if u.Status == "disabled" {
+													<span class="status-tag" style="background-color: #e2e3e5; color: #41464b;">Desativado</span>
+												} else {
+													<span class="status-tag" style="background-color: #f8d7da; color: #842029;">Bloqueado</span>
+												}
+											</td>
+											<td style="padding: 0.75rem;">
+												if u.MFAEnabled {
+													<span style="color: #198754; font-weight: 600;">✓ Ativado</span>
+												} else {
+													<span style="color: #6c757d;">Pendente</span>
+												}
+											</td>
+											<td style="padding: 0.75rem; font-size: 0.85rem; color: var(--color-text-muted);">
+												{ u.LastLoginHuman }
+											</td>
+											<td style="padding: 0.75rem; text-align: right;">
+												<a href={ templ.SafeURL("/admin/usuarios/" + u.ID) } class="btn btn-secondary btn-sm">
+													Gerenciar &rarr;
+												</a>
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+
+						<!-- Paginação -->
+						if vm.Filter.TotalPages > 1 {
+							<div class="pagination" style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+								<span style="font-size: 0.85rem; color: var(--color-text-muted);">
+									Mostrando página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) } ({ fmt.Sprintf("%d", vm.Filter.TotalCount) } usuários)
+								</span>
+								<div style="display: flex; gap: 0.5rem;">
+									if vm.Filter.Page > 1 {
+										<a href={ templ.SafeURL(vm.Filter.BuildQueryString(vm.Filter.Page - 1)) } class="btn btn-outline btn-sm">&larr; Anterior</a>
+									}
+									if vm.Filter.Page < vm.Filter.TotalPages {
+										<a href={ templ.SafeURL(vm.Filter.BuildQueryString(vm.Filter.Page + 1)) } class="btn btn-outline btn-sm">Próxima &rarr;</a>
+									}
+								</div>
+							</div>
+						}
+					}
+				</section>
+			</main>
+		</body>
+	</html>
+}

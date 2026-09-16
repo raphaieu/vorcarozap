@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
@@ -85,15 +86,16 @@ func setupDocumentDetailTestServer(t *testing.T) (*http.Server, *sql.DB) {
 
 	passwordHash := getTestAdminHashCost12(t)
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "test",
-		PublicDataCutoff:   "2026-09-03",
-		AdminUser:          "admin_editor",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: "http://example.com",
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        60 * time.Second,
+		Port:                  8080,
+		Env:                   "test",
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://example.com",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -236,7 +238,8 @@ func TestPublicDocumentDetail_SecuritySanitization(t *testing.T) {
 }
 
 func TestAdminSourceDetail_AccessAndExhibition(t *testing.T) {
-	srv, _ := setupDocumentDetailTestServer(t)
+	srv, db := setupDocumentDetailTestServer(t)
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
 
 	// 1. Sem autenticação deve responder 401 Unauthorized
 	reqUnauth := httptest.NewRequest(http.MethodGet, "/admin/fontes/src-laudo-pub", nil)
@@ -249,7 +252,7 @@ func TestAdminSourceDetail_AccessAndExhibition(t *testing.T) {
 
 	// 2. Autenticado deve responder 200 OK
 	reqAuth := httptest.NewRequest(http.MethodGet, "/admin/fontes/src-laudo-pub", nil)
-	reqAuth.Header.Set("Authorization", basicAuthHeader("admin_editor", "password"))
+	reqAuth.AddCookie(sessionCookie)
 	wAuth := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAuth, reqAuth)
 
@@ -261,8 +264,8 @@ func TestAdminSourceDetail_AccessAndExhibition(t *testing.T) {
 	if wAuth.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("Admin Cache-Control = %q, esperado no-store", wAuth.Header().Get("Cache-Control"))
 	}
-	if wAuth.Header().Get("Vary") != "Authorization" {
-		t.Errorf("Admin Vary = %q, esperado Authorization", wAuth.Header().Get("Vary"))
+	if vary := wAuth.Header().Get("Vary"); vary != "Authorization" && !strings.Contains(vary, "Cookie") {
+		t.Errorf("Admin Vary = %q, esperado Authorization ou Cookie", vary)
 	}
 
 	body := wAuth.Body.String()
@@ -280,7 +283,7 @@ func TestAdminSourceDetail_AccessAndExhibition(t *testing.T) {
 
 	// 3. Inspeção de fonte que só possui itens em quarentena deve funcionar normalmente no admin
 	reqQuar := httptest.NewRequest(http.MethodGet, "/admin/fontes/src-quar-only", nil)
-	reqQuar.Header.Set("Authorization", basicAuthHeader("admin_editor", "password"))
+	reqQuar.AddCookie(sessionCookie)
 	wQuar := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wQuar, reqQuar)
 

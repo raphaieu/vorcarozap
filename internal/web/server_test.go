@@ -16,7 +16,9 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/raphaieu/vorcarozap/internal/auth"
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 	"github.com/xuri/excelize/v2"
@@ -988,7 +990,37 @@ func getTestAdminHashCost12(t *testing.T) string {
 	return testAdminHashCost12
 }
 
-func setupAdminTestServer(t *testing.T, user string) (*http.Server, string) {
+func createAdminTestCookie(t *testing.T, db *sql.DB, username string) *http.Cookie {
+	t.Helper()
+	u, err := store.GetUserByUsername(context.Background(), db, username)
+	if err != nil {
+		t.Fatalf("falha ao buscar admin para cookie: %v", err)
+	}
+	token, err := auth.GenerateSessionToken()
+	if err != nil {
+		t.Fatalf("falha ao gerar token: %v", err)
+	}
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := store.CreateAdminSession(context.Background(), db, domain.AdminSession{
+		ID:             token,
+		UserID:         u.User.ID,
+		MFAVerified:    true,
+		IPAddress:      "127.0.0.1",
+		UserAgent:      "TestAgent",
+		ExpiresAt:      time.Now().UTC().Add(8 * time.Hour).Format(time.RFC3339Nano),
+		LastActivityAt: nowStr,
+		CreatedAt:      nowStr,
+	}); err != nil {
+		t.Fatalf("falha ao criar sessão admin de teste: %v", err)
+	}
+	return &http.Cookie{
+		Name:  web.SessionCookieName,
+		Value: token,
+		Path:  "/admin",
+	}
+}
+
+func setupAdminTestServer(t *testing.T, user string) (*http.Server, *sql.DB, *http.Cookie, string) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "web_admin_test.db")
@@ -1009,16 +1041,17 @@ func setupAdminTestServer(t *testing.T, user string) (*http.Server, string) {
 	passwordHash := getTestAdminHashCost12(t)
 
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "test",
-		DBPath:             dbPath,
-		PublicDataCutoff:   "2026-09-03",
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        60 * time.Second,
-		AdminUser:          user,
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: "http://example.com",
+		Port:                  8080,
+		Env:                   "test",
+		DBPath:                dbPath,
+		PublicDataCutoff:      "2026-09-03",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
+		AdminUser:             user,
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://example.com",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -1026,7 +1059,8 @@ func setupAdminTestServer(t *testing.T, user string) (*http.Server, string) {
 		t.Fatalf("falha ao criar servidor web com admin: %v", err)
 	}
 
-	return srv, passwordHash
+	cookie := createAdminTestCookie(t, db, user)
+	return srv, db, cookie, passwordHash
 }
 
 func TestAdminDisabled_Returns404(t *testing.T) {
@@ -1064,7 +1098,7 @@ func TestAdminDisabled_Returns404(t *testing.T) {
 }
 
 func TestAdminEnabled_BasicAuth_Unauthenticated_AllMethodsAndPaths(t *testing.T) {
-	srv, _ := setupAdminTestServer(t, "admin")
+	srv, _, _, _ := setupAdminTestServer(t, "admin")
 
 	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
 	paths := []string{"/admin", "/admin/", "/admin/candidatos", "/admin/candidatos/c-1", "/admin/evidencias", "/admin/fontes", "/admin/rota-inexistente"}
@@ -1078,11 +1112,6 @@ func TestAdminEnabled_BasicAuth_Unauthenticated_AllMethodsAndPaths(t *testing.T)
 
 				if w.Code != http.StatusUnauthorized {
 					t.Errorf("status para %s %s sem credenciais: esperado 401, obtido %d", method, p, w.Code)
-				}
-
-				expectedWWWAuth := `Basic realm="VorcaroZAP admin", charset="UTF-8"`
-				if auth := w.Header().Get("WWW-Authenticate"); auth != expectedWWWAuth {
-					t.Errorf("WWW-Authenticate: esperado %q, obtido %q", expectedWWWAuth, auth)
 				}
 
 				if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
@@ -1102,9 +1131,9 @@ func TestAdminEnabled_BasicAuth_Unauthenticated_AllMethodsAndPaths(t *testing.T)
 }
 
 func TestAdminEnabled_BasicAuth_EqualityBetweenFailures(t *testing.T) {
-	srv, _ := setupAdminTestServer(t, "admin")
+	srv, _, _, _ := setupAdminTestServer(t, "admin")
 
-	// 1. Falha por usuário incorreto
+	// 1. Falha por usuário incorreto via Basic Auth
 	reqWrongUser := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	reqWrongUser.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("wronguser:password")))
 	wWrongUser := httptest.NewRecorder()
@@ -1132,64 +1161,25 @@ func TestAdminEnabled_BasicAuth_EqualityBetweenFailures(t *testing.T) {
 			wWrongUser.Body.String(), wWrongPass.Body.String(), wBothWrong.Body.String())
 	}
 
-	if wWrongUser.Header().Get("WWW-Authenticate") != wWrongPass.Header().Get("WWW-Authenticate") {
-		t.Errorf("cabeçalho WWW-Authenticate difere entre usuário errado (%q) e senha errada (%q)",
-			wWrongUser.Header().Get("WWW-Authenticate"), wWrongPass.Header().Get("WWW-Authenticate"))
-	}
 	if wWrongUser.Header().Get("Cache-Control") != wWrongPass.Header().Get("Cache-Control") {
 		t.Errorf("cabeçalho Cache-Control difere")
 	}
 	if wWrongUser.Header().Get("Vary") != wWrongPass.Header().Get("Vary") {
 		t.Errorf("cabeçalho Vary difere")
 	}
-
-	// 4. Testes com outros formatos malformados
-	malformedHeaders := []struct {
-		name       string
-		authHeader string
-	}{
-		{"esquema Bearer não permitido", "Bearer secret-token"},
-		{"base64 malformado", "Basic !!!invalid_base64!!!"},
-		{"base64 sem separador de dois pontos", "Basic " + base64.StdEncoding.EncodeToString([]byte("adminpassword"))},
-		{"usuário vazio", "Basic " + base64.StdEncoding.EncodeToString([]byte(":password"))},
-	}
-
-	for _, tt := range malformedHeaders {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/admin", nil)
-			req.Header.Set("Authorization", tt.authHeader)
-			w := httptest.NewRecorder()
-			srv.Handler.ServeHTTP(w, req)
-
-			if w.Code != http.StatusUnauthorized {
-				t.Errorf("status para %s: esperado 401, obtido %d", tt.name, w.Code)
-			}
-			if auth := w.Header().Get("WWW-Authenticate"); auth != `Basic realm="VorcaroZAP admin", charset="UTF-8"` {
-				t.Errorf("WWW-Authenticate incorreto: %q", auth)
-			}
-			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
-				t.Errorf("Cache-Control: esperado 'no-store', obtido %q", cc)
-			}
-			if vary := w.Header().Get("Vary"); vary != "Authorization" {
-				t.Errorf("Vary: esperado 'Authorization', obtido %q", vary)
-			}
-		})
-	}
 }
 
 func TestAdminEnabled_BasicAuth_ValidCredentials(t *testing.T) {
-	srv, validHash := setupAdminTestServer(t, "admin")
-
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie, validHash := setupAdminTestServer(t, "admin")
 
 	// 1. Testa GET /admin
 	reqAdmin := httptest.NewRequest(http.MethodGet, "/admin", nil)
-	reqAdmin.Header.Set("Authorization", authHeader)
+	reqAdmin.AddCookie(cookie)
 	wAdmin := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAdmin, reqAdmin)
 
 	if wAdmin.Code != http.StatusOK {
-		t.Fatalf("status /admin com credencial válida: esperado 200, obtido %d", wAdmin.Code)
+		t.Fatalf("status /admin com sessão válida: esperado 200, obtido %d", wAdmin.Code)
 	}
 
 	if cc := wAdmin.Header().Get("Cache-Control"); cc != "no-store" {
@@ -1223,17 +1213,17 @@ func TestAdminEnabled_BasicAuth_ValidCredentials(t *testing.T) {
 
 	// 2. Testa GET /admin/
 	reqAdminSlash := httptest.NewRequest(http.MethodGet, "/admin/", nil)
-	reqAdminSlash.Header.Set("Authorization", authHeader)
+	reqAdminSlash.AddCookie(cookie)
 	wAdminSlash := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAdminSlash, reqAdminSlash)
 
 	if wAdminSlash.Code != http.StatusOK {
-		t.Fatalf("status /admin/ com credencial válida: esperado 200, obtido %d", wAdminSlash.Code)
+		t.Fatalf("status /admin/ com sessão válida: esperado 200, obtido %d", wAdminSlash.Code)
 	}
 
 	// 3. Testa subrota inexistente autenticada /admin/inexistente -> 404 protegido
 	reqInexistente := httptest.NewRequest(http.MethodGet, "/admin/inexistente", nil)
-	reqInexistente.Header.Set("Authorization", authHeader)
+	reqInexistente.AddCookie(cookie)
 	wInexistente := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wInexistente, reqInexistente)
 
@@ -1252,7 +1242,7 @@ func TestAdminEnabled_BasicAuth_ValidCredentials(t *testing.T) {
 	for _, m := range unimplementedMethods {
 		t.Run("autenticado "+m+" /admin", func(t *testing.T) {
 			reqM := httptest.NewRequest(m, "/admin", nil)
-			reqM.Header.Set("Authorization", authHeader)
+			reqM.AddCookie(cookie)
 			wM := httptest.NewRecorder()
 			srv.Handler.ServeHTTP(wM, reqM)
 
@@ -1274,7 +1264,7 @@ func TestAdminEnabled_BasicAuth_ValidCredentials(t *testing.T) {
 }
 
 func TestAdminEnabled_NoBypass(t *testing.T) {
-	srv, _ := setupAdminTestServer(t, "admin")
+	srv, _, _, _ := setupAdminTestServer(t, "admin")
 
 	tests := []struct {
 		name    string
@@ -1371,14 +1361,11 @@ func TestAdminEnabled_NoBypass(t *testing.T) {
 			if w.Code != http.StatusUnauthorized {
 				t.Errorf("status esperado 401 em tentativa de bypass %s: obtido %d", tt.name, w.Code)
 			}
-			if auth := w.Header().Get("WWW-Authenticate"); auth != `Basic realm="VorcaroZAP admin", charset="UTF-8"` {
-				t.Errorf("WWW-Authenticate esperado em tentativa de bypass: obtido %q", auth)
-			}
 		})
 	}
 }
 
-func setupAdminTestServerWithData(t *testing.T, user string) (*http.Server, *sql.DB) {
+func setupAdminTestServerWithData(t *testing.T, user string) (*http.Server, *sql.DB, *http.Cookie) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "web_admin_data_test.db")
@@ -1468,16 +1455,17 @@ func setupAdminTestServerWithData(t *testing.T, user string) (*http.Server, *sql
 	passwordHash := getTestAdminHashCost12(t)
 
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "test",
-		DBPath:             dbPath,
-		PublicDataCutoff:   "2026-09-03",
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        60 * time.Second,
-		AdminUser:          user,
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: "http://example.com",
+		Port:                  8080,
+		Env:                   "test",
+		DBPath:                dbPath,
+		PublicDataCutoff:      "2026-09-03",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
+		AdminUser:             user,
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://example.com",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -1485,15 +1473,15 @@ func setupAdminTestServerWithData(t *testing.T, user string) (*http.Server, *sql
 		t.Fatalf("falha ao criar servidor web com admin e dados: %v", err)
 	}
 
-	return srv, db
+	cookie := createAdminTestCookie(t, db, user)
+	return srv, db, cookie
 }
 
 func TestAdminDashboard_AuthenticatedData(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -1532,12 +1520,11 @@ func TestAdminDashboard_AuthenticatedData(t *testing.T) {
 }
 
 func TestAdminCandidates_ListingAndFiltering(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	// 1. Listagem completa sem filtros
 	reqAll := httptest.NewRequest(http.MethodGet, "/admin/candidatos", nil)
-	reqAll.Header.Set("Authorization", authHeader)
+	reqAll.AddCookie(cookie)
 	wAll := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAll, reqAll)
 
@@ -1554,7 +1541,7 @@ func TestAdminCandidates_ListingAndFiltering(t *testing.T) {
 
 	// 2. Filtro por status=quarantined
 	reqQuar := httptest.NewRequest(http.MethodGet, "/admin/candidatos?status=quarantined", nil)
-	reqQuar.Header.Set("Authorization", authHeader)
+	reqQuar.AddCookie(cookie)
 	wQuar := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wQuar, reqQuar)
 
@@ -1571,7 +1558,7 @@ func TestAdminCandidates_ListingAndFiltering(t *testing.T) {
 
 	// 3. Filtro por grade=A
 	reqGradeA := httptest.NewRequest(http.MethodGet, "/admin/candidatos?grade=A", nil)
-	reqGradeA.Header.Set("Authorization", authHeader)
+	reqGradeA.AddCookie(cookie)
 	wGradeA := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wGradeA, reqGradeA)
 
@@ -1588,7 +1575,7 @@ func TestAdminCandidates_ListingAndFiltering(t *testing.T) {
 
 	// 4. Busca por termo de texto
 	reqSearch := httptest.NewRequest(http.MethodGet, "/admin/candidatos?q=Carlos", nil)
-	reqSearch.Header.Set("Authorization", authHeader)
+	reqSearch.AddCookie(cookie)
 	wSearch := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wSearch, reqSearch)
 
@@ -1605,12 +1592,11 @@ func TestAdminCandidates_ListingAndFiltering(t *testing.T) {
 }
 
 func TestAdminCandidateDetail_Inspection(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	// 1. Detalhe de cand-1 existente
 	req := httptest.NewRequest(http.MethodGet, "/admin/candidatos/cand-1", nil)
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -1672,7 +1658,7 @@ func TestAdminCandidateDetail_Inspection(t *testing.T) {
 
 	// 2. Detalhe de cand-3 (duplicata)
 	reqDup := httptest.NewRequest(http.MethodGet, "/admin/candidatos/cand-3", nil)
-	reqDup.Header.Set("Authorization", authHeader)
+	reqDup.AddCookie(cookie)
 	wDup := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wDup, reqDup)
 
@@ -1686,7 +1672,7 @@ func TestAdminCandidateDetail_Inspection(t *testing.T) {
 
 	// 3. Candidato inexistente -> 404
 	req404 := httptest.NewRequest(http.MethodGet, "/admin/candidatos/candidato-fantasma", nil)
-	req404.Header.Set("Authorization", authHeader)
+	req404.AddCookie(cookie)
 	w404 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w404, req404)
 
@@ -1699,12 +1685,11 @@ func TestAdminCandidateDetail_Inspection(t *testing.T) {
 }
 
 func TestAdminEvidences_ListingAndFiltering(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	// 1. Listagem geral e validação do aviso editorial
 	reqAll := httptest.NewRequest(http.MethodGet, "/admin/evidencias", nil)
-	reqAll.Header.Set("Authorization", authHeader)
+	reqAll.AddCookie(cookie)
 	wAll := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAll, reqAll)
 
@@ -1725,7 +1710,7 @@ func TestAdminEvidences_ListingAndFiltering(t *testing.T) {
 
 	// 2. Filtro por papel (role=contradicts)
 	reqContra := httptest.NewRequest(http.MethodGet, "/admin/evidencias?role=contradicts", nil)
-	reqContra.Header.Set("Authorization", authHeader)
+	reqContra.AddCookie(cookie)
 	wContra := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wContra, reqContra)
 
@@ -1742,7 +1727,7 @@ func TestAdminEvidences_ListingAndFiltering(t *testing.T) {
 
 	// 3. Filtro por status do claim (claim_status=quarantined)
 	reqClaimQuar := httptest.NewRequest(http.MethodGet, "/admin/evidencias?claim_status=quarantined", nil)
-	reqClaimQuar.Header.Set("Authorization", authHeader)
+	reqClaimQuar.AddCookie(cookie)
 	wClaimQuar := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wClaimQuar, reqClaimQuar)
 
@@ -1759,7 +1744,7 @@ func TestAdminEvidences_ListingAndFiltering(t *testing.T) {
 
 	// 4. Filtro por status da evidência (es_status=rejected)
 	reqEsRej := httptest.NewRequest(http.MethodGet, "/admin/evidencias?es_status=rejected", nil)
-	reqEsRej.Header.Set("Authorization", authHeader)
+	reqEsRej.AddCookie(cookie)
 	wEsRej := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wEsRej, reqEsRej)
 
@@ -1776,12 +1761,11 @@ func TestAdminEvidences_ListingAndFiltering(t *testing.T) {
 }
 
 func TestAdminSources_ListingAndFiltering(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	// 1. Listagem geral
 	reqAll := httptest.NewRequest(http.MethodGet, "/admin/fontes", nil)
-	reqAll.Header.Set("Authorization", authHeader)
+	reqAll.AddCookie(cookie)
 	wAll := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAll, reqAll)
 
@@ -1801,7 +1785,7 @@ func TestAdminSources_ListingAndFiltering(t *testing.T) {
 
 	// 2. Filtro por status de acessibilidade (access_status=unreachable)
 	reqUnreach := httptest.NewRequest(http.MethodGet, "/admin/fontes?access_status=unreachable", nil)
-	reqUnreach.Header.Set("Authorization", authHeader)
+	reqUnreach.AddCookie(cookie)
 	wUnreach := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wUnreach, reqUnreach)
 
@@ -1821,12 +1805,11 @@ func TestAdminSources_ListingAndFiltering(t *testing.T) {
 }
 
 func TestAdminQuarantineIsolationFromPublicArea(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	// 1. No Admin: Carlos Quarentena e cand-2 aparecem normalmente
 	reqAdmin := httptest.NewRequest(http.MethodGet, "/admin/candidatos?q=Carlos", nil)
-	reqAdmin.Header.Set("Authorization", authHeader)
+	reqAdmin.AddCookie(cookie)
 	wAdmin := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAdmin, reqAdmin)
 
@@ -1857,8 +1840,7 @@ func TestAdminQuarantineIsolationFromPublicArea(t *testing.T) {
 }
 
 func TestAdminInvalidQueryParams(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	invalidPaths := []string{
 		"/admin/candidatos?page=-10&page_size=9999&grade=INVALID&status=UNKNOWN_STATUS&period=bizarre",
@@ -1869,7 +1851,7 @@ func TestAdminInvalidQueryParams(t *testing.T) {
 	for _, p := range invalidPaths {
 		t.Run(p, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, p, nil)
-			req.Header.Set("Authorization", authHeader)
+			req.AddCookie(cookie)
 			w := httptest.NewRecorder()
 			srv.Handler.ServeHTTP(w, req)
 
@@ -1885,12 +1867,11 @@ func TestAdminInvalidQueryParams(t *testing.T) {
 }
 
 func TestAdminSources_SourceTypeAllowlistAndSanitization(t *testing.T) {
-	srv, _ := setupAdminTestServerWithData(t, "admin")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	srv, _, cookie := setupAdminTestServerWithData(t, "admin")
 
 	// 1. Validar que o select renderiza exatamente todas as opções canônicas de store.GetAdminSourceTypeOptions()
 	reqAll := httptest.NewRequest(http.MethodGet, "/admin/fontes", nil)
-	reqAll.Header.Set("Authorization", authHeader)
+	reqAll.AddCookie(cookie)
 	wAll := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAll, reqAll)
 
@@ -1912,7 +1893,7 @@ func TestAdminSources_SourceTypeAllowlistAndSanitization(t *testing.T) {
 
 	// 2. Tipo permitido (article) deve filtrar corretamente, marcar selected e retornar 200
 	reqAllowed := httptest.NewRequest(http.MethodGet, "/admin/fontes?source_type=article", nil)
-	reqAllowed.Header.Set("Authorization", authHeader)
+	reqAllowed.AddCookie(cookie)
 	wAllowed := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wAllowed, reqAllowed)
 
@@ -1929,7 +1910,7 @@ func TestAdminSources_SourceTypeAllowlistAndSanitization(t *testing.T) {
 
 	// 3. Tipo desconhecido não deve causar 500 nem ser preservado no select
 	reqUnknown := httptest.NewRequest(http.MethodGet, "/admin/fontes?source_type=unknown_arbitrary_type", nil)
-	reqUnknown.Header.Set("Authorization", authHeader)
+	reqUnknown.AddCookie(cookie)
 	wUnknown := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wUnknown, reqUnknown)
 
@@ -1948,7 +1929,7 @@ func TestAdminSources_SourceTypeAllowlistAndSanitization(t *testing.T) {
 	// 4. Tipo excessivamente longo não causa 500 nem aparece no HTML
 	longType := strings.Repeat("evil_type_", 50)
 	reqLong := httptest.NewRequest(http.MethodGet, "/admin/fontes?source_type="+longType, nil)
-	reqLong.Header.Set("Authorization", authHeader)
+	reqLong.AddCookie(cookie)
 	wLong := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wLong, reqLong)
 
@@ -2025,14 +2006,16 @@ func TestAdminExternalLinks_SanitizationAndMaliciousURLDefense(t *testing.T) {
 
 	passwordHash := getTestAdminHashCost12(t)
 	cfg := &config.Config{
-		Port:              8080,
-		Env:               "test",
-		DBPath:            dbPath,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		AdminUser:         "admin",
-		AdminPasswordHash: passwordHash,
+		Port:                  8080,
+		Env:                   "test",
+		DBPath:                dbPath,
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
+		AdminUser:             "admin",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://example.com",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -2040,7 +2023,7 @@ func TestAdminExternalLinks_SanitizationAndMaliciousURLDefense(t *testing.T) {
 		t.Fatalf("falha ao criar servidor: %v", err)
 	}
 
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:password"))
+	cookie := createAdminTestCookie(t, db, "admin")
 
 	endpoints := []struct {
 		name string
@@ -2055,7 +2038,7 @@ func TestAdminExternalLinks_SanitizationAndMaliciousURLDefense(t *testing.T) {
 	for _, ep := range endpoints {
 		t.Run(ep.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, ep.path, nil)
-			req.Header.Set("Authorization", authHeader)
+			req.AddCookie(cookie)
 			w := httptest.NewRecorder()
 			srv.Handler.ServeHTTP(w, req)
 
@@ -2084,7 +2067,7 @@ func TestAdminExternalLinks_SanitizationAndMaliciousURLDefense(t *testing.T) {
 
 	// Validar que link válido contém target="_blank" e rel="noopener noreferrer"
 	reqCandValid := httptest.NewRequest(http.MethodGet, "/admin/candidatos/cand-valid", nil)
-	reqCandValid.Header.Set("Authorization", authHeader)
+	reqCandValid.AddCookie(cookie)
 	wCandValid := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wCandValid, reqCandValid)
 	bodyCandValid := wCandValid.Body.String()

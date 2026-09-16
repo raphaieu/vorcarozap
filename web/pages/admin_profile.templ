@@ -1,0 +1,124 @@
+package pages
+
+import (
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminProfile(vm AdminProfileVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Meu Perfil e Segurança — VorcaroZAP."/>
+			<title>Meu Perfil — Painel Administrativo — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("perfil")
+			<main class="container">
+				<section class="card" style="max-width: 680px; margin: 0 auto;">
+					<header style="margin-bottom: 1.5rem;">
+						<h1 class="page-title" style="margin: 0;">Meu Perfil e Segurança</h1>
+						<p class="page-subtitle" style="margin: 0.25rem 0 0; color: var(--color-text-muted);">
+							Informações da sua conta e gerenciamento de credenciais
+						</p>
+					</header>
+
+					if vm.FlashMessage != "" {
+						<div class="editorial-notice" style="border-left-color: #198754; background-color: #f0fdf4; color: #0f5132; margin-bottom: 1.25rem;">
+							<strong>Sucesso</strong>
+							<p style="margin-top: 0.25rem;">{ vm.FlashMessage }</p>
+						</div>
+					}
+
+					if vm.FlashError != "" {
+						<div class="editorial-notice" style="border-left-color: #dc3545; background-color: #fff5f5; color: #721c24; margin-bottom: 1.25rem;">
+							<strong>Aviso</strong>
+							<p style="margin-top: 0.25rem;">{ vm.FlashError }</p>
+						</div>
+					}
+
+					<div style="background-color: var(--color-card-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 1.25rem; margin-bottom: 1.75rem;">
+						<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+							<div>
+								<div style="font-size: 1.15rem; font-weight: 600;">{ vm.User.DisplayName }</div>
+								<div style="color: var(--color-text-muted); font-size: 0.9rem;">
+									Login: <code>{ vm.User.Username }</code>
+								</div>
+							</div>
+							<div style="display: flex; gap: 0.5rem; align-items: center;">
+								<span class="badge" style="background-color: var(--color-badge-bg); color: var(--color-badge-text);">
+									{ vm.User.RoleHuman }
+								</span>
+								if vm.User.MFAEnabled {
+									<span class="status-tag" style="background-color: #d1e7dd; color: #0f5132;">MFA Ativo</span>
+								} else {
+									<span class="status-tag" style="background-color: #fff3cd; color: #664d03;">MFA Pendente</span>
+								}
+							</div>
+						</div>
+					</div>
+
+					<!-- Formulário de Alteração de Senha -->
+					<div style="margin-bottom: 2rem;">
+						<h2 style="font-size: 1.15rem; margin-bottom: 0.5rem;">Alterar Minha Senha</h2>
+						<p style="color: var(--color-text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+							Informe sua senha atual e a nova senha desejada (mínimo de 10 caracteres).
+						</p>
+						<form method="POST" action="/admin/perfil/senha" novalidate>
+							<div class="form-group" style="margin-bottom: 1rem;">
+								<label for="current_password" style="display: block; font-weight: 600; margin-bottom: 0.35rem;">
+									Senha Atual
+								</label>
+								<input
+									type="password"
+									id="current_password"
+									name="current_password"
+									class="filter-input"
+									style="width: 100%; box-sizing: border-box;"
+									required
+									autocomplete="current-password"
+								/>
+							</div>
+
+							<div class="form-group" style="margin-bottom: 1.25rem;">
+								<label for="new_password" style="display: block; font-weight: 600; margin-bottom: 0.35rem;">
+									Nova Senha
+								</label>
+								<input
+									type="password"
+									id="new_password"
+									name="new_password"
+									class="filter-input"
+									style="width: 100%; box-sizing: border-box;"
+									required
+									autocomplete="new-password"
+								/>
+							</div>
+
+							<button type="submit" class="btn btn-primary btn-sm">Atualizar Senha</button>
+						</form>
+					</div>
+
+					<hr style="border: 0; border-top: 1px solid var(--color-border); margin: 1.5rem 0;"/>
+
+					<!-- Encerramento de Sessão -->
+					<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+						<div>
+							<h3 style="font-size: 1rem; margin: 0 0 0.25rem;">Encerrar Sessão</h3>
+							<p style="margin: 0; color: var(--color-text-muted); font-size: 0.85rem;">
+								Sair da área administrativa neste dispositivo.
+							</p>
+						</div>
+						<form method="POST" action="/admin/logout">
+							<button type="submit" class="btn btn-outline btn-sm" style="color: #dc3545; border-color: #dc3545;">
+								Sair do Sistema
+							</button>
+						</form>
+					</div>
+				</section>
+			</main>
+		</body>
+	</html>
+}

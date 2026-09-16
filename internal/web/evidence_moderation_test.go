@@ -3,7 +3,6 @@ package web_test
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,11 +12,12 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
 
-func setupEvidenceModerationTestServer(t *testing.T) (*http.Server, *sql.DB, string, string) {
+func setupEvidenceModerationTestServer(t *testing.T) (*http.Server, *sql.DB, string, *http.Cookie) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "evidence_moderation_test.db")
@@ -96,11 +96,12 @@ func setupEvidenceModerationTestServer(t *testing.T) (*http.Server, *sql.DB, str
 	allowedOrigin := "http://localhost:8090"
 
 	cfg := &config.Config{
-		Port:               8090,
-		PublicDataCutoff:   "2026-09-03",
-		AdminUser:          "admin_editor",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: allowedOrigin,
+		Port:                  8090,
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    allowedOrigin,
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -108,8 +109,8 @@ func setupEvidenceModerationTestServer(t *testing.T) (*http.Server, *sql.DB, str
 		t.Fatalf("falha ao instanciar web server: %v", err)
 	}
 
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin_editor:password"))
-	return srv, db, allowedOrigin, authHeader
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
+	return srv, db, allowedOrigin, sessionCookie
 }
 
 func getEvidenceSourceUpdatedAt(t *testing.T, db *sql.DB, esID string) string {
@@ -123,7 +124,7 @@ func getEvidenceSourceUpdatedAt(t *testing.T, db *sql.DB, esID string) string {
 }
 
 func TestAdminEvidenceSourceDetail_AuthAndRender(t *testing.T) {
-	srv, _, _, authHeader := setupEvidenceModerationTestServer(t)
+	srv, _, _, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	// 1. Acesso não autenticado retorna 401
 	reqUnauth := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-single-1", nil)
@@ -135,7 +136,7 @@ func TestAdminEvidenceSourceDetail_AuthAndRender(t *testing.T) {
 
 	// 2. Acesso autenticado a ID existente retorna 200 OK com HTML completo
 	req := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-single-1", nil)
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, req)
 
@@ -165,7 +166,7 @@ func TestAdminEvidenceSourceDetail_AuthAndRender(t *testing.T) {
 
 	// 3. ID inexistente retorna 404 Not Found
 	req404 := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-inexistente", nil)
-	req404.Header.Set("Authorization", authHeader)
+	req404.AddCookie(sessionCookie)
 	rec404 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec404, req404)
 
@@ -175,11 +176,11 @@ func TestAdminEvidenceSourceDetail_AuthAndRender(t *testing.T) {
 }
 
 func TestAdminEvidenceSourceDetail_WarningOnLastSupport(t *testing.T) {
-	srv, _, _, authHeader := setupEvidenceModerationTestServer(t)
+	srv, _, _, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	// 1. es-single-1 é o único suporte ativo de clm-single-sup (published) -> deve exibir alerta de último suporte
 	req1 := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-single-1", nil)
-	req1.Header.Set("Authorization", authHeader)
+	req1.AddCookie(sessionCookie)
 	rec1 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec1, req1)
 
@@ -193,7 +194,7 @@ func TestAdminEvidenceSourceDetail_WarningOnLastSupport(t *testing.T) {
 
 	// 2. es-multi-1 tem outro suporte ativo (es-multi-2) -> NÃO deve exibir alerta de último suporte
 	req2 := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-multi-1", nil)
-	req2.Header.Set("Authorization", authHeader)
+	req2.AddCookie(sessionCookie)
 	rec2 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec2, req2)
 
@@ -207,7 +208,7 @@ func TestAdminEvidenceSourceDetail_WarningOnLastSupport(t *testing.T) {
 }
 
 func TestAdminModerateEvidenceSource_CSRFProtection(t *testing.T) {
-	srv, db, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, db, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 	esUpdatedAt := getEvidenceSourceUpdatedAt(t, db, "es-single-1")
 
 	formData := url.Values{
@@ -218,7 +219,7 @@ func TestAdminModerateEvidenceSource_CSRFProtection(t *testing.T) {
 
 	// 1. Requisição sem cabeçalho Origin -> 403 Forbidden
 	reqNoOrigin := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formData))
-	reqNoOrigin.Header.Set("Authorization", authHeader)
+	reqNoOrigin.AddCookie(sessionCookie)
 	reqNoOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recNoOrigin := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(recNoOrigin, reqNoOrigin)
@@ -229,7 +230,7 @@ func TestAdminModerateEvidenceSource_CSRFProtection(t *testing.T) {
 
 	// 2. Requisição com Origin divergente -> 403 Forbidden
 	reqBadOrigin := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formData))
-	reqBadOrigin.Header.Set("Authorization", authHeader)
+	reqBadOrigin.AddCookie(sessionCookie)
 	reqBadOrigin.Header.Set("Origin", "http://evil.com")
 	reqBadOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recBadOrigin := httptest.NewRecorder()
@@ -241,7 +242,7 @@ func TestAdminModerateEvidenceSource_CSRFProtection(t *testing.T) {
 
 	// 3. Requisição com Content-Type inválido -> 415 Unsupported Media Type
 	reqBadCT := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formData))
-	reqBadCT.Header.Set("Authorization", authHeader)
+	reqBadCT.AddCookie(sessionCookie)
 	reqBadCT.Header.Set("Origin", allowedOrigin)
 	reqBadCT.Header.Set("Content-Type", "application/json")
 	recBadCT := httptest.NewRecorder()
@@ -260,7 +261,7 @@ func TestAdminModerateEvidenceSource_CSRFProtection(t *testing.T) {
 	}.Encode()
 
 	reqLarge := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(largeData))
-	reqLarge.Header.Set("Authorization", authHeader)
+	reqLarge.AddCookie(sessionCookie)
 	reqLarge.Header.Set("Origin", allowedOrigin)
 	reqLarge.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recLarge := httptest.NewRecorder()
@@ -272,7 +273,7 @@ func TestAdminModerateEvidenceSource_CSRFProtection(t *testing.T) {
 }
 
 func TestAdminModerateEvidenceSource_RejectLastSupport_QuarantinesClaimAndIsolatesPublicBoundary(t *testing.T) {
-	srv, db, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, db, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	// Verificar visibilidade pública antes da moderação
 	reqPubBefore := httptest.NewRequest(http.MethodGet, "/pessoas/marcos-investigado", nil)
@@ -295,7 +296,7 @@ func TestAdminModerateEvidenceSource_RejectLastSupport_QuarantinesClaimAndIsolat
 	}.Encode()
 
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formData))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", allowedOrigin)
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recMod := httptest.NewRecorder()
@@ -368,7 +369,7 @@ func TestAdminModerateEvidenceSource_RejectLastSupport_QuarantinesClaimAndIsolat
 }
 
 func TestAdminModerateEvidenceSource_RejectNonLastSupport_ClaimRemainsPublished(t *testing.T) {
-	srv, db, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, db, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	es1UpdatedAt := getEvidenceSourceUpdatedAt(t, db, "es-multi-1")
 
@@ -379,7 +380,7 @@ func TestAdminModerateEvidenceSource_RejectNonLastSupport_ClaimRemainsPublished(
 	}.Encode()
 
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-multi-1/moderate", strings.NewReader(formData))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", allowedOrigin)
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recMod := httptest.NewRecorder()
@@ -405,7 +406,7 @@ func TestAdminModerateEvidenceSource_RejectNonLastSupport_ClaimRemainsPublished(
 }
 
 func TestAdminModerateEvidenceSource_Restore_KeepsClaimInQuarantine(t *testing.T) {
-	srv, db, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, db, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	esQuarUpdatedAt := getEvidenceSourceUpdatedAt(t, db, "es-quar-1")
 
@@ -416,7 +417,7 @@ func TestAdminModerateEvidenceSource_Restore_KeepsClaimInQuarantine(t *testing.T
 	}.Encode()
 
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-quar-1/moderate", strings.NewReader(formData))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", allowedOrigin)
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recMod := httptest.NewRecorder()
@@ -448,7 +449,7 @@ func TestAdminModerateEvidenceSource_Restore_KeepsClaimInQuarantine(t *testing.T
 }
 
 func TestAdminModerateEvidenceSource_OCC_Conflict(t *testing.T) {
-	srv, _, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, _, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	// 1. expected_updated_at ausente -> 400 Bad Request
 	formNoVersion := url.Values{
@@ -457,7 +458,7 @@ func TestAdminModerateEvidenceSource_OCC_Conflict(t *testing.T) {
 	}.Encode()
 
 	reqNoVersion := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formNoVersion))
-	reqNoVersion.Header.Set("Authorization", authHeader)
+	reqNoVersion.AddCookie(sessionCookie)
 	reqNoVersion.Header.Set("Origin", allowedOrigin)
 	reqNoVersion.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recNoVersion := httptest.NewRecorder()
@@ -475,7 +476,7 @@ func TestAdminModerateEvidenceSource_OCC_Conflict(t *testing.T) {
 	}.Encode()
 
 	reqStale := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formStale))
-	reqStale.Header.Set("Authorization", authHeader)
+	reqStale.AddCookie(sessionCookie)
 	reqStale.Header.Set("Origin", allowedOrigin)
 	reqStale.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recStale := httptest.NewRecorder()
@@ -487,7 +488,7 @@ func TestAdminModerateEvidenceSource_OCC_Conflict(t *testing.T) {
 }
 
 func TestAdminModerateEvidenceSource_ValidationErrors(t *testing.T) {
-	srv, db, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, db, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 	esUpdatedAt := getEvidenceSourceUpdatedAt(t, db, "es-single-1")
 
 	tests := []struct {
@@ -549,7 +550,7 @@ func TestAdminModerateEvidenceSource_ValidationErrors(t *testing.T) {
 			}.Encode()
 
 			req := httptest.NewRequest(http.MethodPost, "/admin/evidencias/"+tt.targetID+"/moderate", strings.NewReader(formData))
-			req.Header.Set("Authorization", authHeader)
+			req.AddCookie(sessionCookie)
 			req.Header.Set("Origin", allowedOrigin)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			rec := httptest.NewRecorder()
@@ -563,7 +564,7 @@ func TestAdminModerateEvidenceSource_ValidationErrors(t *testing.T) {
 }
 
 func TestAdminModerateEvidenceSource_GlobalSourceIntact(t *testing.T) {
-	srv, db, allowedOrigin, authHeader := setupEvidenceModerationTestServer(t)
+	srv, db, allowedOrigin, sessionCookie := setupEvidenceModerationTestServer(t)
 	esUpdatedAt := getEvidenceSourceUpdatedAt(t, db, "es-single-1")
 
 	// Capturar dados da source src-test-1 antes
@@ -581,7 +582,7 @@ func TestAdminModerateEvidenceSource_GlobalSourceIntact(t *testing.T) {
 	}.Encode()
 
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/evidencias/es-single-1/moderate", strings.NewReader(formData))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", allowedOrigin)
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recMod := httptest.NewRecorder()
@@ -605,10 +606,10 @@ func TestAdminModerateEvidenceSource_GlobalSourceIntact(t *testing.T) {
 }
 
 func TestAdminModerateEvidenceSource_NoSecretLeakage(t *testing.T) {
-	srv, _, _, authHeader := setupEvidenceModerationTestServer(t)
+	srv, _, _, sessionCookie := setupEvidenceModerationTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/evidencias/es-single-1", nil)
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, req)
 

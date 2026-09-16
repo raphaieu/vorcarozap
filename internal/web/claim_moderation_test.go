@@ -3,7 +3,6 @@ package web_test
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,11 +13,12 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
 
-func setupModerationTestServer(t *testing.T) (*http.Server, *sql.DB, string) {
+func setupModerationTestServer(t *testing.T) (*http.Server, *sql.DB, *http.Cookie) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "moderation_test.db")
@@ -99,16 +99,17 @@ func setupModerationTestServer(t *testing.T) (*http.Server, *sql.DB, string) {
 	allowedOrigin := "http://localhost:8090"
 
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "test",
-		DBPath:             dbPath,
-		PublicDataCutoff:   "2026-09-03",
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        60 * time.Second,
-		AdminUser:          "admin_editor",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: allowedOrigin,
+		Port:                  8080,
+		Env:                   "test",
+		DBPath:                dbPath,
+		PublicDataCutoff:      "2026-09-03",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    allowedOrigin,
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -116,12 +117,12 @@ func setupModerationTestServer(t *testing.T) (*http.Server, *sql.DB, string) {
 		t.Fatalf("falha ao criar servidor web: %v", err)
 	}
 
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin_editor:password"))
-	return srv, db, authHeader
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
+	return srv, db, sessionCookie
 }
 
 func TestAdminClaimDetail_AuthenticationAndRendering(t *testing.T) {
-	srv, _, authHeader := setupModerationTestServer(t)
+	srv, _, sessionCookie := setupModerationTestServer(t)
 
 	// 1. Acesso não autenticado -> 401
 	reqUnauth := httptest.NewRequest(http.MethodGet, "/admin/claims/clm-quar-valid", nil)
@@ -133,7 +134,7 @@ func TestAdminClaimDetail_AuthenticationAndRendering(t *testing.T) {
 
 	// 2. Claim inexistente -> 404
 	req404 := httptest.NewRequest(http.MethodGet, "/admin/claims/clm-inexistente", nil)
-	req404.Header.Set("Authorization", authHeader)
+	req404.AddCookie(sessionCookie)
 	w404 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w404, req404)
 	if w404.Code != http.StatusNotFound {
@@ -142,7 +143,7 @@ func TestAdminClaimDetail_AuthenticationAndRendering(t *testing.T) {
 
 	// 3. Claim existente em quarentena com suporte ativo -> 200 e exibe botão Aprovar
 	reqQuar := httptest.NewRequest(http.MethodGet, "/admin/claims/clm-quar-valid", nil)
-	reqQuar.Header.Set("Authorization", authHeader)
+	reqQuar.AddCookie(sessionCookie)
 	wQuar := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wQuar, reqQuar)
 	if wQuar.Code != http.StatusOK {
@@ -161,7 +162,7 @@ func TestAdminClaimDetail_AuthenticationAndRendering(t *testing.T) {
 
 	// 4. Claim em quarentena sem suporte ativo -> botão aprovar deve estar desabilitado
 	reqNoSup := httptest.NewRequest(http.MethodGet, "/admin/claims/clm-quar-nosup", nil)
-	reqNoSup.Header.Set("Authorization", authHeader)
+	reqNoSup.AddCookie(sessionCookie)
 	wNoSup := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wNoSup, reqNoSup)
 	if wNoSup.Code != http.StatusOK {
@@ -174,7 +175,7 @@ func TestAdminClaimDetail_AuthenticationAndRendering(t *testing.T) {
 }
 
 func TestAdminModerateClaim_CSRFProtection(t *testing.T) {
-	srv, _, authHeader := setupModerationTestServer(t)
+	srv, _, sessionCookie := setupModerationTestServer(t)
 
 	form := url.Values{
 		"action": {"reject"},
@@ -183,7 +184,7 @@ func TestAdminModerateClaim_CSRFProtection(t *testing.T) {
 
 	// 1. Sem header Origin -> 403 Forbidden
 	reqNoOrigin := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-	reqNoOrigin.Header.Set("Authorization", authHeader)
+	reqNoOrigin.AddCookie(sessionCookie)
 	reqNoOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wNoOrigin := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wNoOrigin, reqNoOrigin)
@@ -193,7 +194,7 @@ func TestAdminModerateClaim_CSRFProtection(t *testing.T) {
 
 	// 2. Origin divergente -> 403 Forbidden
 	reqBadOrigin := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-	reqBadOrigin.Header.Set("Authorization", authHeader)
+	reqBadOrigin.AddCookie(sessionCookie)
 	reqBadOrigin.Header.Set("Origin", "http://evil-attacker.com")
 	reqBadOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wBadOrigin := httptest.NewRecorder()
@@ -204,7 +205,7 @@ func TestAdminModerateClaim_CSRFProtection(t *testing.T) {
 
 	// 3. Content-Type inválido (JSON) -> 415 Unsupported Media Type
 	reqBadCT := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(`{"action":"reject","reason":"teste"}`))
-	reqBadCT.Header.Set("Authorization", authHeader)
+	reqBadCT.AddCookie(sessionCookie)
 	reqBadCT.Header.Set("Origin", "http://localhost:8090")
 	reqBadCT.Header.Set("Content-Type", "application/json")
 	wBadCT := httptest.NewRecorder()
@@ -215,7 +216,7 @@ func TestAdminModerateClaim_CSRFProtection(t *testing.T) {
 }
 
 func TestAdminModerateClaim_ApproveWorkflow(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 	ctx := context.Background()
 
 	var initialUpdatedAt string
@@ -231,7 +232,7 @@ func TestAdminModerateClaim_ApproveWorkflow(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -273,7 +274,7 @@ func TestAdminModerateClaim_ApproveWorkflow(t *testing.T) {
 }
 
 func TestAdminModerateClaim_ApproveWithoutSupportsBlocked(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 	ctx := context.Background()
 
 	var initialUpdatedAt string
@@ -289,7 +290,7 @@ func TestAdminModerateClaim_ApproveWithoutSupportsBlocked(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-nosup/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -305,7 +306,7 @@ func TestAdminModerateClaim_ApproveWithoutSupportsBlocked(t *testing.T) {
 }
 
 func TestAdminModerateClaim_RejectPublished_PreservesCandidateBlock(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 	ctx := context.Background()
 
 	var initialUpdatedAt string
@@ -321,7 +322,7 @@ func TestAdminModerateClaim_RejectPublished_PreservesCandidateBlock(t *testing.T
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-pub-active/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -355,7 +356,7 @@ func TestAdminModerateClaim_RejectPublished_PreservesCandidateBlock(t *testing.T
 }
 
 func TestAdminModerateClaim_RestoreToQuarantineOnly(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 	ctx := context.Background()
 
 	var initialUpdatedAt string
@@ -371,7 +372,7 @@ func TestAdminModerateClaim_RestoreToQuarantineOnly(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-rej-prev/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -390,7 +391,7 @@ func TestAdminModerateClaim_RestoreToQuarantineOnly(t *testing.T) {
 }
 
 func TestAdminModerateClaim_MissingExpectedVersionReturns400(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 	ctx := context.Background()
 
 	cases := []struct {
@@ -425,7 +426,7 @@ func TestAdminModerateClaim_MissingExpectedVersionReturns400(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(tc.form.Encode()))
-			req.Header.Set("Authorization", authHeader)
+			req.AddCookie(sessionCookie)
 			req.Header.Set("Origin", "http://localhost:8090")
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			w := httptest.NewRecorder()
@@ -454,7 +455,7 @@ func TestAdminModerateClaim_MissingExpectedVersionReturns400(t *testing.T) {
 }
 
 func TestAdminModerateClaim_ArchiveActionForbidden(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 
 	ctx := context.Background()
 	var initialStatus, initialUpdatedAt string
@@ -470,7 +471,7 @@ func TestAdminModerateClaim_ArchiveActionForbidden(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -497,7 +498,7 @@ func TestAdminModerateClaim_ArchiveActionForbidden(t *testing.T) {
 }
 
 func TestAdminModerateClaim_ConcurrencyConflict(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 
 	ctx := context.Background()
 	var initialUpdatedAt string
@@ -519,7 +520,7 @@ func TestAdminModerateClaim_ConcurrencyConflict(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -533,7 +534,7 @@ func TestAdminModerateClaim_ConcurrencyConflict(t *testing.T) {
 }
 
 func TestAdminModerateClaim_SimultaneousRequestsConflict(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 
 	ctx := context.Background()
 	var initialUpdatedAt string
@@ -557,7 +558,7 @@ func TestAdminModerateClaim_SimultaneousRequestsConflict(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-			req.Header.Set("Authorization", authHeader)
+			req.AddCookie(sessionCookie)
 			req.Header.Set("Origin", "http://localhost:8090")
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			w := httptest.NewRecorder()
@@ -602,7 +603,7 @@ func TestAdminModerateClaim_SimultaneousRequestsConflict(t *testing.T) {
 }
 
 func TestAdminModerateClaim_PayloadTooLarge(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 
 	// Gera corpo com mais de 64 KiB
 	largeReason := strings.Repeat("A", 70*1024)
@@ -612,7 +613,7 @@ func TestAdminModerateClaim_PayloadTooLarge(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-quar-valid/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -639,7 +640,7 @@ func TestAdminModerateClaim_PayloadTooLarge(t *testing.T) {
 }
 
 func TestAdminModerateClaim_CanonicalVsDuplicateRejection(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 
 	ctx := context.Background()
 	// Insere candidato duplicata associado ao mesmo claim
@@ -673,7 +674,7 @@ func TestAdminModerateClaim_CanonicalVsDuplicateRejection(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-pub-active/moderate", strings.NewReader(form.Encode()))
-	req.Header.Set("Authorization", authHeader)
+	req.AddCookie(sessionCookie)
 	req.Header.Set("Origin", "http://localhost:8090")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -841,7 +842,7 @@ func TestAdminCSRFMiddleware_IsolatedUnit(t *testing.T) {
 }
 
 func TestAdminModerateClaim_PublicBoundaryIsolation(t *testing.T) {
-	srv, db, authHeader := setupModerationTestServer(t)
+	srv, db, sessionCookie := setupModerationTestServer(t)
 	ctx := context.Background()
 
 	// 1. Verifica que a página de Marcos Senador (/pessoas/marcos-senador) antes da moderação exibe a alegação publicada
@@ -868,7 +869,7 @@ func TestAdminModerateClaim_PublicBoundaryIsolation(t *testing.T) {
 		"expected_updated_at": {initialUpdatedAt},
 	}
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-pub-active/moderate", strings.NewReader(form.Encode()))
-	reqMod.Header.Set("Authorization", authHeader)
+	reqMod.AddCookie(sessionCookie)
 	reqMod.Header.Set("Origin", "http://localhost:8090")
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wMod := httptest.NewRecorder()

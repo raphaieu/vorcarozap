@@ -8,6 +8,50 @@ import (
 	"database/sql"
 )
 
+type AdminAuditLog struct {
+	ID            string         `json:"id"`
+	UserID        sql.NullString `json:"user_id"`
+	Username      string         `json:"username"`
+	Action        string         `json:"action"`
+	ActorID       sql.NullString `json:"actor_id"`
+	ActorUsername string         `json:"actor_username"`
+	TargetID      string         `json:"target_id"`
+	Details       string         `json:"details"`
+	IpAddress     string         `json:"ip_address"`
+	CreatedAt     string         `json:"created_at"`
+}
+
+type AdminSession struct {
+	ID             string `json:"id"`
+	UserID         string `json:"user_id"`
+	MfaVerified    int64  `json:"mfa_verified"`
+	IpAddress      string `json:"ip_address"`
+	UserAgent      string `json:"user_agent"`
+	ExpiresAt      string `json:"expires_at"`
+	LastActivityAt string `json:"last_activity_at"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type AdminUser struct {
+	ID                        string         `json:"id"`
+	Username                  string         `json:"username"`
+	DisplayName               string         `json:"display_name"`
+	PasswordHash              string         `json:"password_hash"`
+	Role                      string         `json:"role"`
+	Status                    string         `json:"status"`
+	FailedLoginAttempts       int64          `json:"failed_login_attempts"`
+	MfaFailedAttempts         int64          `json:"mfa_failed_attempts"`
+	LockedUntil               sql.NullString `json:"locked_until"`
+	MfaEnabled                int64          `json:"mfa_enabled"`
+	MfaSecretEncrypted        string         `json:"mfa_secret_encrypted"`
+	MfaPendingSecretEncrypted string         `json:"mfa_pending_secret_encrypted"`
+	MfaPendingExpiresAt       sql.NullString `json:"mfa_pending_expires_at"`
+	MfaEnrolledAt             sql.NullString `json:"mfa_enrolled_at"`
+	LastLoginAt               sql.NullString `json:"last_login_at"`
+	CreatedAt                 string         `json:"created_at"`
+	UpdatedAt                 string         `json:"updated_at"`
+}
+
 type Case struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/raphaieu/vorcarozap/internal/config"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
@@ -80,15 +81,16 @@ func setupEditorialHistoryTestServer(t *testing.T) (*http.Server, *sql.DB) {
 
 	passwordHash := getTestAdminHashCost12(t)
 	cfg := &config.Config{
-		Port:               8080,
-		Env:                "test",
-		PublicDataCutoff:   "2026-09-03",
-		AdminUser:          "admin_editor",
-		AdminPasswordHash:  passwordHash,
-		AdminAllowedOrigin: "http://example.com",
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        60 * time.Second,
+		Port:                  8080,
+		Env:                   "test",
+		PublicDataCutoff:      "2026-09-03",
+		AdminUser:             "admin_editor",
+		AdminPasswordHash:     passwordHash,
+		AdminAllowedOrigin:    "http://example.com",
+		AdminMFAEncryptionKey: "12345678901234567890123456789012",
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           60 * time.Second,
 	}
 
 	srv, err := web.NewServer(cfg, db)
@@ -175,7 +177,8 @@ func TestPublicDocumentDetail_EditorialHistory_Rendering(t *testing.T) {
 }
 
 func TestPublicEditorialHistory_ImmediateConsistencyAfterModeration(t *testing.T) {
-	srv, _ := setupEditorialHistoryTestServer(t)
+	srv, db := setupEditorialHistoryTestServer(t)
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
 
 	// 1. Executa rejeição de claim via POST no admin (clm-hist-mod possui aprovação prévia)
 	form := url.Values{}
@@ -186,7 +189,7 @@ func TestPublicEditorialHistory_ImmediateConsistencyAfterModeration(t *testing.T
 	reqMod := httptest.NewRequest(http.MethodPost, "/admin/claims/clm-hist-mod/moderate", strings.NewReader(form.Encode()))
 	reqMod.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	reqMod.Header.Set("Origin", "http://example.com")
-	reqMod.Header.Set("Authorization", basicAuthHeader("admin_editor", "password"))
+	reqMod.AddCookie(sessionCookie)
 
 	wMod := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(wMod, reqMod)
@@ -218,10 +221,11 @@ func TestPublicEditorialHistory_ImmediateConsistencyAfterModeration(t *testing.T
 }
 
 func TestAdminDetail_VisualDifferentiationOfAdminAudit(t *testing.T) {
-	srv, _ := setupEditorialHistoryTestServer(t)
+	srv, db := setupEditorialHistoryTestServer(t)
+	sessionCookie := createSessionCookieForUser(t, db, "admin_editor", domain.RoleAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/claims/clm-hist-mod", nil)
-	req.Header.Set("Authorization", basicAuthHeader("admin_editor", "password"))
+	req.AddCookie(sessionCookie)
 	w := httptest.NewRecorder()
 
 	srv.Handler.ServeHTTP(w, req)
