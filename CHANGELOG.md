@@ -2,6 +2,28 @@
 
 Todas as alterações notáveis deste projeto são registradas neste documento. O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [Não lançado] — VZ-025: Módulo de Contraditório Estruturado e Submissão Pública de Manifestações de Defesa
+
+### Adicionado
+- **Módulo de Contraditório Estruturado e Submissão Pública ([ADR-024](docs/adr/ADR-024-contraditorio-estruturado-e-submissao-publica-de-manifestacoes.md)):**
+  - Fluxo público e auditável para submissão de manifestações e defesas formais (`rebuttal`, `correction`, `clarification`, `additional_context`) associadas a alegações documentadas existentes (`claims`).
+  - Formulário público SSR acessível em `GET /manifestar?claim_id={id}` e submissão via `POST /manifestar` com feedback visual imediato e preservação de estado em caso de erro de validação.
+  - Rate limiting nativo em Go por IP (`internal/contradiction/ratelimit.go`) aplicando limites conservadores (5 submissões / 10 minutos por IP) e proteção estrita contra HTML injection e scripts maliciosos.
+  - Quarentena obrigatória incondicional (`status = 'quarantined'`) para toda manifestação submetida publicamente, garantindo que nada se torne público sem deliberação editorial explícita.
+  - Blindagem do modelo editorial e métricas: a aprovação de uma manifestação de defesa não altera alegações, evidências, fontes, graus, disposições ou elegibilidade métrica (`metric_eligible`).
+  - Painel administrativo SSR completo para triagem e deliberação (`GET /admin/manifestacoes`, `GET /admin/manifestacoes/{id}` e `POST /admin/manifestacoes/{id}/moderate`) com paginação, filtros por status/tipo/período e ações editoriais controladas (`accept`, `reject`, `review`, `archive`).
+  - Controle Otimista de Concorrência (OCC) com `expected_updated_at` e transações atômicas no SQLite WAL com retorno determinístico de `409 Conflict`.
+  - Isolamento estrito de privacidade: dados de contato (`contact_info`), identidade do operador (`actor`), justificativas internas (`reason`) e metadados técnicos são acessíveis exclusivamente a operadores autenticados no `/admin` e estritamente redigidos/omitidos da visualização pública em `/pessoas/{slug}`.
+  - Apresentação pública sob a aba de cada alegação vinculada em `/pessoas/{slug}` com distintivo visual institucional de status e tipo de manifestação.
+- **Persistência e Migrations:**
+  - Migration `00010_defense_statements.sql` criando as tabelas relacionais `defense_statements` e `defense_statement_decisions` com constraints de integridade e índices de consulta.
+  - Queries SQLC tipadas em `internal/store/queries/defense_statements.sql` e métodos de repositório em `internal/store/defense_statements.go`.
+- **Suíte de Testes Automatizados:**
+  - Testes de domínio em `internal/domain/types_test.go` para validações de payload, tipos, transições de estado e invariantes de manifestação.
+  - Testes de concorrência, integridade e rate limiting em `internal/contradiction/service_test.go` e `internal/contradiction/ratelimit_test.go`.
+  - Testes de persistência e rollback de migration em `internal/store/defense_statements_test.go` e `internal/store/editorial_test.go`.
+  - Testes de integração HTTP e renderização SSR em `internal/web/statement_handlers_test.go` verificando fluxo público, rate limiting, anti-XSS, autenticação básica no `/admin`, deliberação com OCC e segregação de privacidade.
+
 ## [Não lançado] — VZ-024: Histórico Público de Alterações Editoriais e Trilha de Auditoria
 
 ### Adicionado

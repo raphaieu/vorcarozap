@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -495,4 +496,371 @@ type PublicEditorialEvent struct {
 	SourceID         string                    `json:"source_id,omitempty"`
 	SourceTitle      string                    `json:"source_title,omitempty"`
 	Locator          string                    `json:"locator,omitempty"`
+}
+
+// StatementType define a natureza estruturada de uma manifestação de defesa ou contraditório (VZ-025).
+type StatementType string
+
+const (
+	StatementTypeCorrection        StatementType = "correction"
+	StatementTypeRebuttal          StatementType = "rebuttal"
+	StatementTypeClarification     StatementType = "clarification"
+	StatementTypeAdditionalContext StatementType = "additional_context"
+)
+
+// CanonicalStatementTypes enumera todos os tipos canônicos de manifestação.
+var CanonicalStatementTypes = []StatementType{
+	StatementTypeCorrection,
+	StatementTypeRebuttal,
+	StatementTypeClarification,
+	StatementTypeAdditionalContext,
+}
+
+func (t StatementType) IsValid() bool {
+	switch t {
+	case StatementTypeCorrection, StatementTypeRebuttal, StatementTypeClarification, StatementTypeAdditionalContext:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label retorna a descrição legível em português do tipo de manifestação.
+func (t StatementType) Label() string {
+	switch t {
+	case StatementTypeCorrection:
+		return "Correção / Retificação Factual"
+	case StatementTypeRebuttal:
+		return "Contestação / Defesa Formal"
+	case StatementTypeClarification:
+		return "Esclarecimento Institucional"
+	case StatementTypeAdditionalContext:
+		return "Contexto Adicional / Complemento"
+	default:
+		return string(t)
+	}
+}
+
+// StatementStatus define o estado operacional e editorial de uma manifestação (VZ-025).
+type StatementStatus string
+
+const (
+	StatementStatusQuarantined StatementStatus = "quarantined"
+	StatementStatusUnderReview StatementStatus = "under_review"
+	StatementStatusAccepted    StatementStatus = "accepted"
+	StatementStatusRejected    StatementStatus = "rejected"
+	StatementStatusArchived    StatementStatus = "archived"
+)
+
+func (s StatementStatus) IsValid() bool {
+	switch s {
+	case StatementStatusQuarantined, StatementStatusUnderReview, StatementStatusAccepted,
+		StatementStatusRejected, StatementStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label retorna a descrição amigável em português do estado da manifestação.
+func (s StatementStatus) Label() string {
+	switch s {
+	case StatementStatusQuarantined:
+		return "Quarentena (Pendente de Análise)"
+	case StatementStatusUnderReview:
+		return "Em Revisão Editorial"
+	case StatementStatusAccepted:
+		return "Aceita e Publicada"
+	case StatementStatusRejected:
+		return "Rejeitada"
+	case StatementStatusArchived:
+		return "Arquivada"
+	default:
+		return string(s)
+	}
+}
+
+// StatementModerationAction define as ações permitidas na moderação de manifestações (VZ-025).
+type StatementModerationAction string
+
+const (
+	StatementActionAccept  StatementModerationAction = "accept"
+	StatementActionReject  StatementModerationAction = "reject"
+	StatementActionReview  StatementModerationAction = "review"
+	StatementActionArchive StatementModerationAction = "archive"
+)
+
+func (a StatementModerationAction) IsValid() bool {
+	switch a {
+	case StatementActionAccept, StatementActionReject, StatementActionReview, StatementActionArchive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label retorna o rótulo descritivo da ação de moderação em português.
+func (a StatementModerationAction) Label() string {
+	switch a {
+	case StatementActionAccept:
+		return "Aceitar e Publicar"
+	case StatementActionReject:
+		return "Rejeitar Manifestação"
+	case StatementActionReview:
+		return "Colocar em Revisão"
+	case StatementActionArchive:
+		return "Arquivar Manifestação"
+	default:
+		return string(a)
+	}
+}
+
+// Constantes de limites para validação de manifestações de contraditório (VZ-025).
+const (
+	MaxStatementTitleLength       = 200
+	MinStatementContentLength     = 10
+	MaxStatementContentLength     = 5000
+	MaxStatementSourceURLLength   = 1000
+	MaxStatementContactInfoLength = 255
+	MaxStatementReasonLength      = 1000
+	MaxStatementActorLength       = 128
+)
+
+// DefenseStatementSubmission encapsula os dados brutos submetidos para uma manifestação.
+type DefenseStatementSubmission struct {
+	ClaimID       string        `json:"claim_id"`
+	StatementType StatementType `json:"statement_type"`
+	Title         string        `json:"title"`
+	Content       string        `json:"content"`
+	SourceURL     string        `json:"source_url"`
+	ContactInfo   string        `json:"contact_info"`
+}
+
+// PublicDefenseStatement representa a projeção pública e segura de uma manifestação aceita.
+// O campo de contato (contact_info) NUNCA é exposto neste modelo.
+type PublicDefenseStatement struct {
+	ID                 string        `json:"id"`
+	ClaimID            string        `json:"claim_id"`
+	StatementType      StatementType `json:"statement_type"`
+	StatementTypeLabel string        `json:"statement_type_label"`
+	Title              string        `json:"title"`
+	Content            string        `json:"content"`
+	SourceURL          string        `json:"source_url,omitempty"`
+	CreatedAt          string        `json:"created_at"`
+}
+
+// DefenseStatementDecision representa uma deliberação imutável de moderação sobre uma manifestação.
+type DefenseStatementDecision struct {
+	ID          string                    `json:"id"`
+	StatementID string                    `json:"statement_id"`
+	Action      StatementModerationAction `json:"action"`
+	ActionLabel string                    `json:"action_label"`
+	Reason      string                    `json:"reason"`
+	Actor       string                    `json:"actor"`
+	CreatedAt   string                    `json:"created_at"`
+}
+
+// AdminDefenseStatementDetail representa o modelo administrativo completo para inspeção e deliberação.
+type AdminDefenseStatementDetail struct {
+	ID                 string                     `json:"id"`
+	ClaimID            string                     `json:"claim_id"`
+	ClaimProposition   string                     `json:"claim_proposition"`
+	ClaimGrade         EvidenceGrade              `json:"claim_grade"`
+	ClaimStatus        ClaimStatus                `json:"claim_status"`
+	SubjectEntityName  string                     `json:"subject_entity_name"`
+	SubjectEntitySlug  string                     `json:"subject_entity_slug"`
+	StatementType      StatementType              `json:"statement_type"`
+	StatementTypeLabel string                     `json:"statement_type_label"`
+	Title              string                     `json:"title"`
+	Content            string                     `json:"content"`
+	SourceURL          string                     `json:"source_url"`
+	ContactInfo        string                     `json:"contact_info"` // Dado confidencial exclusivo do admin
+	Status             StatementStatus            `json:"status"`
+	StatusLabel        string                     `json:"status_label"`
+	CreatedAt          string                     `json:"created_at"`
+	UpdatedAt          string                     `json:"updated_at"`
+	Decisions          []DefenseStatementDecision `json:"decisions"`
+}
+
+// ValidateStatementSubmission valida e normaliza as entradas de uma submissão de manifestação.
+func ValidateStatementSubmission(sub DefenseStatementSubmission) (DefenseStatementSubmission, error) {
+	claimID := strings.TrimSpace(sub.ClaimID)
+	if claimID == "" {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: claim_id é obrigatório")
+	}
+
+	if !sub.StatementType.IsValid() {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: tipo de manifestação inválido %q", sub.StatementType)
+	}
+
+	title := strings.TrimSpace(sub.Title)
+	if title == "" {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: título da manifestação é obrigatório")
+	}
+	if len(title) > MaxStatementTitleLength {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: título da manifestação excede o limite de %d caracteres (obtido: %d)", MaxStatementTitleLength, len(title))
+	}
+	if strings.Contains(title, "<") || strings.Contains(title, ">") {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: título da manifestação não pode conter caracteres '<' ou '>'")
+	}
+
+	content := strings.TrimSpace(sub.Content)
+	if len(content) < MinStatementContentLength {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: conteúdo da manifestação muito curto (mínimo de %d caracteres, obtido: %d)", MinStatementContentLength, len(content))
+	}
+	if len(content) > MaxStatementContentLength {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: conteúdo da manifestação excede o limite de %d caracteres (obtido: %d)", MaxStatementContentLength, len(content))
+	}
+	if strings.Contains(content, "<") || strings.Contains(content, ">") {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: conteúdo da manifestação não pode conter tags ou caracteres '<' e '>'")
+	}
+
+	sourceURL := strings.TrimSpace(sub.SourceURL)
+	if sourceURL != "" {
+		if len(sourceURL) > MaxStatementSourceURLLength {
+			return DefenseStatementSubmission{}, fmt.Errorf("domain: URL da fonte de referência excede %d caracteres", MaxStatementSourceURLLength)
+		}
+		if strings.Contains(sourceURL, "<") || strings.Contains(sourceURL, ">") {
+			return DefenseStatementSubmission{}, fmt.Errorf("domain: URL da fonte não pode conter caracteres '<' ou '>'")
+		}
+		parsedURL, err := parseStrictHTTPURL(sourceURL)
+		if err != nil {
+			return DefenseStatementSubmission{}, fmt.Errorf("domain: URL da fonte inválida: %w", err)
+		}
+		sourceURL = parsedURL
+	}
+
+	contactInfo := strings.TrimSpace(sub.ContactInfo)
+	if len(contactInfo) > MaxStatementContactInfoLength {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: informações de contato excedem %d caracteres", MaxStatementContactInfoLength)
+	}
+	if strings.Contains(contactInfo, "<") || strings.Contains(contactInfo, ">") {
+		return DefenseStatementSubmission{}, fmt.Errorf("domain: informações de contato não podem conter caracteres '<' ou '>'")
+	}
+
+	return DefenseStatementSubmission{
+		ClaimID:       claimID,
+		StatementType: sub.StatementType,
+		Title:         title,
+		Content:       content,
+		SourceURL:     sourceURL,
+		ContactInfo:   contactInfo,
+	}, nil
+}
+
+// parseStrictHTTPURL valida se a string é uma URL http ou https válida e bem formada.
+// Rejeita esquemas não-HTTP, credenciais embutidas (userinfo), ausência de host e caracteres de controle.
+func parseStrictHTTPURL(rawURL string) (string, error) {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return "", nil
+	}
+	if len(trimmed) > MaxStatementSourceURLLength {
+		return "", fmt.Errorf("URL excede comprimento máximo de %d caracteres", MaxStatementSourceURLLength)
+	}
+
+	// Verificar caracteres de controle ASCII (0-31 e 127) e quebras de linha
+	for i := 0; i < len(trimmed); i++ {
+		b := trimmed[i]
+		if b < 32 || b == 127 {
+			return "", fmt.Errorf("URL contém caracteres de controle proibidos")
+		}
+	}
+
+	u, err := url.ParseRequestURI(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("URL malformada: %w", err)
+	}
+
+	// Esquema estrito: apenas http ou https
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("esquema de URL inválido (apenas http e https são permitidos)")
+	}
+
+	// Host obrigatório e não vazio
+	host := strings.TrimSpace(u.Host)
+	if host == "" {
+		return "", fmt.Errorf("URL sem host/domínio válido")
+	}
+
+	hostname := u.Hostname()
+	if hostname == "" || strings.HasPrefix(hostname, "-") || strings.HasSuffix(hostname, "-") || strings.HasPrefix(hostname, ".") || strings.HasSuffix(hostname, ".") {
+		return "", fmt.Errorf("URL sem host/domínio válido")
+	}
+
+	// Proibir userinfo (http://user:pass@example.com)
+	if u.User != nil {
+		return "", fmt.Errorf("URL não pode conter credenciais de usuário (userinfo)")
+	}
+
+	// Normalizar esquema
+	u.Scheme = scheme
+	return u.String(), nil
+}
+
+// ValidateStatementTransition valida a máquina de estados editorial de uma manifestação.
+func ValidateStatementTransition(current StatementStatus, action StatementModerationAction) (StatementStatus, error) {
+	if !current.IsValid() {
+		return "", fmt.Errorf("domain: estado atual da manifestação inválido %q", current)
+	}
+	if !action.IsValid() {
+		return "", fmt.Errorf("domain: ação de moderação inválida %q", action)
+	}
+
+	switch action {
+	case StatementActionAccept:
+		if current == StatementStatusQuarantined || current == StatementStatusUnderReview {
+			return StatementStatusAccepted, nil
+		}
+		return "", fmt.Errorf("domain: ação 'accept' não é permitida para manifestação com status %q (permitida para %q ou %q)", current, StatementStatusQuarantined, StatementStatusUnderReview)
+
+	case StatementActionReject:
+		if current == StatementStatusQuarantined || current == StatementStatusUnderReview || current == StatementStatusAccepted {
+			return StatementStatusRejected, nil
+		}
+		return "", fmt.Errorf("domain: ação 'reject' não é permitida para manifestação com status %q", current)
+
+	case StatementActionReview:
+		if current == StatementStatusQuarantined {
+			return StatementStatusUnderReview, nil
+		}
+		return "", fmt.Errorf("domain: ação 'review' não é permitida para manifestação com status %q (permitida apenas para %q)", current, StatementStatusQuarantined)
+
+	case StatementActionArchive:
+		if current == StatementStatusAccepted || current == StatementStatusRejected || current == StatementStatusQuarantined {
+			return StatementStatusArchived, nil
+		}
+		return "", fmt.Errorf("domain: ação 'archive' não é permitida para manifestação com status %q", current)
+
+	default:
+		return "", fmt.Errorf("domain: transição não implementada para a ação %q", action)
+	}
+}
+
+// ValidateStatementReason valida e normaliza a justificativa da decisão de moderação da manifestação.
+func ValidateStatementReason(rawReason string) (string, error) {
+	trimmed := strings.TrimSpace(rawReason)
+	if trimmed == "" {
+		return "", fmt.Errorf("domain: justificativa da moderação é obrigatória e não pode ser vazia")
+	}
+	if len(trimmed) > MaxStatementReasonLength {
+		return "", fmt.Errorf("domain: justificativa da moderação excede o limite de %d caracteres (obtido: %d)", MaxStatementReasonLength, len(trimmed))
+	}
+	if strings.Contains(trimmed, "<") || strings.Contains(trimmed, ">") {
+		return "", fmt.Errorf("domain: justificativa da moderação não pode conter tags ou caracteres '<' e '>'")
+	}
+	return trimmed, nil
+}
+
+// ValidateStatementActor valida e normaliza o identificador do operador de moderação da manifestação.
+func ValidateStatementActor(rawActor string) (string, error) {
+	trimmed := strings.TrimSpace(rawActor)
+	if trimmed == "" {
+		return "", fmt.Errorf("domain: identificador do operador (actor) é obrigatório e não pode ser vazio")
+	}
+	if len(trimmed) > MaxStatementActorLength {
+		return "", fmt.Errorf("domain: identificador do operador (actor) excede o limite de %d caracteres", MaxStatementActorLength)
+	}
+	return trimmed, nil
 }

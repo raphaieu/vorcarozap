@@ -145,6 +145,20 @@ Conforme formalizado na [ADR-023](adr/ADR-023-historico-publico-de-alteracoes-ed
 - **Redação de proposição em alegações retiradas:** Quando um claim previamente publicado é rejeitado por moderação humana, o evento público registra "Retirada Editorial" e redige a proposição (`ClaimProposition = ""`), prevenindo a permanência pública de desinformação refutada.
 - **Ordenação determinística e consistência imediata:** Eventos são ordenados estritamente por `created_at DESC, id DESC`. Consultas dinâmicas ao SQLite WAL garantem que qualquer deliberação de moderação reflita instantaneamente no histórico público de `/pessoas/{slug}` e `/documentos/{id}`.
 
+## Contraditório estruturado e submissão pública de manifestações (VZ-025)
+
+A migration `00010_defense_statements.sql` e a [ADR-024](adr/ADR-024-contraditorio-estruturado-e-submissao-publica-de-manifestacoes.md) formalizam o fluxo público e auditável de manifestações de defesa e contestação:
+- **`defense_statements`**: armazena manifestações submetidas publicamente ou registradas editorialmente vinculadas a um claim existente (`id TEXT PRIMARY KEY`, `claim_id TEXT NOT NULL REFERENCES claims(id) ON DELETE RESTRICT`, `statement_type TEXT NOT NULL CHECK (statement_type IN ('rebuttal', 'correction', 'clarification', 'additional_context'))`, `title TEXT NOT NULL CHECK (length(trim(title)) > 0 AND length(title) <= 200)`, `content TEXT NOT NULL CHECK (length(trim(content)) > 0 AND length(content) <= 5000)`, `source_url TEXT NOT NULL DEFAULT ''`, `contact_info TEXT NOT NULL DEFAULT ''`, `status TEXT NOT NULL CHECK (status IN ('quarantined', 'under_review', 'accepted', 'rejected', 'archived'))`, `created_at TEXT NOT NULL`, `updated_at TEXT NOT NULL`).
+- **`defense_statement_decisions`**: tabela imutável de auditoria de deliberações de operadores sobre manifestações (`id TEXT PRIMARY KEY`, `defense_statement_id TEXT NOT NULL REFERENCES defense_statements(id) ON DELETE RESTRICT`, `action TEXT NOT NULL CHECK (action IN ('accept', 'reject', 'review', 'archive'))`, `reason TEXT NOT NULL CHECK (length(trim(reason)) > 0 AND length(reason) <= 1000)`, `actor TEXT NOT NULL CHECK (length(trim(actor)) > 0 AND length(actor) <= 128)`, `created_at TEXT NOT NULL`).
+- **Isolamento e Blindagem Pública:**
+  - Todas as submissões públicas iniciam em estado `quarantined`, sendo invisíveis na interface pública até aprovação humana explícita (`accepted`).
+  - O aceite de uma manifestação não altera proposição, grau, métricas ou status do claim original nem da entidade ou fontes.
+  - Dados de privacidade restritos a operadores (`contact_info`, operador `actor`, `reason` interna e IP/telemetria) são estritamente excluídos do modelo de projeção pública (`domain.PublicDefenseStatement`).
+- **Controle Transacional e Otimista:**
+  - Deliberações utilizam controle de concorrência otimista (`expected_updated_at`) com retorno determinístico de `409 Conflict` em caso de concorrência.
+- **Proteção Anti-Abuso e Rate Limiting:**
+  - Submissões públicas via `/manifestar` são protegidas por rate limiting por IP na camada Go (`ratelimit.go`) e sanitização de dados contra HTML injection e payloads maliciosos.
+
 ## Futuro
 
-`users`, `sessions`, `publication_revisions`, `editorial_summaries`, `source_snapshots`, `source_relationships`, auditoria completa e contraditório estruturado entram quando painel/equipe amadurecerem.
+`users`, `sessions`, `publication_revisions`, `editorial_summaries`, `source_snapshots`, `source_relationships` e auditoria avançada entram quando painel/equipe amadurecerem.

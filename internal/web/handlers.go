@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/raphaieu/vorcarozap/internal/contradiction"
 	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/exporter"
 	"github.com/raphaieu/vorcarozap/internal/metrics"
@@ -29,6 +31,8 @@ type Handlers struct {
 	queries          *sqlc.Queries
 	publicDataCutoff string
 	moderation       *moderation.Service
+	contradiction    *contradiction.Service
+	rateLimiter      *contradiction.RateLimiter
 }
 
 func NewHandlers(db *sql.DB, cutoff string) *Handlers {
@@ -37,7 +41,14 @@ func NewHandlers(db *sql.DB, cutoff string) *Handlers {
 		queries:          sqlc.New(db),
 		publicDataCutoff: cutoff,
 		moderation:       moderation.NewService(db),
+		contradiction:    contradiction.NewService(db),
+		rateLimiter:      contradiction.NewRateLimiter(5, 10*time.Minute),
 	}
+}
+
+// SetRateLimiter permite injetar um limitador customizado para testes.
+func (h *Handlers) SetRateLimiter(limiter *contradiction.RateLimiter) {
+	h.rateLimiter = limiter
 }
 
 // HandleHealthLive comprova que o processo HTTP está ativo e aceitando requisições.
@@ -726,5 +737,290 @@ func (h *Handlers) HandleAdminModerateEvidenceSource(w http.ResponseWriter, r *h
 		successMsg += " A alegação associada perdeu o último suporte ativo e foi movida para QUARENTENA."
 	}
 	redirectURL := fmt.Sprintf("/admin/evidencias/%s?msg=%s", id, url.QueryEscape(successMsg))
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+// getClientIP extrai o IP de origem da conexão a partir de RemoteAddr.
+// Não confia em cabeçalhos de proxy controláveis pelo cliente (como X-Forwarded-For ou X-Real-IP).
+func getClientIP(r *http.Request) string {
+	remoteAddr := strings.TrimSpace(r.RemoteAddr)
+	if remoteAddr == "" {
+		return "unknown"
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return remoteAddr
+}
+
+// HandleManifestationForm renderiza a página pública SSR para submissão de manifestação/contraditório.
+func (h *Handlers) HandleManifestationForm(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	claimID := strings.TrimSpace(r.URL.Query().Get("claim_id"))
+	isSuccess := r.URL.Query().Get("success") == "1"
+
+	var claimProposition, entityName, entitySlug string
+	var flashErr string
+
+	if claimID != "" {
+		q := sqlc.New(h.db)
+		pubClaim, err := q.GetPublicClaimForManifestation(r.Context(), claimID)
+		if err == nil {
+			claimProposition = pubClaim.Proposition
+			entityName = pubClaim.EntityName
+			entitySlug = pubClaim.EntitySlug
+		} else {
+			// Se o claim não está na fronteira pública, não vazar proposição nem entidade
+			if !isSuccess {
+				flashErr = "Alegação vinculada não encontrada ou indisponível para manifestação pública."
+			}
+		}
+	}
+
+	statementTypes := []pages.StatementTypeOptionVM{
+		{Value: "rebuttal", Label: "Contestação / Defesa Formal", Description: "Contesta o vínculo ou traz a versão oficial da defesa."},
+		{Value: "correction", Label: "Correção / Retificação Factual", Description: "Corrige dado específico (data, cargo, número, valor, etc.)."},
+		{Value: "clarification", Label: "Esclarecimento Institucional", Description: "Explica o contexto sem necessariamente contestar o fato."},
+		{Value: "additional_context", Label: "Contexto Adicional / Complemento", Description: "Acrescenta informações documentais relevantes."},
+	}
+
+	flashMsg := ""
+	if isSuccess {
+		flashMsg = "Sua manifestação foi registrada com sucesso e encaminhada para a quarentena editorial."
+	}
+
+	vm := pages.ManifestationFormVM{
+		ClaimID:          claimID,
+		ClaimProposition: claimProposition,
+		EntityName:       entityName,
+		EntitySlug:       entitySlug,
+		StatementTypes:   statementTypes,
+		FlashMessage:     flashMsg,
+		FlashError:       flashErr,
+		IsSuccess:        isSuccess,
+	}
+
+	component := pages.ManifestationForm(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render manifestation form template", "error", err)
+		http.Error(w, "Erro interno ao renderizar formulário", http.StatusInternalServerError)
+	}
+}
+
+// HandleSubmitManifestation processa o envio público de uma nova manifestação via POST com rate limit e quarentena compulsória.
+func (h *Handlers) HandleSubmitManifestation(w http.ResponseWriter, r *http.Request) {
+	clientIP := getClientIP(r)
+	if !h.rateLimiter.Allow(clientIP) {
+		http.Error(w, "Limite de submissões excedido. Por favor, aguarde alguns minutos antes de enviar nova manifestação.", http.StatusTooManyRequests)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	if err := r.ParseForm(); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "Corpo da requisição excede o limite máximo permitido de 64 KiB", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "Requisição inválida: formulário corrompido", http.StatusBadRequest)
+		return
+	}
+
+	claimID := strings.TrimSpace(r.FormValue("claim_id"))
+	statementType := domain.StatementType(strings.TrimSpace(r.FormValue("statement_type")))
+	title := strings.TrimSpace(r.FormValue("title"))
+	content := strings.TrimSpace(r.FormValue("content"))
+	sourceURL := strings.TrimSpace(r.FormValue("source_url"))
+	contactInfo := strings.TrimSpace(r.FormValue("contact_info"))
+
+	_, err := h.contradiction.SubmitStatement(r.Context(), contradiction.SubmitStatementParams{
+		ClaimID:       claimID,
+		StatementType: statementType,
+		Title:         title,
+		Content:       content,
+		SourceURL:     sourceURL,
+		ContactInfo:   contactInfo,
+	})
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+
+		statementTypes := []pages.StatementTypeOptionVM{
+			{Value: "rebuttal", Label: "Contestação / Defesa Formal", Description: "Contesta o vínculo ou traz a versão oficial da defesa."},
+			{Value: "correction", Label: "Correção / Retificação Factual", Description: "Corrige dado específico (data, cargo, número, valor, etc.)."},
+			{Value: "clarification", Label: "Esclarecimento Institucional", Description: "Explica o contexto sem necessariamente contestar o fato."},
+			{Value: "additional_context", Label: "Contexto Adicional / Complemento", Description: "Acrescenta informações documentais relevantes."},
+		}
+
+		errMsg := err.Error()
+		if errors.Is(err, contradiction.ErrClaimNotFound) {
+			errMsg = "A alegação vinculada informada não foi encontrada ou não está disponível para manifestação pública."
+		}
+
+		vm := pages.ManifestationFormVM{
+			ClaimID:        claimID,
+			StatementTypes: statementTypes,
+			FlashError:     errMsg,
+			IsSuccess:      false,
+		}
+		_ = pages.ManifestationForm(vm).Render(r.Context(), w)
+		return
+	}
+
+	redirectURL := fmt.Sprintf("/manifestar?claim_id=%s&success=1", url.QueryEscape(claimID))
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+// HandleAdminDefenseStatements renderiza a listagem administrativa de manifestações recebidas.
+func (h *Handlers) HandleAdminDefenseStatements(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+
+	filter := store.AdminDefenseStatementFilter{
+		Status:   q.Get("status"),
+		Type:     q.Get("type"),
+		ClaimID:  q.Get("claim_id"),
+		Period:   q.Get("period"),
+		Page:     page,
+		PageSize: 20,
+	}
+
+	if filter.Period != "" {
+		filter.PeriodSince = store.ResolvePeriod(filter.Period, time.Now().UTC())
+	}
+
+	res, err := store.ListAdminDefenseStatements(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list admin defense statements", "error", err)
+		http.Error(w, "Erro ao consultar manifestações", http.StatusInternalServerError)
+		return
+	}
+
+	flashMsg := q.Get("msg")
+	flashErr := q.Get("err")
+
+	vm := pages.ToAdminDefenseStatementsListVM(res, filter, flashMsg, flashErr)
+	component := pages.AdminManifestations(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin manifestations template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminDefenseStatementDetail renderiza a inspeção detalhada de uma manifestação e dados de deliberação.
+func (h *Handlers) HandleAdminDefenseStatementDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail, err := store.GetAdminDefenseStatementDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("failed to get admin defense statement detail", "id", id, "error", err)
+		http.Error(w, "Erro interno ao carregar detalhes da manifestação", http.StatusInternalServerError)
+		return
+	}
+
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
+
+	vm := pages.ToAdminDefenseStatementDetailVM(detail, flashMsg, flashErr)
+	component := pages.AdminManifestationDetail(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render admin defense statement detail template", "id", id, "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminModerateDefenseStatement processa a deliberação de moderação humana sobre uma manifestação via POST com OCC.
+func (h *Handlers) HandleAdminModerateDefenseStatement(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Authorization")
+
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	actor, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || strings.TrimSpace(actor) == "" {
+		sendUnauthorized(w)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	if err := r.ParseForm(); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "Corpo da requisição excede o limite máximo permitido de 64 KiB", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "Requisição inválida: formulário corrompido", http.StatusBadRequest)
+		return
+	}
+
+	actionStr := strings.TrimSpace(r.FormValue("action"))
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	expectedUpdatedAt := strings.TrimSpace(r.FormValue("expected_updated_at"))
+
+	action := domain.StatementModerationAction(actionStr)
+	if !action.IsValid() {
+		http.Error(w, fmt.Sprintf("Ação de moderação inválida: %q", actionStr), http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.contradiction.ModerateStatement(r.Context(), contradiction.ModerateStatementParams{
+		StatementID:       id,
+		ExpectedUpdatedAt: expectedUpdatedAt,
+		Action:            action,
+		Reason:            reason,
+		Actor:             actor,
+	})
+	if err != nil {
+		if errors.Is(err, contradiction.ErrStatementNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, contradiction.ErrConflict) {
+			http.Error(w, "Conflito de concorrência: o estado da manifestação foi modificado por outra operação.", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, contradiction.ErrMissingExpectedVersion) {
+			http.Error(w, "Versão esperada (expected_updated_at) é obrigatória para moderação.", http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, contradiction.ErrInvalidTransition) {
+			http.Error(w, fmt.Sprintf("Transição de estado inválida: %v", err), http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, contradiction.ErrInvalidReason) || errors.Is(err, contradiction.ErrInvalidAction) || errors.Is(err, contradiction.ErrInvalidActor) {
+			http.Error(w, fmt.Sprintf("Dados de moderação inválidos: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		slog.Error("failed to moderate defense statement", "statement_id", id, "action", actionStr, "error", err)
+		http.Error(w, "Erro interno ao processar moderação", http.StatusInternalServerError)
+		return
+	}
+
+	successMsg := fmt.Sprintf("Manifestação moderada com sucesso: ação '%s' aplicada (novo status: %s).", actionStr, res.NewStatus)
+	redirectURL := fmt.Sprintf("/admin/manifestacoes/%s?msg=%s", id, url.QueryEscape(successMsg))
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }

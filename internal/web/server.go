@@ -28,7 +28,6 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 
 	// Middlewares padrão
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(SecurityHeadersMiddleware)
@@ -46,13 +45,17 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Get("/documentos/{id}", handlers.HandleDocumentDetail)
 	r.Get("/metodologia", handlers.HandleMethodology)
 
+	// Canal público de contraditório e submissão de manifestações (VZ-025)
+	r.Get("/manifestar", handlers.HandleManifestationForm)
+	r.Post("/manifestar", handlers.HandleSubmitManifestation)
+
 	// Exportação pública de dados XLSX (VZ-009)
 	r.Get("/exportar/base.xlsx", handlers.HandleExportXLSX)
 	r.Get("/exportar", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
-	// Área administrativa protegida (VZ-014, VZ-016, VZ-023)
+	// Área administrativa protegida (VZ-014, VZ-016, VZ-023, VZ-025)
 	if cfg.IsAdminEnabled() {
 		authMiddleware := BasicAuthMiddleware(cfg.AdminUser, cfg.AdminPasswordHash)
 		csrfMiddleware := AdminCSRFMiddleware(cfg.AdminAllowedOrigin)
@@ -99,6 +102,11 @@ func newAdminRouter(authMiddleware func(http.Handler) http.Handler, csrfMiddlewa
 	// Rotas de alegações e moderação editorial (VZ-016)
 	adminRouter.Get("/claims/{id}", handlers.HandleAdminClaimDetail)
 	adminRouter.With(csrfMiddleware).Post("/claims/{id}/moderate", handlers.HandleAdminModerateClaim)
+
+	// Rotas de manifestações de defesa e contraditório (VZ-025)
+	adminRouter.Get("/manifestacoes", handlers.HandleAdminDefenseStatements)
+	adminRouter.Get("/manifestacoes/{id}", handlers.HandleAdminDefenseStatementDetail)
+	adminRouter.With(csrfMiddleware).Post("/manifestacoes/{id}/moderate", handlers.HandleAdminModerateDefenseStatement)
 
 	adminRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

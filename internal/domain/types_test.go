@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/raphaieu/vorcarozap/internal/domain"
@@ -649,5 +650,484 @@ func TestSourceType(t *testing.T) {
 	}
 	if unknown.NatureLabel() != "Referência Documental" {
 		t.Errorf("NatureLabel de tipo desconhecido deve ser 'Referência Documental', obtido: %q", unknown.NatureLabel())
+	}
+}
+
+func TestStatementTypeAndStatus(t *testing.T) {
+	// Test StatementType
+	validTypes := []domain.StatementType{
+		domain.StatementTypeCorrection,
+		domain.StatementTypeRebuttal,
+		domain.StatementTypeClarification,
+		domain.StatementTypeAdditionalContext,
+	}
+	for _, st := range validTypes {
+		if !st.IsValid() {
+			t.Errorf("StatementType %q deveria ser válido", st)
+		}
+		if st.Label() == "" {
+			t.Errorf("StatementType %q não deveria ter Label vazia", st)
+		}
+	}
+	if domain.StatementType("invalid").IsValid() {
+		t.Errorf("StatementType 'invalid' não deveria ser válido")
+	}
+
+	// Test StatementStatus
+	validStatuses := []domain.StatementStatus{
+		domain.StatementStatusQuarantined,
+		domain.StatementStatusUnderReview,
+		domain.StatementStatusAccepted,
+		domain.StatementStatusRejected,
+		domain.StatementStatusArchived,
+	}
+	for _, ss := range validStatuses {
+		if !ss.IsValid() {
+			t.Errorf("StatementStatus %q deveria ser válido", ss)
+		}
+		if ss.Label() == "" {
+			t.Errorf("StatementStatus %q não deveria ter Label vazia", ss)
+		}
+	}
+	if domain.StatementStatus("invalid").IsValid() {
+		t.Errorf("StatementStatus 'invalid' não deveria ser válido")
+	}
+
+	// Test StatementModerationAction
+	validActions := []domain.StatementModerationAction{
+		domain.StatementActionAccept,
+		domain.StatementActionReject,
+		domain.StatementActionReview,
+		domain.StatementActionArchive,
+	}
+	for _, sa := range validActions {
+		if !sa.IsValid() {
+			t.Errorf("StatementModerationAction %q deveria ser válida", sa)
+		}
+		if sa.Label() == "" {
+			t.Errorf("StatementModerationAction %q não deveria ter Label vazia", sa)
+		}
+	}
+	if domain.StatementModerationAction("invalid").IsValid() {
+		t.Errorf("StatementModerationAction 'invalid' não deveria ser válida")
+	}
+}
+
+func TestValidateStatementSubmission(t *testing.T) {
+	tests := []struct {
+		name      string
+		sub       domain.DefenseStatementSubmission
+		expectErr bool
+	}{
+		{
+			name: "valid complete submission",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-1",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Manifestação de Defesa Oficial",
+				Content:       "Esta é uma contestação formal e detalhada com mais de 10 caracteres.",
+				SourceURL:     "https://exemplo.com/comunicado.pdf",
+				ContactInfo:   "advogado@exemplo.com - Tel: (11) 9999-9999",
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid minimal submission without optional fields",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-2",
+				StatementType: domain.StatementTypeCorrection,
+				Title:         "Retificação de Data",
+				Content:       "O evento narrado ocorreu em 2024 e não em 2023 conforme certidão.",
+			},
+			expectErr: false,
+		},
+		{
+			name: "missing claim_id",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "",
+				StatementType: domain.StatementTypeClarification,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid statement_type",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-3",
+				StatementType: domain.StatementType("invalid_type"),
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+			},
+			expectErr: true,
+		},
+		{
+			name: "empty title",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-4",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "   ",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+			},
+			expectErr: true,
+		},
+		{
+			name: "title exceeding limit",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-5",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         strings.Repeat("a", 201),
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+			},
+			expectErr: true,
+		},
+		{
+			name: "title containing html script tag",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-6",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título com <script>alert(1)</script>",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+			},
+			expectErr: true,
+		},
+		{
+			name: "content too short (< 10 chars)",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-7",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Curto",
+			},
+			expectErr: true,
+		},
+		{
+			name: "content exceeding max length (> 5000 chars)",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-8",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       strings.Repeat("a", 5001),
+			},
+			expectErr: true,
+		},
+		{
+			name: "content containing html tags",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-9",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto com <b>negrito</b> e <i>tags</i> perigosas.",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url with javascript scheme",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-10",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "javascript:alert(1)",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url without http/https",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-11",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "ftp://exemplo.com/arquivo.pdf",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url empty host http://",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-1",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "http://",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url empty host with query http://?x",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-2",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "http://?x",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url with userinfo credentials",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-3",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "http://user:pass@example.com/nota",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url with control characters",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-4",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "https://example.com/path\x00malicious",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url with newline control characters",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-5",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "https://example.com/path\nheader-injection",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url with data scheme",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-5b",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "data:text/html,<script>alert(1)</script>",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid source_url with invalid host prefix hyphen",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-5c",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "http://-invalid-host/doc.pdf",
+			},
+			expectErr: true,
+		},
+		{
+			name: "valid source_url with upper case scheme normalized",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-url-6",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				SourceURL:     "HTTP://EXAMPLE.COM/nota.pdf",
+			},
+			expectErr: false,
+		},
+		{
+			name: "contact_info exceeding limit",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-12",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				ContactInfo:   strings.Repeat("c", 256),
+			},
+			expectErr: true,
+		},
+		{
+			name: "contact_info with html tags",
+			sub: domain.DefenseStatementSubmission{
+				ClaimID:       "claim-uuid-13",
+				StatementType: domain.StatementTypeRebuttal,
+				Title:         "Título Válido",
+				Content:       "Texto de esclarecimento válido com tamanho suficiente.",
+				ContactInfo:   "<email>teste@exemplo.com</email>",
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := domain.ValidateStatementSubmission(tt.sub)
+			if (err != nil) != tt.expectErr {
+				t.Fatalf("ValidateStatementSubmission() err = %v, expectErr = %v", err, tt.expectErr)
+			}
+			if !tt.expectErr {
+				if got.ClaimID != tt.sub.ClaimID {
+					t.Errorf("got.ClaimID = %q, want %q", got.ClaimID, tt.sub.ClaimID)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateStatementTransition(t *testing.T) {
+	tests := []struct {
+		name       string
+		current    domain.StatementStatus
+		action     domain.StatementModerationAction
+		wantTarget domain.StatementStatus
+		wantErr    bool
+	}{
+		// Accept
+		{
+			name:       "accept quarantined -> accepted",
+			current:    domain.StatementStatusQuarantined,
+			action:     domain.StatementActionAccept,
+			wantTarget: domain.StatementStatusAccepted,
+			wantErr:    false,
+		},
+		{
+			name:       "accept under_review -> accepted",
+			current:    domain.StatementStatusUnderReview,
+			action:     domain.StatementActionAccept,
+			wantTarget: domain.StatementStatusAccepted,
+			wantErr:    false,
+		},
+		{
+			name:       "accept rejected -> error",
+			current:    domain.StatementStatusRejected,
+			action:     domain.StatementActionAccept,
+			wantTarget: "",
+			wantErr:    true,
+		},
+
+		// Reject
+		{
+			name:       "reject quarantined -> rejected",
+			current:    domain.StatementStatusQuarantined,
+			action:     domain.StatementActionReject,
+			wantTarget: domain.StatementStatusRejected,
+			wantErr:    false,
+		},
+		{
+			name:       "reject under_review -> rejected",
+			current:    domain.StatementStatusUnderReview,
+			action:     domain.StatementActionReject,
+			wantTarget: domain.StatementStatusRejected,
+			wantErr:    false,
+		},
+		{
+			name:       "reject accepted -> rejected",
+			current:    domain.StatementStatusAccepted,
+			action:     domain.StatementActionReject,
+			wantTarget: domain.StatementStatusRejected,
+			wantErr:    false,
+		},
+
+		// Review
+		{
+			name:       "review quarantined -> under_review",
+			current:    domain.StatementStatusQuarantined,
+			action:     domain.StatementActionReview,
+			wantTarget: domain.StatementStatusUnderReview,
+			wantErr:    false,
+		},
+		{
+			name:       "review accepted -> error",
+			current:    domain.StatementStatusAccepted,
+			action:     domain.StatementActionReview,
+			wantTarget: "",
+			wantErr:    true,
+		},
+
+		// Archive
+		{
+			name:       "archive accepted -> archived",
+			current:    domain.StatementStatusAccepted,
+			action:     domain.StatementActionArchive,
+			wantTarget: domain.StatementStatusArchived,
+			wantErr:    false,
+		},
+		{
+			name:       "archive rejected -> archived",
+			current:    domain.StatementStatusRejected,
+			action:     domain.StatementActionArchive,
+			wantTarget: domain.StatementStatusArchived,
+			wantErr:    false,
+		},
+		{
+			name:       "archive quarantined -> archived",
+			current:    domain.StatementStatusQuarantined,
+			action:     domain.StatementActionArchive,
+			wantTarget: domain.StatementStatusArchived,
+			wantErr:    false,
+		},
+
+		// Invalid inputs
+		{
+			name:       "invalid status",
+			current:    domain.StatementStatus("invalid"),
+			action:     domain.StatementActionAccept,
+			wantTarget: "",
+			wantErr:    true,
+		},
+		{
+			name:       "invalid action",
+			current:    domain.StatementStatusQuarantined,
+			action:     domain.StatementModerationAction("invalid"),
+			wantTarget: "",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := domain.ValidateStatementTransition(tt.current, tt.action)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateStatementTransition(%q, %q) err = %v, wantErr = %v", tt.current, tt.action, err, tt.wantErr)
+			}
+			if got != tt.wantTarget {
+				t.Errorf("ValidateStatementTransition(%q, %q) = %q, want %q", tt.current, tt.action, got, tt.wantTarget)
+			}
+		})
+	}
+}
+
+func TestValidateStatementReasonAndActor(t *testing.T) {
+	// Reason
+	validReason, err := domain.ValidateStatementReason("Manifestação documental fundamentada e validada.")
+	if err != nil || validReason == "" {
+		t.Fatalf("ValidateStatementReason err = %v", err)
+	}
+
+	_, err = domain.ValidateStatementReason("")
+	if err == nil {
+		t.Errorf("ValidateStatementReason com string vazia deveria retornar erro")
+	}
+
+	_, err = domain.ValidateStatementReason("Motivo com <script>tag</script>")
+	if err == nil {
+		t.Errorf("ValidateStatementReason com HTML deveria retornar erro")
+	}
+
+	_, err = domain.ValidateStatementReason(strings.Repeat("a", 1001))
+	if err == nil {
+		t.Errorf("ValidateStatementReason > 1000 caracteres deveria retornar erro")
+	}
+
+	// Actor
+	validActor, err := domain.ValidateStatementActor("moderador_1")
+	if err != nil || validActor == "" {
+		t.Fatalf("ValidateStatementActor err = %v", err)
+	}
+
+	_, err = domain.ValidateStatementActor("")
+	if err == nil {
+		t.Errorf("ValidateStatementActor com string vazia deveria retornar erro")
+	}
+
+	_, err = domain.ValidateStatementActor(strings.Repeat("a", 129))
+	if err == nil {
+		t.Errorf("ValidateStatementActor > 128 caracteres deveria retornar erro")
 	}
 }

@@ -295,6 +295,51 @@ templ EntityDetail(vm EntityDetailVM) {
 										</ul>
 									</div>
 								}
+
+								<!-- Manifestações Formais de Defesa & Contraditório Aceitas -->
+								if len(cl.DefenseStatements) > 0 {
+									<div class="sources-group defense-group" aria-label="Manifestações Formais da Defesa">
+										<h4 class="sources-group-title defense-title">Manifestações Formais da Defesa / Contraditório</h4>
+										<ul class="sources-list">
+											for _, st := range cl.DefenseStatements {
+												<li class="source-item defense-item">
+													<div class="source-header-meta">
+														<div class="source-meta-top">
+															<span class="source-type-badge" style="background-color: #e8f4fd; color: #0c5460; font-weight: 600;">
+																{ st.StatementTypeHuman }
+															</span>
+															<strong class="source-title">{ st.Title }</strong>
+														</div>
+														<div class="source-meta-sub">
+															if st.CreatedAtHuman != "" {
+																<span class="source-date">&bull; Manifestação recebida em: { st.CreatedAtHuman }</span>
+															}
+														</div>
+													</div>
+
+													<blockquote class="source-excerpt">
+														&ldquo;{ st.Content }&rdquo;
+													</blockquote>
+
+													if st.SourceURL != "" {
+														<div class="source-link-row" style="margin-top: 0.5rem;">
+															<a href={ templ.SafeURL(st.SourceURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+																Consultar documento/fonte anexa da manifestação &nearr;
+															</a>
+														</div>
+													}
+												</li>
+											}
+										</ul>
+									</div>
+								}
+
+								<!-- Link de Acesso ao Canal de Contraditório -->
+								<div class="claim-contradiction-action" style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed var(--color-border); display: flex; justify-content: flex-end; align-items: center;">
+									<a href={ templ.SafeURL("/manifestar?claim_id=" + cl.ID) } class="btn btn-outline" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;">
+										Apresentar manifestação / contraditório sobre esta alegação &rarr;
+									</a>
+								</div>
 							</article>
 						}
 					} else {

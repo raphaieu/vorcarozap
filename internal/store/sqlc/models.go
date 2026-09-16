@@ -34,6 +34,28 @@ type Claim struct {
 	QuarantineReasons string         `json:"quarantine_reasons"`
 }
 
+type DefenseStatement struct {
+	ID            string `json:"id"`
+	ClaimID       string `json:"claim_id"`
+	StatementType string `json:"statement_type"`
+	Title         string `json:"title"`
+	Content       string `json:"content"`
+	SourceUrl     string `json:"source_url"`
+	ContactInfo   string `json:"contact_info"`
+	Status        string `json:"status"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+type DefenseStatementDecision struct {
+	ID          string `json:"id"`
+	StatementID string `json:"statement_id"`
+	Action      string `json:"action"`
+	Reason      string `json:"reason"`
+	Actor       string `json:"actor"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type Entity struct {
 	ID                 string `json:"id"`
 	Type               string `json:"type"`

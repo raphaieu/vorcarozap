@@ -1322,3 +1322,288 @@ func ToAdminSourceDetailVM(res *store.AdminSourceDetailResult) AdminSourceDetail
 		Sequence:                seqVM,
 	}
 }
+
+// AdminDefenseStatementItemVM representa um item na listagem administrativa de manifestações.
+type AdminDefenseStatementItemVM struct {
+	ID                 string
+	ClaimID            string
+	ClaimProposition   string
+	ClaimGrade         string
+	ClaimGradeHuman    string
+	ClaimStatus        string
+	EntityName         string
+	EntitySlug         string
+	StatementType      string
+	StatementTypeHuman string
+	Title              string
+	ContentSnippet     string
+	SourceURL          string
+	ContactInfo        string
+	Status             string
+	StatusHuman        string
+	CreatedAtHuman     string
+	UpdatedAtHuman     string
+}
+
+// AdminDefenseStatementsListVM encapsula o estado completo da página de listagem administrativa de manifestações.
+type AdminDefenseStatementsListVM struct {
+	Statements   []AdminDefenseStatementItemVM
+	Filter       AdminDefenseStatementFilterVM
+	FlashMessage string
+	FlashError   string
+}
+
+// AdminDefenseStatementFilterVM encapsula os parâmetros de filtro e paginação da listagem.
+type AdminDefenseStatementFilterVM struct {
+	Status      string
+	Type        string
+	ClaimID     string
+	Period      string
+	PeriodSince string
+	Page        int
+	PageSize    int
+	TotalPages  int
+	TotalCount  int64
+}
+
+// BuildQueryString gera a URL preservando filtros de manifestações.
+func (f AdminDefenseStatementFilterVM) BuildQueryString(page int) string {
+	v := url.Values{}
+	if f.Status != "" {
+		v.Set("status", f.Status)
+	}
+	if f.Type != "" {
+		v.Set("type", f.Type)
+	}
+	if f.ClaimID != "" {
+		v.Set("claim_id", f.ClaimID)
+	}
+	if f.Period != "" {
+		v.Set("period", f.Period)
+	}
+	if page > 1 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	encoded := v.Encode()
+	if encoded == "" {
+		return "/admin/manifestacoes"
+	}
+	return "/admin/manifestacoes?" + encoded
+}
+
+// AdminDefenseStatementDetailVM encapsula todos os dados para inspeção profunda e moderação de uma manifestação.
+type AdminDefenseStatementDetailVM struct {
+	ID                 string
+	ClaimID            string
+	ClaimProposition   string
+	ClaimGrade         string
+	ClaimGradeHuman    string
+	ClaimStatus        string
+	ClaimStatusHuman   string
+	SubjectEntityName  string
+	SubjectEntitySlug  string
+	StatementType      string
+	StatementTypeHuman string
+	Title              string
+	Content            string
+	SourceURL          string
+	ContactInfo        string // Dado privado restrito a operadores
+	Status             string
+	StatusHuman        string
+	CreatedAtHuman     string
+	UpdatedAtHuman     string
+	UpdatedAtRaw       string
+	AllowedActions     []AdminAllowedActionVM
+	Decisions          []AdminStatementDecisionVM
+	FlashMessage       string
+	FlashError         string
+}
+
+// AdminAllowedActionVM representa uma ação de moderação permitida na interface administrativa.
+type AdminAllowedActionVM struct {
+	Action         string
+	Label          string
+	ButtonClass    string
+	HelpText       string
+	Disabled       bool
+	DisabledReason string
+}
+
+// AdminStatementDecisionVM representa uma deliberação de moderação formatada para a UI administrativa.
+type AdminStatementDecisionVM struct {
+	ID             string
+	Action         string
+	ActionHuman    string
+	Reason         string
+	Actor          string
+	CreatedAtHuman string
+}
+
+func ToAdminDefenseStatementItemVM(row sqlc.ListAdminDefenseStatementsRow) AdminDefenseStatementItemVM {
+	stType := domain.StatementType(row.StatementType)
+	stStatus := domain.StatementStatus(row.Status)
+
+	snippet := row.Content
+	if len(snippet) > 140 {
+		snippet = snippet[:140] + "..."
+	}
+
+	return AdminDefenseStatementItemVM{
+		ID:                 row.ID,
+		ClaimID:            row.ClaimID,
+		ClaimProposition:   row.ClaimProposition,
+		ClaimGrade:         row.ClaimGrade,
+		ClaimGradeHuman:    FormatGradeShort(row.ClaimGrade),
+		ClaimStatus:        row.ClaimStatus,
+		EntityName:         row.EntityName,
+		EntitySlug:         row.EntitySlug,
+		StatementType:      row.StatementType,
+		StatementTypeHuman: stType.Label(),
+		Title:              row.Title,
+		ContentSnippet:     snippet,
+		SourceURL:          row.SourceUrl,
+		ContactInfo:        row.ContactInfo,
+		Status:             row.Status,
+		StatusHuman:        stStatus.Label(),
+		CreatedAtHuman:     FormatDate(row.CreatedAt),
+		UpdatedAtHuman:     FormatDate(row.UpdatedAt),
+	}
+}
+
+func ToAdminDefenseStatementsListVM(res *store.AdminDefenseStatementsResult, f store.AdminDefenseStatementFilter, flashMsg, flashErr string) AdminDefenseStatementsListVM {
+	var items []AdminDefenseStatementItemVM
+	for _, row := range res.Statements {
+		items = append(items, ToAdminDefenseStatementItemVM(row))
+	}
+
+	return AdminDefenseStatementsListVM{
+		Statements: items,
+		Filter: AdminDefenseStatementFilterVM{
+			Status:      f.Status,
+			Type:        f.Type,
+			ClaimID:     f.ClaimID,
+			Period:      f.Period,
+			PeriodSince: f.PeriodSince,
+			Page:        res.Page,
+			PageSize:    res.PageSize,
+			TotalPages:  res.TotalPages,
+			TotalCount:  res.TotalCount,
+		},
+		FlashMessage: flashMsg,
+		FlashError:   flashErr,
+	}
+}
+
+func ToAdminDefenseStatementDetailVM(detail *domain.AdminDefenseStatementDetail, flashMsg, flashErr string) AdminDefenseStatementDetailVM {
+	var decisionsVM []AdminStatementDecisionVM
+	for _, d := range detail.Decisions {
+		decisionsVM = append(decisionsVM, AdminStatementDecisionVM{
+			ID:             d.ID,
+			Action:         string(d.Action),
+			ActionHuman:    d.Action.Label(),
+			Reason:         d.Reason,
+			Actor:          d.Actor,
+			CreatedAtHuman: FormatDate(d.CreatedAt),
+		})
+	}
+
+	allowed := GetAllowedStatementActions(detail.Status)
+
+	return AdminDefenseStatementDetailVM{
+		ID:                 detail.ID,
+		ClaimID:            detail.ClaimID,
+		ClaimProposition:   detail.ClaimProposition,
+		ClaimGrade:         string(detail.ClaimGrade),
+		ClaimGradeHuman:    FormatGrade(string(detail.ClaimGrade)),
+		ClaimStatus:        string(detail.ClaimStatus),
+		ClaimStatusHuman:   FormatEditorialStatus(string(detail.ClaimStatus)),
+		SubjectEntityName:  detail.SubjectEntityName,
+		SubjectEntitySlug:  detail.SubjectEntitySlug,
+		StatementType:      string(detail.StatementType),
+		StatementTypeHuman: detail.StatementType.Label(),
+		Title:              detail.Title,
+		Content:            detail.Content,
+		SourceURL:          detail.SourceURL,
+		ContactInfo:        detail.ContactInfo,
+		Status:             string(detail.Status),
+		StatusHuman:        detail.Status.Label(),
+		CreatedAtHuman:     FormatDate(detail.CreatedAt),
+		UpdatedAtHuman:     FormatDate(detail.UpdatedAt),
+		UpdatedAtRaw:       detail.UpdatedAt,
+		AllowedActions:     allowed,
+		Decisions:          decisionsVM,
+		FlashMessage:       flashMsg,
+		FlashError:         flashErr,
+	}
+}
+
+// GetAllowedStatementActions retorna as ações de moderação permitidas para o estado atual da manifestação.
+func GetAllowedStatementActions(current domain.StatementStatus) []AdminAllowedActionVM {
+	var actions []AdminAllowedActionVM
+
+	switch current {
+	case domain.StatementStatusQuarantined:
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionReview),
+			Label:       "Colocar em Revisão",
+			ButtonClass: "btn-secondary",
+			HelpText:    "Move a manifestação para revisão editorial ativa sem publicá-la.",
+		})
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionAccept),
+			Label:       "Aceitar e Publicar",
+			ButtonClass: "btn-success",
+			HelpText:    "Aceita a manifestação e a torna pública na página da entidade sob a alegação vinculada.",
+		})
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionReject),
+			Label:       "Rejeitar Manifestação",
+			ButtonClass: "btn-danger",
+			HelpText:    "Rejeita formalmente a manifestação, mantendo-a privada.",
+		})
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionArchive),
+			Label:       "Arquivar Manifestação",
+			ButtonClass: "btn-outline",
+			HelpText:    "Arquiva a manifestação para consulta histórica interna.",
+		})
+
+	case domain.StatementStatusUnderReview:
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionAccept),
+			Label:       "Aceitar e Publicar",
+			ButtonClass: "btn-success",
+			HelpText:    "Aceita a manifestação e a torna pública na página da entidade sob a alegação vinculada.",
+		})
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionReject),
+			Label:       "Rejeitar Manifestação",
+			ButtonClass: "btn-danger",
+			HelpText:    "Rejeita formalmente a manifestação, mantendo-a privada.",
+		})
+
+	case domain.StatementStatusAccepted:
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionReject),
+			Label:       "Rejeitar (Retirar do Ar)",
+			ButtonClass: "btn-danger",
+			HelpText:    "Desaprova a manifestação e a retira da visualização pública.",
+		})
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionArchive),
+			Label:       "Arquivar Manifestação",
+			ButtonClass: "btn-outline",
+			HelpText:    "Arquiva a manifestação mantendo o registro histórico.",
+		})
+
+	case domain.StatementStatusRejected:
+		actions = append(actions, AdminAllowedActionVM{
+			Action:      string(domain.StatementActionArchive),
+			Label:       "Arquivar Manifestação",
+			ButtonClass: "btn-outline",
+			HelpText:    "Arquiva o registro da manifestação rejeitada.",
+		})
+	}
+
+	return actions
+}

@@ -1,0 +1,174 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminManifestations(vm AdminDefenseStatementsListVM) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Gestão e moderação de manifestações de defesa e contraditório no VorcaroZAP."/>
+			<title>Manifestações de Defesa — Admin — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("manifestacoes")
+			<main class="container">
+				<!-- Mensagens Flash -->
+				if vm.FlashMessage != "" {
+					<div class="alert alert-success" role="alert" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 6px; background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc;">
+						<strong>Sucesso:</strong> { vm.FlashMessage }
+					</div>
+				}
+				if vm.FlashError != "" {
+					<div class="alert alert-danger" role="alert" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 6px; background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7;">
+						<strong>Atenção:</strong> { vm.FlashError }
+					</div>
+				}
+
+				<!-- Cabeçalho da Página -->
+				<section class="admin-dashboard-header" style="margin-bottom: 1.5rem;">
+					<div>
+						<h1 class="page-title" style="margin: 0;">Manifestações de Defesa & Contraditório</h1>
+						<p class="page-subtitle" style="margin: 0.25rem 0 0 0;">
+							Submissões públicas recebidas de interessados e defesas técnicas. Toda submissão inicia em quarentena.
+						</p>
+					</div>
+					<div class="badge-cluster">
+						<span class="status-tag">Total: { fmt.Sprintf("%d", vm.Filter.TotalCount) }</span>
+					</div>
+				</section>
+
+				<!-- Filtros -->
+				<section class="card" style="margin-bottom: 1.5rem; padding: 1rem;">
+					<form method="GET" action="/admin/manifestacoes" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+						<!-- Filtro de Status -->
+						<div style="flex: 1; min-width: 180px;">
+							<label for="filter-status" class="form-label" style="font-size: 0.85rem; font-weight: 600;">Estado Editorial</label>
+							<select id="filter-status" name="status" class="form-control" style="width: 100%; padding: 0.4rem;">
+								<option value="">Todos os Estados</option>
+								<option value="quarantined" selected?={ vm.Filter.Status == "quarantined" }>Quarentena (Pendente)</option>
+								<option value="under_review" selected?={ vm.Filter.Status == "under_review" }>Em Revisão</option>
+								<option value="accepted" selected?={ vm.Filter.Status == "accepted" }>Aceita (Pública)</option>
+								<option value="rejected" selected?={ vm.Filter.Status == "rejected" }>Rejeitada</option>
+								<option value="archived" selected?={ vm.Filter.Status == "archived" }>Arquivada</option>
+							</select>
+						</div>
+
+						<!-- Filtro de Tipo -->
+						<div style="flex: 1; min-width: 180px;">
+							<label for="filter-type" class="form-label" style="font-size: 0.85rem; font-weight: 600;">Tipo de Manifestação</label>
+							<select id="filter-type" name="type" class="form-control" style="width: 100%; padding: 0.4rem;">
+								<option value="">Todos os Tipos</option>
+								<option value="rebuttal" selected?={ vm.Filter.Type == "rebuttal" }>Contestação / Defesa</option>
+								<option value="correction" selected?={ vm.Filter.Type == "correction" }>Correção Factual</option>
+								<option value="clarification" selected?={ vm.Filter.Type == "clarification" }>Esclarecimento</option>
+								<option value="additional_context" selected?={ vm.Filter.Type == "additional_context" }>Contexto Adicional</option>
+							</select>
+						</div>
+
+						<!-- Filtro de Período -->
+						<div style="flex: 1; min-width: 150px;">
+							<label for="filter-period" class="form-label" style="font-size: 0.85rem; font-weight: 600;">Período</label>
+							<select id="filter-period" name="period" class="form-control" style="width: 100%; padding: 0.4rem;">
+								<option value="">Todo o Período</option>
+								<option value="7d" selected?={ vm.Filter.Period == "7d" }>Últimos 7 dias</option>
+								<option value="30d" selected?={ vm.Filter.Period == "30d" }>Últimos 30 dias</option>
+								<option value="90d" selected?={ vm.Filter.Period == "90d" }>Últimos 90 dias</option>
+							</select>
+						</div>
+
+						<!-- Ações de Filtro -->
+						<div style="display: flex; gap: 0.5rem;">
+							<button type="submit" class="btn btn-primary" style="padding: 0.45rem 1rem;">Filtrar</button>
+							<a href="/admin/manifestacoes" class="btn btn-outline" style="padding: 0.45rem 1rem;">Limpar</a>
+						</div>
+					</form>
+				</section>
+
+				<!-- Lista de Manifestações -->
+				if len(vm.Statements) == 0 {
+					<div class="card empty-state">
+						<p>Nenhuma manifestação encontrada com os filtros informados.</p>
+					</div>
+				} else {
+					<div class="admin-candidate-list">
+						for _, item := range vm.Statements {
+							<div class="card admin-item-card" style="margin-bottom: 1rem;">
+								<div class="admin-item-header">
+									<div>
+										<span class="admin-item-id">
+											ID: <a href={ templ.SafeURL("/admin/manifestacoes/" + item.ID) } class="dist-filter-link"><code>{ item.ID }</code> &rarr;</a>
+										</span>
+										<div style="font-size: 0.85rem; color: var(--color-text-muted); margin-top: 0.25rem;">
+											Entidade: <strong>{ item.EntityName }</strong> &bull; Submetida em: <strong>{ item.CreatedAtHuman }</strong>
+										</div>
+									</div>
+									<div class="badge-cluster">
+										<span class="category-badge">{ item.StatementTypeHuman }</span>
+										if item.Status == "quarantined" {
+											<span class="admin-status-badge status-quarantined">{ item.StatusHuman }</span>
+										} else if item.Status == "under_review" {
+											<span class="admin-status-badge status-archived">{ item.StatusHuman }</span>
+										} else if item.Status == "accepted" {
+											<span class="admin-status-badge status-published">{ item.StatusHuman }</span>
+										} else if item.Status == "rejected" {
+											<span class="admin-status-badge status-rejected">{ item.StatusHuman }</span>
+										} else {
+											<span class="admin-status-badge status-archived">{ item.StatusHuman }</span>
+										}
+									</div>
+								</div>
+
+								<div class="admin-item-body">
+									<h3 style="font-size: 1.1rem; margin: 0 0 0.5rem 0;">{ item.Title }</h3>
+									<p style="font-size: 0.9rem; line-height: 1.4; color: var(--color-text); margin: 0 0 0.75rem 0;">
+										{ item.ContentSnippet }
+									</p>
+
+									<div style="background-color: var(--color-bg-subtle, #f9f9f9); padding: 0.6rem 0.8rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 0.75rem;">
+										<span class="fact-label">Alegação Vinculada:</span>
+										<div style="font-style: italic; margin-top: 0.2rem;">
+											&ldquo;{ item.ClaimProposition }&rdquo; (Claim: <a href={ templ.SafeURL("/admin/claims/" + item.ClaimID) } class="dist-filter-link"><code>{ item.ClaimID }</code></a> &bull; { item.ClaimGradeHuman })
+										</div>
+									</div>
+
+									if item.ContactInfo != "" {
+										<div style="font-size: 0.8rem; color: #842029; margin-bottom: 0.75rem;">
+											<strong>Contato Informado (Privado):</strong> { item.ContactInfo }
+										</div>
+									}
+
+									<div style="display: flex; justify-content: flex-end; gap: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 0.75rem;">
+										<a href={ templ.SafeURL("/admin/manifestacoes/" + item.ID) } class="btn btn-primary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+											Inspecionar & Deliberar &rarr;
+										</a>
+									</div>
+								</div>
+							</div>
+						}
+					</div>
+
+					<!-- Paginação -->
+					if vm.Filter.TotalPages > 1 {
+						<nav class="pagination-nav" aria-label="Navegação entre páginas" style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem;">
+							if vm.Filter.Page > 1 {
+								<a href={ templ.SafeURL(vm.Filter.BuildQueryString(vm.Filter.Page - 1)) } class="btn btn-outline">&larr; Anterior</a>
+							}
+							<span style="display: flex; align-items: center; padding: 0 0.5rem; font-size: 0.9rem; color: var(--color-text-muted);">
+								Página { fmt.Sprintf("%d", vm.Filter.Page) } de { fmt.Sprintf("%d", vm.Filter.TotalPages) }
+							</span>
+							if vm.Filter.Page < vm.Filter.TotalPages {
+								<a href={ templ.SafeURL(vm.Filter.BuildQueryString(vm.Filter.Page + 1)) } class="btn btn-outline">Próxima &rarr;</a>
+							}
+						</nav>
+					}
+				}
+			</main>
+		</body>
+	</html>
+}

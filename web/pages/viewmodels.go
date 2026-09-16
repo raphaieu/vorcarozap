@@ -213,6 +213,38 @@ type PublicClaimVM struct {
 	SupportsSources     []PublicSourceVM
 	ContradictsSources  []PublicSourceVM
 	ContextSources      []PublicSourceVM
+	DefenseStatements   []PublicDefenseStatementVM
+}
+
+// PublicDefenseStatementVM encapsula a exibição pública de uma manifestação de defesa aceita.
+type PublicDefenseStatementVM struct {
+	ID                 string
+	ClaimID            string
+	StatementType      string
+	StatementTypeHuman string
+	Title              string
+	Content            string
+	SourceURL          string
+	CreatedAtHuman     string
+}
+
+// ManifestationFormVM encapsula o estado e os dados do formulário público de manifestação.
+type ManifestationFormVM struct {
+	ClaimID          string
+	ClaimProposition string
+	EntityName       string
+	EntitySlug       string
+	StatementTypes   []StatementTypeOptionVM
+	FlashMessage     string
+	FlashError       string
+	IsSuccess        bool
+}
+
+// StatementTypeOptionVM representa uma opção no select de tipos de manifestação.
+type StatementTypeOptionVM struct {
+	Value       string
+	Label       string
+	Description string
 }
 
 type EntityDetailVM struct {
@@ -280,6 +312,19 @@ func ToPublicSourceVM(row sqlc.ListPublicEvidenceSourcesByClaimIDRow) PublicSour
 	}
 }
 
+func ToPublicDefenseStatementVM(s domain.PublicDefenseStatement) PublicDefenseStatementVM {
+	return PublicDefenseStatementVM{
+		ID:                 s.ID,
+		ClaimID:            s.ClaimID,
+		StatementType:      string(s.StatementType),
+		StatementTypeHuman: s.StatementType.Label(),
+		Title:              s.Title,
+		Content:            s.Content,
+		SourceURL:          s.SourceURL,
+		CreatedAtHuman:     FormatDate(s.CreatedAt),
+	}
+}
+
 func ToEntityDetailVM(detail *store.PublicEntityDetail) EntityDetailVM {
 	var claimsVM []PublicClaimVM
 	var lastUpdated string
@@ -296,6 +341,11 @@ func ToEntityDetailVM(detail *store.PublicEntityDetail) EntityDetailVM {
 			case "contextualizes":
 				ctxSources = append(ctxSources, sVM)
 			}
+		}
+
+		var stmtsVM []PublicDefenseStatementVM
+		for _, st := range c.Statements {
+			stmtsVM = append(stmtsVM, ToPublicDefenseStatementVM(st))
 		}
 
 		if c.Claim.UpdatedAt > lastUpdated {
@@ -322,6 +372,7 @@ func ToEntityDetailVM(detail *store.PublicEntityDetail) EntityDetailVM {
 			SupportsSources:     sup,
 			ContradictsSources:  contr,
 			ContextSources:      ctxSources,
+			DefenseStatements:   stmtsVM,
 		})
 	}
 

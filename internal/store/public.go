@@ -94,10 +94,11 @@ type PublicEntitiesResult struct {
 	TotalPages int
 }
 
-// PublicClaimWithSources agrega um claim público e suas respectivas fontes agrupadas.
+// PublicClaimWithSources agrega um claim público, suas respectivas fontes agrupadas e manifestações de defesa aceitas.
 type PublicClaimWithSources struct {
-	Claim   sqlc.ListPublicClaimsByEntityIDRow
-	Sources []sqlc.ListPublicEvidenceSourcesByClaimIDRow
+	Claim      sqlc.ListPublicClaimsByEntityIDRow
+	Sources    []sqlc.ListPublicEvidenceSourcesByClaimIDRow
+	Statements []domain.PublicDefenseStatement
 }
 
 // PublicEntityDetail agrega todos os dados públicos necessários para a visualização detalhada de uma entidade.
@@ -245,9 +246,14 @@ func GetPublicEntityDetail(ctx context.Context, db *sql.DB, slug string) (*Publi
 		if err != nil {
 			return nil, fmt.Errorf("store: falha ao listar fontes do claim %s: %w", c.ClaimID, err)
 		}
+		stmts, err := ListPublicDefenseStatementsForClaim(ctx, db, c.ClaimID)
+		if err != nil {
+			return nil, fmt.Errorf("store: falha ao listar manifestações do claim %s: %w", c.ClaimID, err)
+		}
 		claimsWithSources = append(claimsWithSources, PublicClaimWithSources{
-			Claim:   c,
-			Sources: srcs,
+			Claim:      c,
+			Sources:    srcs,
+			Statements: stmts,
 		})
 	}
 
