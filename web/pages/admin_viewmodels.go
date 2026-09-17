@@ -10,6 +10,7 @@ import (
 
 	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/normalize"
+	"github.com/raphaieu/vorcarozap/internal/observability"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
@@ -1870,6 +1871,20 @@ type AdminMFASetupVM struct {
 // AdminProfileVM modelo para tela de perfil do operador conectado.
 type AdminProfileVM struct {
 	User         AdminUserItemVM
+	FlashMessage string
+	FlashError   string
+}
+
+// AdminObservabilityViewModel modelo para a tela administrativa de observabilidade e telemetria.
+type AdminObservabilityViewModel struct {
+	Timestamp    string
+	Environment  string
+	Runtime      observability.RuntimeMetrics
+	HTTP         observability.HTTPMetrics
+	SQLite       observability.SQLiteMetrics
+	Monitoring   observability.MonitoringAccountingMetrics
+	Queues       observability.QueueMetrics
+	Backup       observability.BackupTelemetry
 	FlashMessage string
 	FlashError   string
 }

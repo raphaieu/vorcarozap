@@ -687,4 +687,58 @@ func TestSmokeChecklist_CompleteSuite(t *testing.T) {
 			t.Errorf("Vazamento crítico: Senha administrativa apareceu na saída!")
 		}
 	})
+
+	// -------------------------------------------------------------------------
+	// SMOKE CHECKLIST ITEM 17: Observabilidade Operacional e Métricas JSON
+	// -------------------------------------------------------------------------
+	t.Run("Smoke 17: Observabilidade Operacional e Metricas JSON", func(t *testing.T) {
+		if adminSessionCookie == nil {
+			t.Fatal("cookie de sessão não disponível para teste de observabilidade")
+		}
+
+		// 17.1 Página SSR /admin/observabilidade
+		reqSSR, _ := http.NewRequest("GET", ts.URL+"/admin/observabilidade", nil)
+		reqSSR.AddCookie(adminSessionCookie)
+		respSSR, err := client.Do(reqSSR)
+		if err != nil {
+			t.Fatalf("GET /admin/observabilidade falhou: %v", err)
+		}
+		defer respSSR.Body.Close()
+		if respSSR.StatusCode != http.StatusOK {
+			t.Errorf("esperado status 200 em /admin/observabilidade, obtido %d", respSSR.StatusCode)
+		}
+		ssrBody, _ := io.ReadAll(respSSR.Body)
+		if !strings.Contains(string(ssrBody), "Observabilidade Operacional") {
+			t.Error("página /admin/observabilidade não contém título esperado")
+		}
+
+		// 17.2 API JSON /admin/api/metrics
+		reqAPI, _ := http.NewRequest("GET", ts.URL+"/admin/api/metrics", nil)
+		reqAPI.AddCookie(adminSessionCookie)
+		respAPI, err := client.Do(reqAPI)
+		if err != nil {
+			t.Fatalf("GET /admin/api/metrics falhou: %v", err)
+		}
+		defer respAPI.Body.Close()
+		if respAPI.StatusCode != http.StatusOK {
+			t.Errorf("esperado status 200 em /admin/api/metrics, obtido %d", respAPI.StatusCode)
+		}
+		apiBody, _ := io.ReadAll(respAPI.Body)
+		if !strings.Contains(string(apiBody), "runtime") || !strings.Contains(string(apiBody), "sqlite") {
+			t.Errorf("resposta JSON de /admin/api/metrics não contém seções esperadas: %s", string(apiBody))
+		}
+	})
+
+	// -------------------------------------------------------------------------
+	// SMOKE CHECKLIST ITEM 18: Restauração Não-Destrutiva em Sandbox
+	// -------------------------------------------------------------------------
+	t.Run("Smoke 18: Restauracao em Sandbox Nao-Destrutivo", func(t *testing.T) {
+		if backupFile == "" {
+			t.Fatal("arquivo de backup não foi gerado no passo anterior")
+		}
+		err := runRestoreSandbox([]string{"--file", backupFile})
+		if err != nil {
+			t.Fatalf("falha ao executar runRestoreSandbox: %v", err)
+		}
+	})
 }

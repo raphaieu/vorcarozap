@@ -11,15 +11,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/raphaieu/vorcarozap/internal/backup"
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/exporter"
 	"github.com/raphaieu/vorcarozap/internal/importer"
 	"github.com/raphaieu/vorcarozap/internal/monitoring"
+	"github.com/raphaieu/vorcarozap/internal/observability"
 	"github.com/raphaieu/vorcarozap/internal/research/openrouter"
 	"github.com/raphaieu/vorcarozap/internal/sourcecheck"
 	"github.com/raphaieu/vorcarozap/internal/store"
@@ -30,6 +31,10 @@ func main() {
 	if len(os.Args) < 2 {
 		printUsage(os.Stderr)
 		os.Exit(1)
+	}
+
+	if cfg, err := config.Load(); err == nil {
+		observability.InitLogger(cfg, os.Stderr)
 	}
 
 	command := os.Args[1]
@@ -70,9 +75,19 @@ func main() {
 			slog.Error("erro ao executar comando verify-backup", "error", err)
 			os.Exit(1)
 		}
+	case "verify-remote":
+		if err := runVerifyRemote(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando verify-remote", "error", err)
+			os.Exit(1)
+		}
 	case "restore":
 		if err := runRestore(os.Args[2:]); err != nil {
 			slog.Error("erro ao executar comando restore", "error", err)
+			os.Exit(1)
+		}
+	case "restore-sandbox":
+		if err := runRestoreSandbox(os.Args[2:]); err != nil {
+			slog.Error("erro ao executar comando restore-sandbox", "error", err)
 			os.Exit(1)
 		}
 	case "help", "-h", "--help":
@@ -92,15 +107,17 @@ Uso:
   vorcarozap <comando> [opções]
 
 Comandos disponíveis nesta fase:
-  serve          Aplica migrations pendentes e inicia o servidor HTTP
-  migrate        Aplica migrations pendentes no banco SQLite
-  import         Importa dados da planilha XLSX curated_seed (--file obrigatório, opcional --dry-run)
-  export         Exporta a base pública ativa em planilha XLSX (--out opcional)
-  monitor        Executa ciclo seguro de monitoramento OpenRouter (--query obrigatório)
-  backup         Gera backup atômico e consistente do SQLite via VACUUM INTO (--out opcional)
-  verify-backup  Verifica integridade (PRAGMA integrity_check) e migrations de um backup (--file obrigatório)
-  restore        Restaura backup verificado para o banco de destino (--backup, --target e --confirm)
-  help           Exibe esta mensagem de ajuda
+  serve            Aplica migrations pendentes e inicia o servidor HTTP
+  migrate          Aplica migrations pendentes no banco SQLite
+  import           Importa dados da planilha XLSX curated_seed (--file obrigatório, opcional --dry-run)
+  export           Exporta a base pública ativa em planilha XLSX (--out opcional)
+  monitor          Executa ciclo seguro de monitoramento OpenRouter (--query obrigatório)
+  backup           Gera backup atômico do SQLite via VACUUM INTO e opcionalmente envia ao Object Storage (--out, --retention, --remote)
+  verify-backup    Verifica integridade (PRAGMA integrity_check) e migrations de um backup local (--file obrigatório)
+  verify-remote    Verifica presença, integridade e metadados de backup no Object Storage (--key obrigatório)
+  restore          Restaura backup verificado para o banco de destino (--backup, --target e --confirm)
+  restore-sandbox  Restaura backup em sandbox isolado sem alterar produção (--file ou --remote-key)
+  help             Exibe esta mensagem de ajuda
 
 Configuração via variáveis de ambiente:
   APP_PORT                                Porta HTTP do servidor (padrão: 8080)
@@ -108,9 +125,21 @@ Configuração via variáveis de ambiente:
   DB_PATH                                 Caminho do banco SQLite (padrão: ./data/vorcarozap.db)
   MAPPING_PATH                            Caminho do YAML de mapping (padrão: config/import-mapping-v1.yaml)
   PUBLIC_DATA_CUTOFF                      Data de corte para dados públicos YYYY-MM-DD (padrão: 2026-09-03)
+  LOG_FORMAT                              Formato de log: text|json (padrão: text)
+  LOG_LEVEL                               Nível de log: debug|info|warn|error (padrão: info)
   APP_READ_TIMEOUT                        Timeout de leitura HTTP (padrão: 5s)
   APP_WRITE_TIMEOUT                       Timeout de escrita HTTP (padrão: 10s)
   APP_IDLE_TIMEOUT                        Timeout de conexões ociosas (padrão: 60s)
+  BACKUP_REMOTE_ENABLED                   Habilita envio seguro para Object Storage S3 (padrão: false)
+  BACKUP_REMOTE_PROVIDER                  Provedor de Object Storage: s3|r2|minio|wasabi|oracle|custom (padrão: s3)
+  BACKUP_REMOTE_ENDPOINT                  Endpoint HTTPS do S3/R2 (obrigatório se remote habilitado)
+  BACKUP_REMOTE_REGION                    Região do bucket S3 (padrão: us-east-1)
+  BACKUP_REMOTE_BUCKET                    Nome do bucket S3 (obrigatório se remote habilitado)
+  BACKUP_REMOTE_PREFIX                    Prefixo/diretório de destino no bucket (padrão: backups)
+  BACKUP_REMOTE_ACCESS_KEY_ID             Access Key ID para autenticação AWS SigV4
+  BACKUP_REMOTE_SECRET_ACCESS_KEY         Secret Access Key para autenticação AWS SigV4
+  BACKUP_REMOTE_RETENTION_COUNT           Quantidade de backups remotos a reter no bucket (padrão: 14)
+  BACKUP_REMOTE_TIMEOUT                   Timeout de operações HTTP com o Object Storage (padrão: 60s)
   SOURCE_NOT_CHECKED_POLICY_OPENROUTER    Política para openrouter not_checked: quarantine|allow (padrão: quarantine)
   SOURCE_NOT_CHECKED_POLICY_CURATED_SEED  Política para curated_seed not_checked: quarantine|allow (padrão: allow)
   SOURCE_CHECK_TIMEOUT                    Timeout de verificação de fonte (padrão: 5s)
@@ -529,17 +558,19 @@ func runBackup(args []string) error {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Uso do comando backup:
-  vorcarozap backup [--out <caminho.db>] [--retention <N>]
+  vorcarozap backup [--out <caminho.db>] [--retention <N>] [--remote]
 
 Opções:
   --out string     Caminho do arquivo de destino do backup (padrão: /backups/vorcarozap-YYYYMMDD_HHMMSSZ.db ou ./backups/...)
-  --retention int  Quantidade de backups mais recentes a reter (0 = desabilitado)
+  --retention int  Quantidade de backups locais mais recentes a reter (0 = desabilitado)
+  --remote         Força o envio do backup para o Object Storage configurado
   -h, --help       Exibe esta ajuda
 `)
 	}
 
 	outPath := fs.String("out", "", "Caminho do arquivo de backup de destino")
 	retention := fs.Int("retention", 0, "Quantidade de backups a reter (0 = desabilitado)")
+	remote := fs.Bool("remote", false, "Força envio do backup para Object Storage")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -557,16 +588,6 @@ Opções:
 		return fmt.Errorf("carregamento de configuração: %w", err)
 	}
 
-	dest := *outPath
-	if dest == "" {
-		timestamp := time.Now().UTC().Format("20060102_150405Z")
-		if _, err := os.Stat("/backups"); err == nil {
-			dest = fmt.Sprintf("/backups/vorcarozap-%s.db", timestamp)
-		} else {
-			dest = fmt.Sprintf("backups/vorcarozap-%s.db", timestamp)
-		}
-	}
-
 	ctx := context.Background()
 	db, err := store.Open(ctx, cfg.DBPath)
 	if err != nil {
@@ -574,30 +595,80 @@ Opções:
 	}
 	defer db.Close()
 
-	slog.Info("iniciando backup consistente do SQLite (VACUUM INTO)...", "origem", cfg.DBPath, "destino", dest)
-	result, err := store.Backup(ctx, db, dest)
+	mgr, err := backup.NewManager(backup.ManagerConfig{
+		DB:       db,
+		Config:   cfg,
+		Registry: observability.GetRegistry(),
+	})
+	if err != nil {
+		return fmt.Errorf("inicialização do gerenciador de backup: %w", err)
+	}
+
+	slog.Info("iniciando rotina de backup consistente...", "origem", cfg.DBPath, "destino", *outPath, "force_remote", *remote)
+	report, err := mgr.RunBackup(ctx, *outPath, *retention, *remote)
 	if err != nil {
 		return fmt.Errorf("execução do backup: %w", err)
 	}
 
-	slog.Info("backup concluído com sucesso", "arquivo", result.BackupPath, "tamanho_bytes", result.SizeBytes, "versao_schema", result.SchemaVersion)
+	printBackupExecutionReport(os.Stdout, report)
+	if report.RemoteAttempted && !report.RemoteSuccess && report.RemoteError != nil {
+		slog.Warn("atenção: backup local foi concluído com sucesso, mas o upload remoto falhou", "error", report.RemoteError)
+	}
 
-	var rotatedFiles []string
-	if *retention > 0 {
-		backupDir := filepath.Dir(result.BackupPath)
-		slog.Info("aplicando política de retenção de backups...", "dir", backupDir, "manter", *retention)
-		var rotErr error
-		rotatedFiles, rotErr = store.RotateBackups(backupDir, *retention)
-		if rotErr != nil {
-			return fmt.Errorf("backup gerado com sucesso em %q, mas a política de retenção falhou: %w", result.BackupPath, rotErr)
-		}
-		if len(rotatedFiles) > 0 {
-			slog.Info("backups antigos removidos por retenção", "total_removidos", len(rotatedFiles), "arquivos", rotatedFiles)
+	return nil
+}
+
+func printBackupExecutionReport(w io.Writer, rep *backup.BackupExecutionReport) {
+	localRetentionInfo := "Nenhuma remoção realizada (ou retenção desabilitada)"
+	if len(rep.LocalRotated) > 0 {
+		localRetentionInfo = fmt.Sprintf("%d arquivo(s) antigo(s) removido(s) por retenção:\n  - %s", len(rep.LocalRotated), strings.Join(rep.LocalRotated, "\n  - "))
+	}
+
+	remoteStatus := "Desabilitado (não executado)"
+	if rep.RemoteAttempted {
+		if rep.RemoteSuccess {
+			remoteRetentionInfo := "Nenhum objeto remoto removido (ou retenção desabilitada)"
+			if len(rep.RemoteRotated) > 0 {
+				remoteRetentionInfo = fmt.Sprintf("%d objeto(s) remoto(s) rotacionado(s):\n  - %s", len(rep.RemoteRotated), strings.Join(rep.RemoteRotated, "\n  - "))
+			}
+			remoteStatus = fmt.Sprintf(`SUCESSO
+  Provedor:              %s
+  Bucket:                %s
+  Chave Remota:          %s
+  Checksum SHA-256:      %s
+  Duração do Upload:     %s
+  Retenção Remota:       %s`,
+				rep.RemoteProvider, rep.RemoteBucket, rep.RemoteKey, rep.RemoteSHA256, rep.RemoteDuration.Round(time.Millisecond), remoteRetentionInfo)
+		} else {
+			remoteStatus = fmt.Sprintf("FALHA: %v (Isolamento ativo: backup local preservado)", rep.RemoteError)
 		}
 	}
 
-	printBackupSummary(os.Stdout, result, rotatedFiles)
-	return nil
+	fmt.Fprintf(w, `
+================================================================================
+VorcaroZAP — Relatório de Backup do SQLite
+================================================================================
+Backup Local:
+  Arquivo de Destino:   %s
+  Tamanho:              %.2f KB (%d bytes)
+  Integridade (PRAGMA): OK (sem corrupção de páginas ou índices)
+  Versão de Migrations: %d (100%% compatível com o binário)
+  Duração Local:        %s
+  Retenção Local:       %s
+
+Backup Remoto (Object Storage):
+  Status: %s
+================================================================================
+Backup concluído com sucesso e verificado.
+`,
+		rep.LocalPath,
+		float64(rep.LocalSizeBytes)/1024.0,
+		rep.LocalSizeBytes,
+		rep.LocalSchemaVersion,
+		rep.LocalDuration.Round(time.Millisecond),
+		localRetentionInfo,
+		remoteStatus,
+	)
 }
 
 func printBackupSummary(w io.Writer, res *store.BackupResult, rotated []string) {
@@ -667,6 +738,82 @@ Opções:
 	return nil
 }
 
+func runVerifyRemote(args []string) error {
+	fs := flag.NewFlagSet("verify-remote", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando verify-remote:
+  vorcarozap verify-remote --key <nome_do_objeto>
+
+Opções:
+  --key string   Chave/caminho do arquivo de backup no Object Storage (obrigatório)
+  -h, --help     Exibe esta ajuda
+`)
+	}
+
+	key := fs.String("key", "", "Chave do arquivo de backup no Object Storage")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	if *key == "" {
+		fs.Usage()
+		return fmt.Errorf("a flag --key é obrigatória")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("carregamento de configuração: %w", err)
+	}
+
+	if !cfg.BackupRemoteEnabled {
+		return fmt.Errorf("backup remoto está desabilitado na configuração (defina BACKUP_REMOTE_ENABLED=true e credenciais)")
+	}
+
+	ctx := context.Background()
+	mgr, err := backup.NewManager(backup.ManagerConfig{
+		Config:   cfg,
+		Registry: observability.GetRegistry(),
+	})
+	if err != nil {
+		return fmt.Errorf("inicialização do gerenciador de backup: %w", err)
+	}
+
+	slog.Info("verificando objeto de backup no Object Storage...", "key", *key, "bucket", cfg.BackupRemoteBucket)
+	meta, err := mgr.VerifyRemote(ctx, *key)
+	if err != nil {
+		return fmt.Errorf("verificação remota falhou: %w", err)
+	}
+
+	slog.Info("backup remoto verificado com sucesso", "key", meta.Key, "size_bytes", meta.SizeBytes, "sha256", meta.SHA256Hex)
+	fmt.Printf(`
+================================================================================
+VorcaroZAP — Verificação de Backup Remoto (Object Storage)
+================================================================================
+Provedor:              %s
+Bucket:                %s
+Chave Remota:          %s
+Tamanho:               %.2f KB (%d bytes)
+Checksum SHA-256:      %s
+Última Modificação:    %s
+Status:                Íntegro e presente no Object Storage
+================================================================================
+`,
+		cfg.BackupRemoteProvider,
+		cfg.BackupRemoteBucket,
+		meta.Key,
+		float64(meta.SizeBytes)/1024.0,
+		meta.SizeBytes,
+		meta.SHA256Hex,
+		meta.LastModified.Format(time.RFC3339),
+	)
+	return nil
+}
+
 func runRestore(args []string) error {
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -710,5 +857,81 @@ Opções:
 
 	slog.Info("restauração concluída com sucesso e verificada", "destino", *targetPath)
 	fmt.Printf("Backup %s restaurado com sucesso em %s (integridade e migrations verificadas)\n", *backupPath, *targetPath)
+	return nil
+}
+
+func runRestoreSandbox(args []string) error {
+	fs := flag.NewFlagSet("restore-sandbox", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Uso do comando restore-sandbox:
+  vorcarozap restore-sandbox [--file <caminho.db>] [--remote-key <nome_do_objeto>]
+
+Opções:
+  --file string         Caminho do arquivo de backup local a validar
+  --remote-key string   Chave do backup no Object Storage a baixar e validar
+  -h, --help            Exibe esta ajuda
+`)
+	}
+
+	filePath := fs.String("file", "", "Caminho do arquivo de backup local")
+	remoteKey := fs.String("remote-key", "", "Chave do arquivo de backup no Object Storage")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parâmetros inválidos: %w", err)
+	}
+
+	if *filePath == "" && *remoteKey == "" {
+		fs.Usage()
+		return fmt.Errorf("informe ao menos uma origem para teste de restauração (--file ou --remote-key)")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("carregamento de configuração: %w", err)
+	}
+
+	ctx := context.Background()
+	mgr, err := backup.NewManager(backup.ManagerConfig{
+		Config:   cfg,
+		Registry: observability.GetRegistry(),
+	})
+	if err != nil {
+		return fmt.Errorf("inicialização do gerenciador de backup: %w", err)
+	}
+
+	slog.Info("iniciando restauração não-destrutiva em sandbox isolado...", "file", *filePath, "remote_key", *remoteKey)
+	report, err := mgr.RestoreSandbox(ctx, *filePath, *remoteKey)
+	if err != nil {
+		return fmt.Errorf("teste de restauração em sandbox falhou: %w", err)
+	}
+
+	fmt.Printf(`
+================================================================================
+VorcaroZAP — Relatório de Restauração em Sandbox (Não-Destrutivo)
+================================================================================
+Origem:                %s (%s)
+Tamanho:               %.2f KB (%d bytes)
+Versão de Migrations:  %d
+Integridade (PRAGMA):  OK (100%% íntegro)
+Entidades no Banco:    %d
+Alegações no Banco:    %d
+Duração do Teste:      %s
+Status:                Restauração verificada com sucesso (banco ativo preservado)
+================================================================================
+`,
+		report.SourceIdentifier,
+		report.SourceType,
+		float64(report.SizeBytes)/1024.0,
+		report.SizeBytes,
+		report.SchemaVersion,
+		report.TotalEntities,
+		report.TotalClaims,
+		report.Duration.Round(time.Millisecond),
+	)
+
 	return nil
 }

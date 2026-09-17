@@ -1004,3 +1004,145 @@ func TestConfigAdminVariables(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigObservabilityDefaults(t *testing.T) {
+	_ = os.Unsetenv("LOG_FORMAT")
+	_ = os.Unsetenv("LOG_LEVEL")
+	_ = os.Unsetenv("APP_ENV")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if cfg.LogFormat != "text" {
+		t.Errorf("esperado LogFormat 'text' em dev, obtido %q", cfg.LogFormat)
+	}
+	if cfg.LogLevel != "INFO" {
+		t.Errorf("esperado LogLevel 'INFO', obtido %q", cfg.LogLevel)
+	}
+
+	t.Setenv("APP_ENV", "production")
+	cfgProd, err := config.Load()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if cfgProd.LogFormat != "json" {
+		t.Errorf("esperado LogFormat 'json' em prod por padrão, obtido %q", cfgProd.LogFormat)
+	}
+}
+
+func TestConfigObservabilityCustom(t *testing.T) {
+	t.Setenv("LOG_FORMAT", "json")
+	t.Setenv("LOG_LEVEL", "DEBUG")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("esperado LogFormat 'json', obtido %q", cfg.LogFormat)
+	}
+	if cfg.LogLevel != "DEBUG" {
+		t.Errorf("esperado LogLevel 'DEBUG', obtido %q", cfg.LogLevel)
+	}
+
+	// Inválidos
+	t.Setenv("LOG_FORMAT", "xml")
+	if _, err := config.Load(); err == nil {
+		t.Errorf("esperava erro para LOG_FORMAT inválido")
+	}
+
+	t.Setenv("LOG_FORMAT", "json")
+	t.Setenv("LOG_LEVEL", "INVALID_LEVEL")
+	if _, err := config.Load(); err == nil {
+		t.Errorf("esperava erro para LOG_LEVEL inválido")
+	}
+}
+
+func TestConfigRemoteBackupDefaults(t *testing.T) {
+	_ = os.Unsetenv("BACKUP_REMOTE_ENABLED")
+	_ = os.Unsetenv("BACKUP_REMOTE_BUCKET")
+	_ = os.Unsetenv("BACKUP_REMOTE_ACCESS_KEY")
+	_ = os.Unsetenv("BACKUP_REMOTE_SECRET_KEY")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if cfg.BackupRemoteEnabled {
+		t.Errorf("esperado BackupRemoteEnabled=false por padrão")
+	}
+	if cfg.BackupRemoteProvider != "s3" {
+		t.Errorf("esperado BackupRemoteProvider='s3', obtido %q", cfg.BackupRemoteProvider)
+	}
+	if cfg.BackupRemoteEndpoint != "https://s3.us-east-1.amazonaws.com" {
+		t.Errorf("esperado endpoint padrão, obtido %q", cfg.BackupRemoteEndpoint)
+	}
+	if cfg.BackupRemoteRegion != "us-east-1" {
+		t.Errorf("esperado us-east-1, obtido %q", cfg.BackupRemoteRegion)
+	}
+	if cfg.BackupRemotePrefix != "backups" {
+		t.Errorf("esperado prefix backups, obtido %q", cfg.BackupRemotePrefix)
+	}
+	if cfg.BackupRemoteRetentionCount != 14 {
+		t.Errorf("esperado retention count 14, obtido %d", cfg.BackupRemoteRetentionCount)
+	}
+	if cfg.BackupRemoteTimeout != 60*time.Second {
+		t.Errorf("esperado timeout 60s, obtido %v", cfg.BackupRemoteTimeout)
+	}
+}
+
+func TestConfigRemoteBackupFailClosed(t *testing.T) {
+	t.Setenv("BACKUP_REMOTE_ENABLED", "true")
+
+	// 1. Falta bucket
+	_ = os.Unsetenv("BACKUP_REMOTE_BUCKET")
+	t.Setenv("BACKUP_REMOTE_ACCESS_KEY", "AKIA123")
+	t.Setenv("BACKUP_REMOTE_SECRET_KEY", "SECRET123")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "BACKUP_REMOTE_BUCKET") {
+		t.Errorf("esperava erro de bucket obrigatório, obtido: %v", err)
+	}
+
+	// 2. Falta access key
+	t.Setenv("BACKUP_REMOTE_BUCKET", "my-bucket")
+	_ = os.Unsetenv("BACKUP_REMOTE_ACCESS_KEY")
+	t.Setenv("BACKUP_REMOTE_SECRET_KEY", "SECRET123")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "BACKUP_REMOTE_ACCESS_KEY") {
+		t.Errorf("esperava erro de access key obrigatória, obtido: %v", err)
+	}
+
+	// 3. Falta secret key
+	t.Setenv("BACKUP_REMOTE_ACCESS_KEY", "AKIA123")
+	_ = os.Unsetenv("BACKUP_REMOTE_SECRET_KEY")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "BACKUP_REMOTE_SECRET_KEY") {
+		t.Errorf("esperava erro de secret key obrigatória, obtido: %v", err)
+	}
+
+	// 4. Endpoint inválido
+	t.Setenv("BACKUP_REMOTE_SECRET_KEY", "SECRET123")
+	t.Setenv("BACKUP_REMOTE_ENDPOINT", "not-a-url")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "BACKUP_REMOTE_ENDPOINT") {
+		t.Errorf("esperava erro de endpoint inválido, obtido: %v", err)
+	}
+
+	// 4.1 Endpoint HTTP sem TLS (rejeitado por exigir HTTPS)
+	t.Setenv("BACKUP_REMOTE_ENDPOINT", "http://s3.us-east-1.amazonaws.com")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "esquema deve ser https") {
+		t.Errorf("esperava erro de endpoint HTTP rejeitado, obtido: %v", err)
+	}
+
+	// 5. Sucesso quando completo
+	t.Setenv("BACKUP_REMOTE_ENDPOINT", "https://s3.us-east-1.amazonaws.com")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("esperava sucesso com todos os parâmetros fornecidos, obtido: %v", err)
+	}
+	if !cfg.BackupRemoteEnabled {
+		t.Errorf("esperado BackupRemoteEnabled=true")
+	}
+	if cfg.BackupRemoteBucket != "my-bucket" {
+		t.Errorf("esperado bucket my-bucket, obtido %q", cfg.BackupRemoteBucket)
+	}
+}

@@ -49,6 +49,7 @@ func TestUserRole_HasPermission_CompleteMatrix(t *testing.T) {
 		domain.PermModerateManifestations,
 		domain.PermManageUsers,
 		domain.PermViewAuditLogs,
+		domain.PermViewObservability,
 	}
 
 	for _, p := range allPermissions {
@@ -78,6 +79,7 @@ func TestUserRole_HasPermission_CompleteMatrix(t *testing.T) {
 				domain.PermModerateManifestations:   true,
 				domain.PermManageUsers:              true,
 				domain.PermViewAuditLogs:            true,
+				domain.PermViewObservability:        true,
 			},
 		},
 		{
@@ -96,6 +98,7 @@ func TestUserRole_HasPermission_CompleteMatrix(t *testing.T) {
 				domain.PermModerateManifestations:   true,
 				domain.PermManageUsers:              false,
 				domain.PermViewAuditLogs:            false,
+				domain.PermViewObservability:        false,
 			},
 		},
 		{
@@ -114,10 +117,11 @@ func TestUserRole_HasPermission_CompleteMatrix(t *testing.T) {
 				domain.PermModerateManifestations:   false,
 				domain.PermManageUsers:              false,
 				domain.PermViewAuditLogs:            false,
+				domain.PermViewObservability:        false,
 			},
 		},
 		{
-			name: "Auditor possui leitura ampla e auditoria, sem contato de terceiros nem mutações",
+			name: "Auditor possui leitura ampla, auditoria e observabilidade, sem contato de terceiros nem mutações",
 			role: domain.RoleAuditor,
 			expectedMap: map[domain.Permission]bool{
 				domain.PermViewDashboard:            true,
@@ -132,6 +136,7 @@ func TestUserRole_HasPermission_CompleteMatrix(t *testing.T) {
 				domain.PermModerateManifestations:   false,
 				domain.PermManageUsers:              false,
 				domain.PermViewAuditLogs:            true,
+				domain.PermViewObservability:        true,
 			},
 		},
 		{
@@ -150,6 +155,7 @@ func TestUserRole_HasPermission_CompleteMatrix(t *testing.T) {
 				domain.PermModerateManifestations:   false,
 				domain.PermManageUsers:              false,
 				domain.PermViewAuditLogs:            false,
+				domain.PermViewObservability:        false,
 			},
 		},
 	}

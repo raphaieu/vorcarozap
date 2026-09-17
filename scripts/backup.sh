@@ -55,12 +55,16 @@ while [[ $# -gt 0 ]]; do
             ARGS+=("$1" "$2")
             shift 2
             ;;
+        --remote)
+            ARGS+=("$1")
+            shift
+            ;;
         -h|--help)
             ARGS+=("$1")
             shift
             ;;
         *)
-            log "ERRO: Opção desconhecida '$1'. Opções aceitas: --out <caminho>, --retention <N>, --help."
+            log "ERRO: Opção desconhecida '$1'. Opções aceitas: --out <caminho>, --retention <N>, --remote, --help."
             exit 1
             ;;
     esac

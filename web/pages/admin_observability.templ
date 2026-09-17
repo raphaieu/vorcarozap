@@ -1,0 +1,328 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/raphaieu/vorcarozap/web/components"
+)
+
+templ AdminObservability(vm AdminObservabilityViewModel) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Observabilidade Operacional e Telemetria em Tempo de Execução — VorcaroZAP."/>
+			<title>Observabilidade & Telemetria — Painel Administrativo — VorcaroZAP</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body>
+			@components.AdminNav("observabilidade")
+			<main class="container">
+				<!-- Header e Identificação -->
+				<div class="card" style="margin-bottom: 1.5rem;" aria-label="Painel de Observabilidade">
+					<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+						<div>
+							<h1 class="page-title" style="margin: 0;">Observabilidade Operacional & Telemetria</h1>
+							<p class="page-subtitle" style="margin: 0.25rem 0 0; color: var(--color-text-muted);">
+								Métricas em tempo de execução, integridade do SQLite WAL, tráfego HTTP, contabilidade de LLM e telemetria de backups
+							</p>
+						</div>
+						<div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+							<span class="badge" style="background-color: #d1e7dd; color: #0f5132; font-size: 0.85rem; padding: 0.35rem 0.65rem;">
+								Ambiente: { vm.Environment }
+							</span>
+							<a
+								href="/admin/api/metrics"
+								class="btn btn-secondary"
+								target="_blank"
+								rel="noopener noreferrer"
+								style="font-size: 0.85rem; padding: 0.35rem 0.75rem;"
+							>
+								Ver JSON API &rarr;
+							</a>
+						</div>
+					</div>
+				</div>
+
+				if vm.FlashError != "" {
+					<div class="alert alert-error" style="margin-bottom: 1.5rem;">{ vm.FlashError }</div>
+				}
+				if vm.FlashMessage != "" {
+					<div class="alert alert-success" style="margin-bottom: 1.5rem;">{ vm.FlashMessage }</div>
+				}
+
+				<!-- 1. Grid de Runtime e Saúde Geral -->
+				<section aria-label="Runtime Go e Saúde Geral" style="margin-bottom: 1.5rem;">
+					<h2 style="font-size: 1.15rem; margin-bottom: 0.75rem; color: var(--color-text-main);">1. Runtime Go & Estado do Processo</h2>
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+						<div class="card" style="padding: 1rem;">
+							<div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase; font-weight: 600;">Tempo de Atividade (Uptime)</div>
+							<div style="font-size: 1.35rem; font-weight: 700; margin-top: 0.25rem; color: var(--color-primary);">{ vm.Runtime.UptimeHuman }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.2rem;">{ fmt.Sprintf("%d segundos decorridos", vm.Runtime.UptimeSeconds) }</div>
+						</div>
+						<div class="card" style="padding: 1rem;">
+							<div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase; font-weight: 600;">Goroutines & CPUs</div>
+							<div style="font-size: 1.35rem; font-weight: 700; margin-top: 0.25rem;">{ fmt.Sprintf("%d ativas", vm.Runtime.NumGoroutines) }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.2rem;">{ fmt.Sprintf("%d CPUs lógicas disponíveis", vm.Runtime.NumCPU) }</div>
+						</div>
+						<div class="card" style="padding: 1rem;">
+							<div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase; font-weight: 600;">Memória Alocada (Heap)</div>
+							<div style="font-size: 1.35rem; font-weight: 700; margin-top: 0.25rem;">{ vm.Runtime.AllocMB }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.2rem;">{ fmt.Sprintf("Total Sys: %s", vm.Runtime.SysMB) }</div>
+						</div>
+						<div class="card" style="padding: 1rem;">
+							<div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase; font-weight: 600;">Garbage Collection & Versão</div>
+							<div style="font-size: 1.35rem; font-weight: 700; margin-top: 0.25rem;">{ fmt.Sprintf("%d ciclos", vm.Runtime.NumGC) }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.2rem;">{ vm.Runtime.GoVersion }</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- 2. Tráfego e Desempenho HTTP -->
+				<section aria-label="Desempenho HTTP" style="margin-bottom: 1.5rem;">
+					<h2 style="font-size: 1.15rem; margin-bottom: 0.75rem; color: var(--color-text-main);">2. Tráfego e Desempenho HTTP</h2>
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+						<!-- Latências -->
+						<div class="card" style="padding: 1.25rem;">
+							<h3 style="font-size: 0.95rem; margin-top: 0; margin-bottom: 0.75rem; color: var(--color-text-muted);">Latências de Resposta (Amostragem Deslizante)</h3>
+							<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0.5rem 0;">
+								<span>Latência Média:</span>
+								<strong>{ fmt.Sprintf("%.2f ms", vm.HTTP.AvgLatencyMs) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0.5rem 0;">
+								<span>Percentil 95 (P95):</span>
+								<strong>{ fmt.Sprintf("%.2f ms", vm.HTTP.P95LatencyMs) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0;">
+								<span>Latência Máxima:</span>
+								<strong>{ fmt.Sprintf("%.2f ms", vm.HTTP.MaxLatencyMs) }</strong>
+							</div>
+						</div>
+
+						<!-- Distribuição de Status Codes -->
+						<div class="card" style="padding: 1.25rem;">
+							<h3 style="font-size: 0.95rem; margin-top: 0; margin-bottom: 0.75rem; color: var(--color-text-muted);">Distribuição de Códigos HTTP</h3>
+							<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0.4rem 0;">
+								<span>Total de Requisições:</span>
+								<strong>{ fmt.Sprintf("%d", vm.HTTP.TotalRequests) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0.4rem 0;">
+								<span style="color: #198754;">2xx (Sucesso):</span>
+								<strong>{ fmt.Sprintf("%d", vm.HTTP.Status2xx) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0.4rem 0;">
+								<span style="color: #0dcaf0;">3xx (Redirecionamento):</span>
+								<strong>{ fmt.Sprintf("%d", vm.HTTP.Status3xx) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding: 0.4rem 0;">
+								<span style="color: #ffc107;">4xx (Cliente: 401={ fmt.Sprintf("%d", vm.HTTP.Status401) }, 403={ fmt.Sprintf("%d", vm.HTTP.Status403) }, 404={ fmt.Sprintf("%d", vm.HTTP.Status404) }):</span>
+								<strong>{ fmt.Sprintf("%d", vm.HTTP.Status4xx) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0;">
+								<span style="color: #dc3545;">5xx (Erros de Servidor):</span>
+								<strong>{ fmt.Sprintf("%d", vm.HTTP.Status5xx) }</strong>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- 3. SQLite WAL Health & Filas Editoriais -->
+				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+					<!-- SQLite WAL Health -->
+					<section class="card" aria-label="Saúde do SQLite WAL">
+						<h2 style="font-size: 1.1rem; margin-top: 0; margin-bottom: 0.75rem;">3. Saúde do SQLite WAL</h2>
+						<div style="display: flex; flex-direction: column; gap: 0.5rem;">
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Tamanho do Banco (.db):</span>
+								<strong>{ vm.SQLite.DBSizeHuman } ({ fmt.Sprintf("%d bytes", vm.SQLite.DBSizeBytes) })</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Tamanho do Journal (-wal):</span>
+								<strong>{ vm.SQLite.WALSizeHuman }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Contagem de Páginas:</span>
+								<strong>{ fmt.Sprintf("%d páginas", vm.SQLite.PageCount) } (tamanho: { fmt.Sprintf("%d bytes", vm.SQLite.PageSizeBytes) })</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Páginas Livres (Freelist):</span>
+								<strong>{ fmt.Sprintf("%d", vm.SQLite.FreelistCount) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Versão do Schema (Migrations):</span>
+								<span class="badge" style="background-color: #cfe2ff; color: #084298;">v{ fmt.Sprintf("%d", vm.SQLite.CurrentSchemaV) }</span>
+							</div>
+							<div style="display: flex; justify-content: space-between;">
+								<span style="color: var(--color-text-muted);">Modo de Journal / Sincronismo:</span>
+								<strong>{ vm.SQLite.JournalMode } / { vm.SQLite.SynchronousMode }</strong>
+							</div>
+						</div>
+					</section>
+
+					<!-- Filas Editoriais e Segurança -->
+					<section class="card" aria-label="Filas Editoriais e Segurança">
+						<h2 style="font-size: 1.1rem; margin-top: 0; margin-bottom: 0.75rem;">4. Filas Editoriais e Segurança</h2>
+						<div style="display: flex; flex-direction: column; gap: 0.5rem;">
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Alegações Totais:</span>
+								<strong>{ fmt.Sprintf("%d (Ativas: %d, Quarentena: %d, Rejeitadas: %d)", vm.Queues.TotalClaims, vm.Queues.ActiveClaims, vm.Queues.QuarantinedClaims, vm.Queues.RejectedClaims) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Manifestações de Contraditório:</span>
+								<strong>{ fmt.Sprintf("%d (Pendentes de Moderação: %d)", vm.Queues.TotalManifestations, vm.Queues.PendingManifestations) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Contas Administrativas:</span>
+								<strong>{ fmt.Sprintf("%d usuários cadastrados", vm.Queues.TotalUsers) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.35rem;">
+								<span style="color: var(--color-text-muted);">Sessões Ativas no Servidor:</span>
+								<strong>{ fmt.Sprintf("%d sessões", vm.Queues.ActiveSessions) }</strong>
+							</div>
+							<div style="display: flex; justify-content: space-between;">
+								<span style="color: var(--color-text-muted);">Contas Bloqueadas (Lockout):</span>
+								if vm.Queues.LockedUsers > 0 {
+									<span class="badge" style="background-color: #f8d7da; color: #842029;">{ fmt.Sprintf("%d bloqueada(s)", vm.Queues.LockedUsers) }</span>
+								} else {
+									<span class="badge" style="background-color: #d1e7dd; color: #0f5132;">0 bloqueios</span>
+								}
+							</div>
+						</div>
+					</section>
+				</div>
+
+				<!-- 4. Monitoramento e Contabilidade de Custos LLM -->
+				<section class="card" aria-label="Monitoramento e Custos de LLM" style="margin-bottom: 1.5rem;">
+					<h2 style="font-size: 1.1rem; margin-top: 0; margin-bottom: 0.75rem;">5. Monitoramento Factual & Contabilidade OpenRouter (LLM)</h2>
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+						<div style="background-color: var(--color-bg-alt); padding: 0.75rem; border-radius: 4px;">
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase;">Execuções (Runs)</div>
+							<div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.2rem;">{ fmt.Sprintf("%d total", vm.Monitoring.TotalRuns) }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted);">{ fmt.Sprintf("%d concluídas, %d parciais, %d falhas", vm.Monitoring.CompletedRuns, vm.Monitoring.PartialRuns, vm.Monitoring.FailedRuns) }</div>
+						</div>
+						<div style="background-color: var(--color-bg-alt); padding: 0.75rem; border-radius: 4px;">
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase;">Candidatos Descobertos</div>
+							<div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.2rem;">{ fmt.Sprintf("%d ingeridos", vm.Monitoring.TotalCandidates) }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted);">{ fmt.Sprintf("%d avaliações semânticas", vm.Monitoring.TotalEvaluations) }</div>
+						</div>
+						<div style="background-color: var(--color-bg-alt); padding: 0.75rem; border-radius: 4px;">
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase;">Decisões Automáticas</div>
+							<div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.2rem; color: #198754;">{ fmt.Sprintf("%d publicados", vm.Monitoring.PublishedCount) }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted);">{ fmt.Sprintf("%d quarentena, %d rejeitados", vm.Monitoring.QuarantinedCount, vm.Monitoring.RejectedCount) }</div>
+						</div>
+						<div style="background-color: var(--color-bg-alt); padding: 0.75rem; border-radius: 4px;">
+							<div style="font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase;">Custo Real Diário vs Teto</div>
+							<div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.2rem;">{ vm.Monitoring.DailyCostUSDFormatted }</div>
+							<div style="font-size: 0.75rem; color: var(--color-text-muted);">{ fmt.Sprintf("Teto: %s (%.1f%% consumido)", vm.Monitoring.DailyBudgetFormatted, vm.Monitoring.BudgetConsumptionPct) }</div>
+						</div>
+					</div>
+					<div style="font-size: 0.85rem; color: var(--color-text-muted);">
+						Custo total acumulado faturado pelo provedor OpenRouter: <strong>{ vm.Monitoring.TotalCostUSDFormatted }</strong>
+					</div>
+				</section>
+
+				<!-- 5. Telemetria de Backups (Local e Remoto) -->
+				<section class="card" aria-label="Telemetria de Backups" style="margin-bottom: 1.5rem;">
+					<h2 style="font-size: 1.1rem; margin-top: 0; margin-bottom: 1rem;">6. Telemetria de Backups (Local & Remoto)</h2>
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;">
+						<!-- Backup Local -->
+						<div style="border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem;">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+								<h3 style="font-size: 1rem; margin: 0;">Backup Local (Volume Docker)</h3>
+								if vm.Backup.LocalStatus == "ok" {
+									<span class="badge" style="background-color: #d1e7dd; color: #0f5132;">Íntegro (OK)</span>
+								} else if vm.Backup.LocalStatus == "error" {
+									<span class="badge" style="background-color: #f8d7da; color: #842029;">Falha</span>
+								} else {
+									<span class="badge" style="background-color: #e2e3e5; color: #41464b;">Pendente</span>
+								}
+							</div>
+							<div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.9rem;">
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Última Execução:</span>
+									if vm.Backup.LocalLastRunAt != nil {
+										<strong>{ *vm.Backup.LocalLastRunAt }</strong>
+									} else {
+										<span>Ainda não executado</span>
+									}
+								</div>
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Tamanho do Snapshot:</span>
+									<strong>{ vm.Backup.LocalSizeHuman }</strong>
+								</div>
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Duração:</span>
+									<strong>{ fmt.Sprintf("%d ms", vm.Backup.LocalDurationMs) }</strong>
+								</div>
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Versão das Migrations:</span>
+									<strong>v{ fmt.Sprintf("%d", vm.Backup.LocalSchemaVersion) }</strong>
+								</div>
+								if vm.Backup.LocalLastError != "" {
+									<div class="alert alert-error" style="margin-top: 0.5rem; font-size: 0.8rem; padding: 0.5rem;">
+										{ vm.Backup.LocalLastError }
+									</div>
+								}
+							</div>
+						</div>
+
+						<!-- Backup Remoto S3 -->
+						<div style="border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem;">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+								<h3 style="font-size: 1rem; margin: 0;">Backup Externo Seguro (S3 / R2)</h3>
+								if !vm.Backup.RemoteEnabled {
+									<span class="badge" style="background-color: #e2e3e5; color: #41464b;">Desabilitado</span>
+								} else if vm.Backup.RemoteStatus == "ok" {
+									<span class="badge" style="background-color: #d1e7dd; color: #0f5132;">Sincronizado (OK)</span>
+								} else if vm.Backup.RemoteStatus == "error" {
+									<span class="badge" style="background-color: #f8d7da; color: #842029;">Erro Remoto (Local Preservado)</span>
+								} else {
+									<span class="badge" style="background-color: #fff3cd; color: #664d03;">Aguardando Execução</span>
+								}
+							</div>
+							<div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.9rem;">
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Destino Remoto:</span>
+									if vm.Backup.RemoteBucket != "" {
+										<strong>{ vm.Backup.RemoteProvider }://{ vm.Backup.RemoteBucket }/{ vm.Backup.RemotePrefix }</strong>
+									} else {
+										<span>Não configurado</span>
+									}
+								</div>
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Última Execução Remota:</span>
+									if vm.Backup.RemoteLastRunAt != nil {
+										<strong>{ *vm.Backup.RemoteLastRunAt }</strong>
+									} else {
+										<span>Nenhum envio registrado</span>
+									}
+								</div>
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Tamanho & Duração:</span>
+									<strong>{ vm.Backup.RemoteSizeHuman } ({ fmt.Sprintf("%d ms", vm.Backup.RemoteDurationMs) })</strong>
+								</div>
+								<div style="display: flex; justify-content: space-between;">
+									<span style="color: var(--color-text-muted);">Retenção Remota:</span>
+									<strong>Manter { fmt.Sprintf("%d", vm.Backup.RemoteRetentionCount) } mais recentes</strong>
+								</div>
+								if vm.Backup.RemoteSHA256 != "" {
+									<div style="margin-top: 0.25rem;">
+										<span style="color: var(--color-text-muted); font-size: 0.8rem;">Checksum SHA-256 Validado:</span>
+										<div style="font-family: monospace; font-size: 0.75rem; background: var(--color-bg-alt); padding: 0.2rem 0.4rem; border-radius: 3px; word-break: break-all;">
+											{ vm.Backup.RemoteSHA256 }
+										</div>
+									</div>
+								}
+								if vm.Backup.RemoteLastError != "" {
+									<div class="alert alert-error" style="margin-top: 0.5rem; font-size: 0.8rem; padding: 0.5rem;">
+										{ vm.Backup.RemoteLastError }
+									</div>
+								}
+							</div>
+						</div>
+					</div>
+				</section>
+			</main>
+		</body>
+	</html>
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/raphaieu/vorcarozap/internal/auth"
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/domain"
+	"github.com/raphaieu/vorcarozap/internal/observability"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/web/static"
 )
@@ -35,7 +36,9 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r := chi.NewRouter()
 
 	// Middlewares padrão
+	registry := observability.GetRegistry()
 	r.Use(middleware.RequestID)
+	r.Use(observability.Middleware(registry))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(SecurityHeadersMiddleware)
@@ -50,7 +53,7 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	} else if cfg.IsAdminEnabled() {
 		return nil, fmt.Errorf("web: ADMIN_MFA_ENCRYPTION_KEY é obrigatório quando a área administrativa está habilitada")
 	}
-	handlers := NewHandlers(db, cfg.PublicDataCutoff, authSvc)
+	handlers := NewHandlers(db, cfg.PublicDataCutoff, authSvc, cfg, registry)
 
 	// Endpoints de saúde
 	r.Get("/health/live", handlers.HandleHealthLive)
@@ -73,7 +76,7 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
-	// Área administrativa protegida (VZ-014, VZ-016, VZ-023, VZ-025, VZ-026)
+	// Área administrativa protegida (VZ-014, VZ-016, VZ-023, VZ-025, VZ-026, VZ-027)
 	if cfg.IsAdminEnabled() {
 		authMiddleware := SessionAuthMiddleware(authSvc)
 		csrfMiddleware := AdminCSRFMiddleware(cfg.AdminAllowedOrigin)
@@ -168,6 +171,10 @@ func newAdminRouter(
 
 		// Trilha de Auditoria (Admin e Auditor)
 		protected.With(RequirePermission(domain.PermViewAuditLogs)).Get("/auditoria", handlers.HandleAdminAuditLogs)
+
+		// Observabilidade Operacional e Telemetria (Admin e Auditor) (VZ-027)
+		protected.With(RequirePermission(domain.PermViewObservability)).Get("/observabilidade", handlers.HandleAdminObservability)
+		protected.With(RequirePermission(domain.PermViewObservability)).Get("/api/metrics", handlers.HandleAdminAPIMetrics)
 	})
 
 	adminRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {

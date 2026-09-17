@@ -901,6 +901,7 @@ const (
 	PermModerateManifestations   Permission = "moderate_manifestations"
 	PermManageUsers              Permission = "manage_users"
 	PermViewAuditLogs            Permission = "view_audit_logs"
+	PermViewObservability        Permission = "view_observability"
 )
 
 func (p Permission) IsValid() bool {
@@ -908,7 +909,7 @@ func (p Permission) IsValid() bool {
 	case PermViewDashboard, PermViewCandidates, PermViewSources, PermViewEvidences,
 		PermViewClaims, PermViewManifestations, PermViewManifestationContact,
 		PermModerateClaims, PermModerateEvidenceSources, PermModerateManifestations,
-		PermManageUsers, PermViewAuditLogs:
+		PermManageUsers, PermViewAuditLogs, PermViewObservability:
 		return true
 	default:
 		return false
@@ -946,11 +947,11 @@ func (r UserRole) HasPermission(p Permission) bool {
 		}
 
 	case RoleAuditor:
-		// Auditor tem acesso de leitura ao painel e à trilha de auditoria administrativa privada,
+		// Auditor tem acesso de leitura ao painel, telemetria operacional e à trilha de auditoria administrativa privada,
 		// mas não tem acesso a dados de contato pessoal de terceiros nem permissões de mutação.
 		switch p {
 		case PermViewDashboard, PermViewCandidates, PermViewSources, PermViewEvidences,
-			PermViewClaims, PermViewManifestations, PermViewAuditLogs:
+			PermViewClaims, PermViewManifestations, PermViewAuditLogs, PermViewObservability:
 			return true
 		default:
 			return false

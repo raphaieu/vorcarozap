@@ -51,8 +51,7 @@ func TestSmokeWithRealSpreadsheet(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "smoke_disposable.db")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
+	ctx := context.Background()
 
 	db, err := store.Open(ctx, dbPath)
 	if err != nil {

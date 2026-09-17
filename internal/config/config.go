@@ -54,6 +54,18 @@ type Config struct {
 	AdminMaxLoginAttempts              int
 	AdminMFARequired                   bool
 	AdminMFAEncryptionKey              string
+	LogFormat                          string
+	LogLevel                           string
+	BackupRemoteEnabled                bool
+	BackupRemoteProvider               string
+	BackupRemoteEndpoint               string
+	BackupRemoteRegion                 string
+	BackupRemoteBucket                 string
+	BackupRemotePrefix                 string
+	BackupRemoteAccessKey              string
+	BackupRemoteSecretKey              string
+	BackupRemoteRetentionCount         int
+	BackupRemoteTimeout                time.Duration
 }
 
 // Constantes para validação de segurança de senha administrativa (VZ-014).
@@ -304,6 +316,91 @@ func Load() (*Config, error) {
 		}
 	}
 
+	logFormat := strings.ToLower(strings.TrimSpace(os.Getenv("LOG_FORMAT")))
+	if logFormat == "" {
+		if env == "production" {
+			logFormat = "json"
+		} else {
+			logFormat = "text"
+		}
+	} else if logFormat != "text" && logFormat != "json" {
+		return nil, fmt.Errorf("config: LOG_FORMAT inválido %q: deve ser 'text' ou 'json'", logFormat)
+	}
+
+	logLevel := strings.ToUpper(strings.TrimSpace(os.Getenv("LOG_LEVEL")))
+	if logLevel == "" {
+		logLevel = "INFO"
+	} else {
+		switch logLevel {
+		case "DEBUG", "INFO", "WARN", "ERROR":
+			// válido
+		default:
+			return nil, fmt.Errorf("config: LOG_LEVEL inválido %q: deve ser 'DEBUG', 'INFO', 'WARN' ou 'ERROR'", logLevel)
+		}
+	}
+
+	backupRemoteEnabled := false
+	if enabledStr := os.Getenv("BACKUP_REMOTE_ENABLED"); enabledStr != "" {
+		if enabledStr == "true" || enabledStr == "1" {
+			backupRemoteEnabled = true
+		} else if enabledStr != "false" && enabledStr != "0" {
+			return nil, fmt.Errorf("config: BACKUP_REMOTE_ENABLED inválido %q: deve ser 'true', 'false', '1' ou '0'", enabledStr)
+		}
+	}
+
+	backupRemoteProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BACKUP_REMOTE_PROVIDER")))
+	if backupRemoteProvider == "" {
+		backupRemoteProvider = "s3"
+	}
+
+	backupRemoteEndpoint := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_ENDPOINT"))
+	if backupRemoteEndpoint == "" {
+		backupRemoteEndpoint = "https://s3.us-east-1.amazonaws.com"
+	}
+
+	backupRemoteRegion := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_REGION"))
+	if backupRemoteRegion == "" {
+		backupRemoteRegion = "us-east-1"
+	}
+
+	backupRemoteBucket := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_BUCKET"))
+	backupRemotePrefix := strings.Trim(strings.TrimSpace(os.Getenv("BACKUP_REMOTE_PREFIX")), "/")
+	if backupRemotePrefix == "" {
+		backupRemotePrefix = "backups"
+	}
+
+	backupRemoteAccessKey := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_ACCESS_KEY"))
+	backupRemoteSecretKey := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_SECRET_KEY"))
+
+	backupRemoteRetentionCount, err := parseInt("BACKUP_REMOTE_RETENTION_COUNT", os.Getenv("BACKUP_REMOTE_RETENTION_COUNT"), 14, 1, 1000)
+	if err != nil {
+		return nil, err
+	}
+
+	backupRemoteTimeout, err := parseDurationMax("BACKUP_REMOTE_TIMEOUT", os.Getenv("BACKUP_REMOTE_TIMEOUT"), 60*time.Second, 1*time.Second, 10*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+
+	if backupRemoteEnabled {
+		if backupRemoteBucket == "" {
+			return nil, fmt.Errorf("config: BACKUP_REMOTE_BUCKET é obrigatório quando BACKUP_REMOTE_ENABLED=true")
+		}
+		if backupRemoteAccessKey == "" {
+			return nil, fmt.Errorf("config: BACKUP_REMOTE_ACCESS_KEY é obrigatório quando BACKUP_REMOTE_ENABLED=true")
+		}
+		if backupRemoteSecretKey == "" {
+			return nil, fmt.Errorf("config: BACKUP_REMOTE_SECRET_KEY é obrigatório quando BACKUP_REMOTE_ENABLED=true")
+		}
+		endpointURL, err := url.Parse(backupRemoteEndpoint)
+		if err != nil || endpointURL.Scheme == "" || endpointURL.Host == "" {
+			return nil, fmt.Errorf("config: BACKUP_REMOTE_ENDPOINT inválido %q: deve ser uma URL válida com esquema (ex.: https://s3.us-east-1.amazonaws.com)", backupRemoteEndpoint)
+		}
+		if endpointURL.Scheme != "https" {
+			return nil, fmt.Errorf("config: BACKUP_REMOTE_ENDPOINT inválido %q: esquema deve ser https para transporte seguro", backupRemoteEndpoint)
+		}
+	}
+
 	return &Config{
 		Port:                               port,
 		Env:                                env,
@@ -341,6 +438,18 @@ func Load() (*Config, error) {
 		AdminMaxLoginAttempts:              adminMaxLoginAttempts,
 		AdminMFARequired:                   adminMFARequired,
 		AdminMFAEncryptionKey:              adminMFAKey,
+		LogFormat:                          logFormat,
+		LogLevel:                           logLevel,
+		BackupRemoteEnabled:                backupRemoteEnabled,
+		BackupRemoteProvider:               backupRemoteProvider,
+		BackupRemoteEndpoint:               backupRemoteEndpoint,
+		BackupRemoteRegion:                 backupRemoteRegion,
+		BackupRemoteBucket:                 backupRemoteBucket,
+		BackupRemotePrefix:                 backupRemotePrefix,
+		BackupRemoteAccessKey:              backupRemoteAccessKey,
+		BackupRemoteSecretKey:              backupRemoteSecretKey,
+		BackupRemoteRetentionCount:         backupRemoteRetentionCount,
+		BackupRemoteTimeout:                backupRemoteTimeout,
 	}, nil
 }
 

@@ -51,10 +51,10 @@ check_endpoint "Página de metodologia" "/metodologia" "200"
 check_endpoint "Exportação XLSX" "/exportar/base.xlsx" "200"
 
 echo "3. Validando proteção e segurança da área administrativa..."
-# Sem credenciais deve exigir Basic Auth (401) ou 404 se desabilitado
+# Sem credenciais deve exigir autenticação (401 ou 303 Redirect) ou 404 se desabilitado
 ADMIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/admin" || echo "000")
-if [ "${ADMIN_STATUS}" = "401" ]; then
-    echo "  [PASS] Área administrativa /admin exige autenticação (HTTP 401)"
+if [ "${ADMIN_STATUS}" = "401" ] || [ "${ADMIN_STATUS}" = "303" ]; then
+    echo "  [PASS] Área administrativa /admin exige autenticação (HTTP ${ADMIN_STATUS})"
 elif [ "${ADMIN_STATUS}" = "404" ]; then
     echo "  [INFO] Área administrativa /admin desabilitada por configuração (HTTP 404)"
 else
@@ -62,19 +62,30 @@ else
     FAILED=1
 fi
 
-# Se houver senha de teste configurada, valida autenticação e CSRF
-if [ -n "${ADMIN_PASS}" ] && [ "${ADMIN_STATUS}" = "401" ]; then
-    echo "4. Validando autenticação e proteção CSRF com credenciais..."
-    check_endpoint "Admin autenticado" "/admin" "200" "-u ${ADMIN_USER}:${ADMIN_PASS}"
+# Se houver senha de teste configurada, valida fluxo de autenticação por sessão e CSRF
+if [ -n "${ADMIN_PASS}" ] && ([ "${ADMIN_STATUS}" = "401" ] || [ "${ADMIN_STATUS}" = "303" ]); then
+    echo "4. Validando autenticação por sessão e proteção CSRF com credenciais..."
+    COOKIE_JAR=$(mktemp)
 
-    # POST sem Origin deve ser bloqueado por CSRF (HTTP 403)
-    CSRF_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "${BASE_URL}/admin/claims/claim_test/moderate" -d "action=approve&reason=Teste" || echo "000")
-    if [ "${CSRF_STATUS}" = "403" ]; then
-        echo "  [PASS] Proteção CSRF no admin: POST sem Origin rejeitado com HTTP 403"
+    LOGIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -c "${COOKIE_JAR}" -X POST "${BASE_URL}/admin/login" -d "username=${ADMIN_USER}&password=${ADMIN_PASS}" || echo "000")
+    if [ "${LOGIN_STATUS}" = "303" ] || [ "${LOGIN_STATUS}" = "200" ]; then
+        echo "  [PASS] Login administrativo autenticado (HTTP ${LOGIN_STATUS})"
+        check_endpoint "Admin autenticado" "/admin" "200" "-b ${COOKIE_JAR}"
+        check_endpoint "Admin observabilidade SSR" "/admin/observabilidade" "200" "-b ${COOKIE_JAR}"
+        check_endpoint "Admin métricas JSON" "/admin/api/metrics" "200" "-b ${COOKIE_JAR}"
+
+        # POST sem Origin deve ser bloqueado por CSRF (HTTP 403)
+        CSRF_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b "${COOKIE_JAR}" -X POST "${BASE_URL}/admin/claims/claim_test/moderate" -d "action=approve&reason=Teste" || echo "000")
+        if [ "${CSRF_STATUS}" = "403" ]; then
+            echo "  [PASS] Proteção CSRF no admin: POST sem Origin rejeitado com HTTP 403"
+        else
+            echo "  [FAIL] Proteção CSRF no admin: POST sem Origin retornou HTTP ${CSRF_STATUS}, esperado 403"
+            FAILED=1
+        fi
     else
-        echo "  [FAIL] Proteção CSRF no admin: POST sem Origin retornou HTTP ${CSRF_STATUS}, esperado 403"
-        FAILED=1
+        echo "  [WARN] Login administrativo retornou HTTP ${LOGIN_STATUS} (verifique credenciais ou desafio de MFA)"
     fi
+    rm -f "${COOKIE_JAR}"
 fi
 
 echo "================================================================================"

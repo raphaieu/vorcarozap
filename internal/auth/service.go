@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,6 +49,22 @@ type Service struct {
 	dummyBcryptHash []byte
 }
 
+var (
+	dummyBcryptOnce sync.Once
+	dummyBcryptHash []byte
+)
+
+func getDummyBcryptHash() []byte {
+	dummyBcryptOnce.Do(func() {
+		h, err := bcrypt.GenerateFromPassword([]byte("vorcarozap-dummy-auth-constant-timing-seed"), DefaultBcryptCost)
+		if err != nil {
+			slog.Error("falha ao inicializar dummy bcrypt hash", "error", err)
+		}
+		dummyBcryptHash = h
+	})
+	return dummyBcryptHash
+}
+
 // NewService inicializa o serviço de autenticação com parâmetros de segurança e chave de cifra.
 // Retorna erro se a chave de criptografia de MFA for inválida ou ausente (falha fechada).
 func NewService(db *sql.DB, sessionTTL, lockoutDuration time.Duration, maxAttempts int, mfaRequired bool, mfaEncryptionKey string) (*Service, error) {
@@ -66,12 +83,6 @@ func NewService(db *sql.DB, sessionTTL, lockoutDuration time.Duration, maxAttemp
 		return nil, fmt.Errorf("auth: chave de criptografia MFA inválida: %w", err)
 	}
 
-	// Gera um hash dummy constante para equalizar o tempo de comparação com bcrypt em usuários inexistentes
-	dummyHash, err := bcrypt.GenerateFromPassword([]byte("vorcarozap-dummy-auth-constant-timing-seed"), DefaultBcryptCost)
-	if err != nil {
-		slog.Error("falha ao inicializar dummy bcrypt hash", "error", err)
-	}
-
 	return &Service{
 		db:              db,
 		sessionTTL:      sessionTTL,
@@ -79,7 +90,7 @@ func NewService(db *sql.DB, sessionTTL, lockoutDuration time.Duration, maxAttemp
 		maxAttempts:     maxAttempts,
 		mfaRequired:     mfaRequired,
 		encryptionKey:   key,
-		dummyBcryptHash: dummyHash,
+		dummyBcryptHash: getDummyBcryptHash(),
 	}, nil
 }
 

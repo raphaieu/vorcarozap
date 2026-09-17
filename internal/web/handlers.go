@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,11 +18,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/raphaieu/vorcarozap/internal/auth"
+	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/contradiction"
 	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/exporter"
 	"github.com/raphaieu/vorcarozap/internal/metrics"
 	"github.com/raphaieu/vorcarozap/internal/moderation"
+	"github.com/raphaieu/vorcarozap/internal/observability"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 	"github.com/raphaieu/vorcarozap/web/pages"
@@ -35,9 +38,14 @@ type Handlers struct {
 	contradiction    *contradiction.Service
 	rateLimiter      *contradiction.RateLimiter
 	authService      *auth.Service
+	config           *config.Config
+	registry         *observability.MetricsRegistry
 }
 
-func NewHandlers(db *sql.DB, cutoff string, authSvc *auth.Service) *Handlers {
+func NewHandlers(db *sql.DB, cutoff string, authSvc *auth.Service, cfg *config.Config, reg *observability.MetricsRegistry) *Handlers {
+	if reg == nil {
+		reg = observability.GetRegistry()
+	}
 	return &Handlers{
 		db:               db,
 		queries:          sqlc.New(db),
@@ -46,7 +54,14 @@ func NewHandlers(db *sql.DB, cutoff string, authSvc *auth.Service) *Handlers {
 		contradiction:    contradiction.NewService(db),
 		rateLimiter:      contradiction.NewRateLimiter(5, 10*time.Minute),
 		authService:      authSvc,
+		config:           cfg,
+		registry:         reg,
 	}
+}
+
+// SetRegistry permite injetar um registro de observabilidade para testes.
+func (h *Handlers) SetRegistry(reg *observability.MetricsRegistry) {
+	h.registry = reg
 }
 
 // SetRateLimiter permite injetar um limitador customizado para testes.
@@ -1725,5 +1740,53 @@ func (h *Handlers) HandleAdminAuditLogs(w http.ResponseWriter, r *http.Request) 
 	if err := pages.AdminAudit(vm).Render(r.Context(), w); err != nil {
 		slog.Error("failed to render admin audit template", "error", err)
 		http.Error(w, "Erro ao renderizar trilha de auditoria", http.StatusInternalServerError)
+	}
+}
+
+// HandleAdminObservability renderiza o painel operacional de observabilidade e métricas SSR.
+func (h *Handlers) HandleAdminObservability(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	snap, err := h.registry.CollectSnapshot(ctx, h.db, h.config)
+	if err != nil {
+		slog.Error("falha ao coletar snapshot de métricas operacionais", "error", err)
+		http.Error(w, "Erro ao coletar métricas operacionais", http.StatusInternalServerError)
+		return
+	}
+
+	vm := pages.AdminObservabilityViewModel{
+		Timestamp:   snap.Timestamp,
+		Environment: snap.Environment,
+		Runtime:     snap.Runtime,
+		HTTP:        snap.HTTP,
+		SQLite:      snap.SQLite,
+		Monitoring:  snap.Monitoring,
+		Queues:      snap.Queues,
+		Backup:      snap.Backup,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := pages.AdminObservability(vm).Render(ctx, w); err != nil {
+		slog.Error("falha ao renderizar página de observabilidade", "error", err)
+	}
+}
+
+// HandleAdminAPIMetrics retorna o snapshot consolidado de métricas operacionais em JSON.
+func (h *Handlers) HandleAdminAPIMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	snap, err := h.registry.CollectSnapshot(ctx, h.db, h.config)
+	if err != nil {
+		slog.Error("falha ao coletar snapshot de métricas para API", "error", err)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"falha ao coletar métricas operacionais"}`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := json.NewEncoder(w).Encode(snap); err != nil {
+		slog.Error("falha ao serializar snapshot de métricas em JSON", "error", err)
 	}
 }

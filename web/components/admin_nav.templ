@@ -40,6 +40,10 @@ templ AdminNav(currentTab string) {
 						class={ "nav-link", templ.KV("active-nav", currentTab == "auditoria") }
 					>Auditoria</a>
 					<a
+						href="/admin/observabilidade"
+						class={ "nav-link", templ.KV("active-nav", currentTab == "observabilidade") }
+					>Observabilidade</a>
+					<a
 						href="/admin/perfil"
 						class={ "nav-link", templ.KV("active-nav", currentTab == "perfil") }
 					>Meu Perfil</a>

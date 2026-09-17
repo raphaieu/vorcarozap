@@ -182,6 +182,47 @@ Adicione a seguinte linha ao crontab do host (`crontab -e`):
 0 3 * * * /opt/vorcarozap/scripts/backup.sh >> /opt/vorcarozap/logs/backup.log 2>&1
 ```
 
+### 5.7 Backup Externo Seguro em Object Storage Compatível com S3 (AWS S3, Cloudflare R2, MinIO)
+
+O VorcaroZAP inclui suporte nativo e em Go puro a envio e rotação de snapshots em armazenamento externo S3/R2 com assinatura AWS Signature Version 4 (SigV4) e isolamento estrito de falhas.
+
+#### Variáveis de Ambiente para Backup Remoto (`.env`)
+
+```ini
+# Habilita o envio de backup para Object Storage externo (padrão: false)
+BACKUP_REMOTE_ENABLED=true
+
+# Provedor e Endpoint HTTPS (ex.: AWS S3, Cloudflare R2, MinIO, Wasabi)
+BACKUP_REMOTE_PROVIDER=s3
+BACKUP_REMOTE_ENDPOINT=https://s3.us-east-1.amazonaws.com
+BACKUP_REMOTE_REGION=us-east-1
+BACKUP_REMOTE_BUCKET=vorcarozap-backups-bucket
+BACKUP_REMOTE_PREFIX=backups
+
+# Credenciais de Acesso S3
+BACKUP_REMOTE_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE
+BACKUP_REMOTE_SECRET_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# Quantidade de backups mantidos remotamente no bucket (padrão: 14)
+BACKUP_REMOTE_RETENTION_COUNT=14
+
+# Timeout de rede para transferência do backup (padrão: 60s)
+BACKUP_REMOTE_TIMEOUT=60s
+```
+
+#### Execução com Backup Remoto
+
+```bash
+# Executa backup local e sincroniza com o bucket remoto configurado
+./scripts/backup.sh --remote
+
+# Ou via CLI direta
+docker compose exec -T app vorcarozap backup --remote
+```
+
+#### Princípio de Isolamento de Falha
+Caso ocorra qualquer erro na transmissão externa (falha de rede, timeout, erro 500 do S3, credenciais expiradas), o **backup local permanece 100% íntegro e validado**, a falha remota é registrada com alerta nos logs e na telemetria, e a aplicação prossegue normalmente sem interrupções.
+
 ---
 
 ## 6. Procedimento de Teste de Restauração e Restauração em Produção
@@ -191,16 +232,28 @@ Adicione a seguinte linha ao crontab do host (`crontab -e`):
 Antes de qualquer intervenção em produção, teste a restauração do snapshot em um sandbox temporário **sem sobrescrever ou afetar o banco SQLite ativo em produção** (`/data/vorcarozap.db`):
 
 ```bash
+# Via script operacional
 ./scripts/restore-test.sh /backups/vorcarozap-20260912_180000Z.db
+
+# Ou via subcomando CLI nativo
+docker compose exec -T app vorcarozap restore-sandbox --backup /backups/vorcarozap-20260912_180000Z.db
 ```
 
-O script:
+O comando:
 1. Valida a integridade prévia do snapshot original com `PRAGMA integrity_check` e `CheckReady`;
 2. Restaura o arquivo em um banco temporário isolado (`/tmp/vorcarozap_restore_test_<timestamp>.db`);
-3. Revalida migrations e integridade no banco temporário restaurado;
+3. Revalida migrations, integridade e executa consulta de teste no banco temporário restaurado;
 4. Remove os arquivos temporários de teste e emite relatório de conformidade sem tocar em `/data/vorcarozap.db`.
 
-### 6.2 Regras Críticas para Restauração em Produção
+### 6.2 Verificação de Backup Remoto (`verify-remote`)
+
+Para auditar um backup armazenado no Object Storage sem necessidade de baixar o arquivo integral:
+
+```bash
+docker compose exec -T app vorcarozap verify-remote --key backups/vorcarozap-20260912_180000Z.db
+```
+
+### 6.3 Regras Críticas para Restauração em Produção
 
 > [!IMPORTANT]
 > - **Parada Obrigatória:** Em produção, NUNCA execute `restore` diretamente sobre o banco ativo com o container `app` em execução. Sempre pare o serviço primeiro com `docker compose stop app` para garantir que nenhuma transação WAL esteja em andamento.
@@ -295,25 +348,30 @@ curl -f http://127.0.0.1:8090/health/ready
 
 ---
 
-## 10. Observabilidade, Disco e Controle de Custos
+## 10. Observabilidade Operacional e Controle de Custos
 
-### 10.1 Inspeção de Logs sem Vazamento de Segredos
+### 10.1 Painel Administrativo de Observabilidade e API de Métricas
 
-```bash
-# Logs da aplicação Go
-docker compose logs -f --tail=100 app
+O VorcaroZAP disponibiliza uma interface SSR consolidada de telemetria operacional em tempo de execução:
+- **Painel SSR:** `GET /admin/observabilidade` (exige papel `admin` ou `auditor`);
+- **API JSON de Métricas:** `GET /admin/api/metrics` (para dashboards, health checks ou ferramentas de automação).
 
-# Logs do proxy Caddy
-docker compose logs -f --tail=100 caddy
+As dimensões operacionais exibidas incluem:
+- **Runtime Go:** Uptime, versão da runtime, contagem de goroutines ativas, memória em uso e ciclos de GC;
+- **Desempenho HTTP:** Total de requisições, contadores de status (2xx, 3xx, 4xx, 5xx, 401, 403, 404, 500) e latências média, p95 e máxima;
+- **Saúde do SQLite WAL:** Tamanho do banco (`.db`), tamanho do `-wal`, total de páginas, freelist e versão ativa de migrations;
+- **Monitoramento & LLM:** Total de runs, candidatos descobertos, verificações, publicações, quarentenas e custo acumulado/diário em USD;
+- **Filas de Moderação e Segurança:** Claims e manifestações pendentes de deliberação, contas de usuário bloqueadas;
+- **Telemetria de Backups:** Data/hora, duração, tamanho e status do último backup local e remoto.
 
-# Logs das execuções de monitoramento
-tail -n 100 /opt/vorcarozap/logs/monitor.log
-```
+### 10.2 Logs Estruturados com Sanitização Rigorosa de Segredos
 
-> [!NOTE]
-> Os logs da aplicação e dos scripts omitem explicitamente tokens de API, hashes e dados sensíveis.
+A aplicação utiliza o pacote `log/slog` com um interceptor de sanitização (`SanitizedHandler`) ativo por padrão:
+- **Formato:** `LOG_FORMAT=json` (produção) ou `LOG_FORMAT=text` (desenvolvimento);
+- **Nível:** `LOG_LEVEL=INFO` (padrão), `DEBUG`, `WARN` ou `ERROR`.
+- **Garantia de Não-Vazamento:** Chaves de API (`sk-or-v1-...`), credenciais S3, chaves AES/MFA, hashes bcrypt, tokens de sessão, cabeçalhos `Authorization` e dados de contato pessoal de terceiros (`contact_email`, `contact_phone`) são redigidos automaticamente em qualquer nível de emissão.
 
-### 10.2 Manutenção de Disco e Checkpoint do WAL
+### 10.3 Manutenção de Disco e Checkpoint do WAL
 
 O SQLite em modo WAL executa checkpoints automáticos por padrão a cada 1000 páginas. Para verificar o tamanho dos arquivos:
 
@@ -321,7 +379,7 @@ O SQLite em modo WAL executa checkpoints automáticos por padrão a cada 1000 p�
 docker compose exec -T app ls -lh /data /backups
 ```
 
-### 10.3 Controle Financeiro de LLM
+### 10.4 Controle Financeiro de LLM
 
 O VorcaroZAP impõe limites orçamentários duplos por padrão:
 - `MONITOR_MAX_COST_PER_RUN_USD=0.25`: encerra graciosamente em `partial` caso o custo de uma única execução exceda $0.25;
