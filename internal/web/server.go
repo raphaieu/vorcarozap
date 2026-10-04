@@ -76,6 +76,9 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 		http.Redirect(w, r, "/exportar/base.xlsx", http.StatusTemporaryRedirect)
 	})
 
+	// API pública documentada e somente leitura v1 (VZ-029)
+	r.Mount("/api/v1", newAPIV1Router(handlers))
+
 	// Área administrativa protegida (VZ-014, VZ-016, VZ-023, VZ-025, VZ-026, VZ-027)
 	if cfg.IsAdminEnabled() {
 		authMiddleware := SessionAuthMiddleware(authSvc)

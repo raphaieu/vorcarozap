@@ -28,6 +28,7 @@ const (
 
 	DefaultPageSize = 15
 	MaxPageSize     = 50
+	MaxPage         = 10000
 )
 
 var allowedOrderFields = map[string]bool{
@@ -158,6 +159,8 @@ func SanitizeFilterWithClock(f PublicEntityFilter, now time.Time) PublicEntityFi
 	// 6. Paginação previsível e conservadora
 	if f.Page < 1 {
 		f.Page = 1
+	} else if f.Page > MaxPage {
+		f.Page = MaxPage
 	}
 	if f.PageSize < 1 {
 		f.PageSize = DefaultPageSize
@@ -178,7 +181,13 @@ func ListPublicEntities(ctx context.Context, db *sql.DB, rawFilter PublicEntityF
 		searchQuery = "%" + EscapeLike(filter.Search) + "%"
 	}
 
-	offset := int64((filter.Page - 1) * filter.PageSize)
+	var offset int64
+	if filter.Page > 1 {
+		offset = int64(filter.Page-1) * int64(filter.PageSize)
+		if offset < 0 {
+			offset = 0
+		}
+	}
 	limit := int64(filter.PageSize)
 
 	// 1. Contagem total de itens correspondentes

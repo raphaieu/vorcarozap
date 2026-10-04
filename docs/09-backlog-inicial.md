@@ -41,7 +41,8 @@ Itens de enriquecimento e maturidade inspirados nas discussões de navegação d
 | VZ-026 | P1 | Gestão multiusuário do painel com perfis e autenticação reforçada (MFA/RBAC) | Concluído (Fase 7) |
 | VZ-027 | P1 | Observabilidade operacional aprofundada e backup externo seguro | Concluído (Fase 7) |
 | VZ-028 | P1 | Fechamento operacional e release de produção (hardening, race detector e prontidão para deploy) | Concluído (Fase 7) |
+| VZ-029 | P1 | API pública documentada e somente leitura (`GET /api/v1/pessoas`, `GET /api/v1/pessoas/{slug}`) | Concluído (Fase 7) |
 
 ## P2 — Escala e Distribuição Futura
 
-API pública documentada, crawler e verificador distribuído, suporte a réplicas e migração opcional para PostgreSQL conforme gatilhos de volume.
+Crawler e verificador distribuído, suporte a réplicas e migração opcional para PostgreSQL conforme gatilhos de volume.
