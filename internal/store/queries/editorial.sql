@@ -600,3 +600,133 @@ WHERE (
 )
 ORDER BY d.created_at DESC, d.id DESC
 LIMIT @event_limit;
+
+-- name: ListPublicDocuments :many
+WITH order_params AS (
+    SELECT CAST(@order_by AS text) AS order_by, CAST(@order_dir AS text) AS order_dir
+),
+source_public_stats AS (
+    SELECT
+        es.source_id,
+        COUNT(DISTINCT es.id) AS citations_count,
+        (
+            SELECT COUNT(DISTINCT ent_id)
+            FROM (
+                SELECT pcv2.entity_id AS ent_id
+                FROM evidence_sources es2
+                JOIN evidence ev2 ON ev2.id = es2.evidence_id
+                JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+                WHERE es2.source_id = es.source_id AND es2.status = 'active'
+                UNION
+                SELECT pcv2.target_entity_id AS ent_id
+                FROM evidence_sources es2
+                JOIN evidence ev2 ON ev2.id = es2.evidence_id
+                JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+                WHERE es2.source_id = es.source_id AND es2.status = 'active' AND pcv2.target_entity_id IS NOT NULL
+            )
+        ) AS entities_count,
+        CAST(MIN(pcv.grade) AS TEXT) AS highest_grade,
+        CAST(MAX(pcv.updated_at) AS TEXT) AS last_public_updated_at
+    FROM evidence_sources es
+    JOIN evidence ev ON ev.id = es.evidence_id
+    JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+    WHERE es.status = 'active'
+    GROUP BY es.source_id
+)
+SELECT
+    s.id,
+    s.title,
+    s.publisher_or_author,
+    s.canonical_url,
+    s.published_at,
+    s.accessed_at,
+    s.source_type,
+    s.source_access_status,
+    s.source_access_checked_at,
+    s.created_at,
+    s.updated_at,
+    stats.citations_count,
+    stats.entities_count,
+    stats.highest_grade,
+    stats.last_public_updated_at,
+    CAST(COALESCE((
+        SELECT es2.excerpt
+        FROM evidence_sources es2
+        JOIN evidence ev2 ON ev2.id = es2.evidence_id
+        JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+        WHERE es2.source_id = s.id AND es2.status = 'active' AND length(trim(es2.excerpt)) > 0
+        ORDER BY
+            CASE es2.role
+                WHEN 'supports' THEN 1
+                WHEN 'contradicts' THEN 2
+                WHEN 'contextualizes' THEN 3
+                ELSE 4
+            END ASC,
+            es2.created_at ASC,
+            es2.id ASC
+        LIMIT 1
+    ), '') AS TEXT) AS first_public_excerpt,
+    CAST(COALESCE((
+        SELECT es2.locator
+        FROM evidence_sources es2
+        JOIN evidence ev2 ON ev2.id = es2.evidence_id
+        JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+        WHERE es2.source_id = s.id AND es2.status = 'active' AND length(trim(es2.excerpt)) > 0
+        ORDER BY
+            CASE es2.role
+                WHEN 'supports' THEN 1
+                WHEN 'contradicts' THEN 2
+                WHEN 'contextualizes' THEN 3
+                ELSE 4
+            END ASC,
+            es2.created_at ASC,
+            es2.id ASC
+        LIMIT 1
+    ), '') AS TEXT) AS first_public_locator
+FROM sources s
+JOIN source_public_stats stats ON stats.source_id = s.id
+WHERE
+    (@filter_source_type = '' OR s.source_type = @filter_source_type)
+    AND (@filter_access_status = '' OR s.source_access_status = @filter_access_status)
+    AND (
+        @search_query = '' OR
+        like(@search_query, s.title, '\') OR
+        like(@search_query, s.publisher_or_author, '\')
+    )
+ORDER BY
+    CASE WHEN (SELECT order_by FROM order_params) = 'title' AND (SELECT order_dir FROM order_params) = 'asc' THEN s.title END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'title' AND (SELECT order_dir FROM order_params) = 'desc' THEN s.title END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'publisher' AND (SELECT order_dir FROM order_params) = 'asc' THEN s.publisher_or_author END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'publisher' AND (SELECT order_dir FROM order_params) = 'desc' THEN s.publisher_or_author END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'asc' THEN stats.last_public_updated_at END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'desc' THEN stats.last_public_updated_at END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'citations' AND (SELECT order_dir FROM order_params) = 'asc' THEN stats.citations_count END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'citations' AND (SELECT order_dir FROM order_params) = 'desc' THEN stats.citations_count END DESC,
+    s.title ASC,
+    s.id ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPublicDocuments :one
+SELECT COUNT(DISTINCT s.id)
+FROM sources s
+JOIN evidence_sources es ON es.source_id = s.id
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+WHERE
+    es.status = 'active'
+    AND (@filter_source_type = '' OR s.source_type = @filter_source_type)
+    AND (@filter_access_status = '' OR s.source_access_status = @filter_access_status)
+    AND (
+        @search_query = '' OR
+        like(@search_query, s.title, '\') OR
+        like(@search_query, s.publisher_or_author, '\')
+    );
+
+-- name: ListPublicDocumentSourceTypes :many
+SELECT DISTINCT s.source_type
+FROM sources s
+JOIN evidence_sources es ON es.source_id = s.id
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+WHERE es.status = 'active' AND length(trim(s.source_type)) > 0
+ORDER BY s.source_type ASC;

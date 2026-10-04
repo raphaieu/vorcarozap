@@ -59,10 +59,11 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	r.Get("/health/live", handlers.HandleHealthLive)
 	r.Get("/health/ready", handlers.HandleHealthReady)
 
-	// Página pública inicial e navegação pública (VZ-006, VZ-007, VZ-023)
+	// Página pública inicial e navegação pública (VZ-006, VZ-007, VZ-023, VZ-030)
 	r.Get("/", handlers.HandleHome)
 	r.Get("/pessoas", handlers.HandleEntities)
 	r.Get("/pessoas/{slug}", handlers.HandleEntityDetail)
+	r.Get("/documentos", handlers.HandleDocuments)
 	r.Get("/documentos/{id}", handlers.HandleDocumentDetail)
 	r.Get("/metodologia", handlers.HandleMethodology)
 

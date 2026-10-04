@@ -768,3 +768,142 @@ func FormatDateTime(isoDate string) string {
 	}
 	return t.UTC().Format("02/01/2006 15:04") + " UTC"
 }
+
+// =============================================================================
+// Catálogo Público de Documentos (VZ-030)
+// =============================================================================
+
+// DocumentCardVM encapsula um item do catálogo público de documentos para renderização SSR.
+type DocumentCardVM struct {
+	ID                      string
+	Title                   string
+	IsTitleEnriched         bool
+	PublisherOrAuthor       string
+	IsAuthorEnriched        bool
+	CanonicalURL            ExternalLinkVM
+	PublishedAtHuman        string
+	AccessedAtHuman         string
+	SourceType              string
+	SourceTypeHuman         string
+	IsPrimaryDocument       bool
+	NatureLabel             string
+	SourceAccessStatus      string
+	SourceAccessStatusHuman string
+	CitationsCount          int64
+	EntitiesCount           int64
+	HighestGrade            string
+	HighestGradeHuman       string
+	LastPublicUpdatedAt     string
+	LastUpdatedHuman        string
+	FirstPublicExcerpt      string
+	FirstPublicLocator      string
+	ViewerURL               string
+}
+
+// SourceTypeOptionVM representa uma opção no seletor de tipos de fonte.
+type SourceTypeOptionVM struct {
+	Value string
+	Label string
+}
+
+// SourceStatusOptionVM representa uma opção no seletor de acessibilidade.
+type SourceStatusOptionVM struct {
+	Value string
+	Label string
+}
+
+// DocumentFilterParamsVM encapsula os parâmetros de busca, filtros e paginação do catálogo de documentos.
+type DocumentFilterParamsVM struct {
+	Search            string
+	SourceType        string
+	AccessStatus      string
+	OrderBy           string
+	OrderDir          string
+	Page              int
+	PageSize          int
+	TotalPages        int
+	TotalCount        int64
+	AvailableTypes    []SourceTypeOptionVM
+	AvailableStatuses []SourceStatusOptionVM
+}
+
+// BuildQueryString gera a query string para paginação preservando os filtros do catálogo.
+func (f DocumentFilterParamsVM) BuildQueryString(page int) string {
+	v := url.Values{}
+	if f.Search != "" {
+		v.Set("q", f.Search)
+	}
+	if f.SourceType != "" {
+		v.Set("source_type", f.SourceType)
+	}
+	if f.AccessStatus != "" {
+		v.Set("access_status", f.AccessStatus)
+	}
+	if f.OrderBy != "" && f.OrderBy != store.OrderFieldTitle {
+		v.Set("sort", f.OrderBy)
+	}
+	if f.OrderDir != "" && f.OrderDir != store.OrderDirAsc {
+		v.Set("dir", f.OrderDir)
+	}
+	if page > 1 {
+		v.Set("page", fmt.Sprintf("%d", page))
+	}
+	qs := v.Encode()
+	if qs != "" {
+		return "?" + qs
+	}
+	return ""
+}
+
+// DocumentListVM encapsula o estado completo para renderização da página de catálogo de documentos.
+type DocumentListVM struct {
+	Documents []DocumentCardVM
+	Filter    DocumentFilterParamsVM
+}
+
+// ToDocumentCardVM converte um registro do banco no modelo de apresentação do catálogo.
+func ToDocumentCardVM(row sqlc.ListPublicDocumentsRow) DocumentCardVM {
+	title := strings.TrimSpace(row.Title)
+	publisher := strings.TrimSpace(row.PublisherOrAuthor)
+	st := domain.SourceType(strings.ToLower(strings.TrimSpace(row.SourceType)))
+
+	var publishedAtHuman, accessedAtHuman string
+	if row.PublishedAt.Valid {
+		publishedAtHuman = FormatDate(row.PublishedAt.String)
+	}
+	if row.AccessedAt.Valid {
+		accessedAtHuman = FormatDate(row.AccessedAt.String)
+	}
+
+	highestGrade := strings.TrimSpace(row.HighestGrade)
+	highestGradeHuman := ""
+	if highestGrade != "" {
+		highestGradeHuman = FormatGradeShort(highestGrade)
+	}
+
+	return DocumentCardVM{
+		ID:                      row.ID,
+		Title:                   title,
+		IsTitleEnriched:         title != "",
+		PublisherOrAuthor:       publisher,
+		IsAuthorEnriched:        publisher != "",
+		CanonicalURL:            SanitizeExternalLink(row.CanonicalUrl),
+		PublishedAtHuman:        publishedAtHuman,
+		AccessedAtHuman:         accessedAtHuman,
+		SourceType:              string(st),
+		SourceTypeHuman:         st.Label(),
+		IsPrimaryDocument:       st.IsPrimaryDocument(),
+		NatureLabel:             st.NatureLabel(),
+		SourceAccessStatus:      row.SourceAccessStatus,
+		SourceAccessStatusHuman: FormatSourceAccessStatus(row.SourceAccessStatus),
+		CitationsCount:          row.CitationsCount,
+		EntitiesCount:           row.EntitiesCount,
+		HighestGrade:            highestGrade,
+		HighestGradeHuman:       highestGradeHuman,
+		LastPublicUpdatedAt:     row.LastPublicUpdatedAt,
+		LastUpdatedHuman:        FormatDate(row.LastPublicUpdatedAt),
+		FirstPublicExcerpt:      strings.TrimSpace(row.FirstPublicExcerpt),
+		FirstPublicLocator:      normalize.SafeLocator(row.FirstPublicLocator),
+		ViewerURL:               fmt.Sprintf("/documentos/%s", row.ID),
+	}
+}

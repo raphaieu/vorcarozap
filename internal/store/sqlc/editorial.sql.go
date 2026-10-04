@@ -10,6 +10,36 @@ import (
 	"database/sql"
 )
 
+const countPublicDocuments = `-- name: CountPublicDocuments :one
+SELECT COUNT(DISTINCT s.id)
+FROM sources s
+JOIN evidence_sources es ON es.source_id = s.id
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+WHERE
+    es.status = 'active'
+    AND (?1 = '' OR s.source_type = ?1)
+    AND (?2 = '' OR s.source_access_status = ?2)
+    AND (
+        ?3 = '' OR
+        like(?3, s.title, '\') OR
+        like(?3, s.publisher_or_author, '\')
+    )
+`
+
+type CountPublicDocumentsParams struct {
+	FilterSourceType   interface{} `json:"filter_source_type"`
+	FilterAccessStatus interface{} `json:"filter_access_status"`
+	SearchQuery        interface{} `json:"search_query"`
+}
+
+func (q *Queries) CountPublicDocuments(ctx context.Context, arg CountPublicDocumentsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPublicDocuments, arg.FilterSourceType, arg.FilterAccessStatus, arg.SearchQuery)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPublicEntities = `-- name: CountPublicEntities :one
 WITH entity_public_stats AS (
     SELECT
@@ -1453,6 +1483,224 @@ func (q *Queries) ListPublicDocumentSequenceBySourceID(ctx context.Context, sour
 			&i.CaseID,
 			&i.CaseName,
 			&i.CaseSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicDocumentSourceTypes = `-- name: ListPublicDocumentSourceTypes :many
+SELECT DISTINCT s.source_type
+FROM sources s
+JOIN evidence_sources es ON es.source_id = s.id
+JOIN evidence ev ON ev.id = es.evidence_id
+JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+WHERE es.status = 'active' AND length(trim(s.source_type)) > 0
+ORDER BY s.source_type ASC
+`
+
+func (q *Queries) ListPublicDocumentSourceTypes(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicDocumentSourceTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var source_type string
+		if err := rows.Scan(&source_type); err != nil {
+			return nil, err
+		}
+		items = append(items, source_type)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicDocuments = `-- name: ListPublicDocuments :many
+WITH order_params AS (
+    SELECT CAST(?6 AS text) AS order_by, CAST(?7 AS text) AS order_dir
+),
+source_public_stats AS (
+    SELECT
+        es.source_id,
+        COUNT(DISTINCT es.id) AS citations_count,
+        (
+            SELECT COUNT(DISTINCT ent_id)
+            FROM (
+                SELECT pcv2.entity_id AS ent_id
+                FROM evidence_sources es2
+                JOIN evidence ev2 ON ev2.id = es2.evidence_id
+                JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+                WHERE es2.source_id = es.source_id AND es2.status = 'active'
+                UNION
+                SELECT pcv2.target_entity_id AS ent_id
+                FROM evidence_sources es2
+                JOIN evidence ev2 ON ev2.id = es2.evidence_id
+                JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+                WHERE es2.source_id = es.source_id AND es2.status = 'active' AND pcv2.target_entity_id IS NOT NULL
+            )
+        ) AS entities_count,
+        CAST(MIN(pcv.grade) AS TEXT) AS highest_grade,
+        CAST(MAX(pcv.updated_at) AS TEXT) AS last_public_updated_at
+    FROM evidence_sources es
+    JOIN evidence ev ON ev.id = es.evidence_id
+    JOIN public_claims_view pcv ON pcv.claim_id = ev.claim_id
+    WHERE es.status = 'active'
+    GROUP BY es.source_id
+)
+SELECT
+    s.id,
+    s.title,
+    s.publisher_or_author,
+    s.canonical_url,
+    s.published_at,
+    s.accessed_at,
+    s.source_type,
+    s.source_access_status,
+    s.source_access_checked_at,
+    s.created_at,
+    s.updated_at,
+    stats.citations_count,
+    stats.entities_count,
+    stats.highest_grade,
+    stats.last_public_updated_at,
+    CAST(COALESCE((
+        SELECT es2.excerpt
+        FROM evidence_sources es2
+        JOIN evidence ev2 ON ev2.id = es2.evidence_id
+        JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+        WHERE es2.source_id = s.id AND es2.status = 'active' AND length(trim(es2.excerpt)) > 0
+        ORDER BY
+            CASE es2.role
+                WHEN 'supports' THEN 1
+                WHEN 'contradicts' THEN 2
+                WHEN 'contextualizes' THEN 3
+                ELSE 4
+            END ASC,
+            es2.created_at ASC,
+            es2.id ASC
+        LIMIT 1
+    ), '') AS TEXT) AS first_public_excerpt,
+    CAST(COALESCE((
+        SELECT es2.locator
+        FROM evidence_sources es2
+        JOIN evidence ev2 ON ev2.id = es2.evidence_id
+        JOIN public_claims_view pcv2 ON pcv2.claim_id = ev2.claim_id
+        WHERE es2.source_id = s.id AND es2.status = 'active' AND length(trim(es2.excerpt)) > 0
+        ORDER BY
+            CASE es2.role
+                WHEN 'supports' THEN 1
+                WHEN 'contradicts' THEN 2
+                WHEN 'contextualizes' THEN 3
+                ELSE 4
+            END ASC,
+            es2.created_at ASC,
+            es2.id ASC
+        LIMIT 1
+    ), '') AS TEXT) AS first_public_locator
+FROM sources s
+JOIN source_public_stats stats ON stats.source_id = s.id
+WHERE
+    (?1 = '' OR s.source_type = ?1)
+    AND (?2 = '' OR s.source_access_status = ?2)
+    AND (
+        ?3 = '' OR
+        like(?3, s.title, '\') OR
+        like(?3, s.publisher_or_author, '\')
+    )
+ORDER BY
+    CASE WHEN (SELECT order_by FROM order_params) = 'title' AND (SELECT order_dir FROM order_params) = 'asc' THEN s.title END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'title' AND (SELECT order_dir FROM order_params) = 'desc' THEN s.title END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'publisher' AND (SELECT order_dir FROM order_params) = 'asc' THEN s.publisher_or_author END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'publisher' AND (SELECT order_dir FROM order_params) = 'desc' THEN s.publisher_or_author END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'asc' THEN stats.last_public_updated_at END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'updated' AND (SELECT order_dir FROM order_params) = 'desc' THEN stats.last_public_updated_at END DESC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'citations' AND (SELECT order_dir FROM order_params) = 'asc' THEN stats.citations_count END ASC,
+    CASE WHEN (SELECT order_by FROM order_params) = 'citations' AND (SELECT order_dir FROM order_params) = 'desc' THEN stats.citations_count END DESC,
+    s.title ASC,
+    s.id ASC
+LIMIT ?5 OFFSET ?4
+`
+
+type ListPublicDocumentsParams struct {
+	FilterSourceType   interface{} `json:"filter_source_type"`
+	FilterAccessStatus interface{} `json:"filter_access_status"`
+	SearchQuery        interface{} `json:"search_query"`
+	PageOffset         int64       `json:"page_offset"`
+	PageLimit          int64       `json:"page_limit"`
+	OrderBy            string      `json:"order_by"`
+	OrderDir           string      `json:"order_dir"`
+}
+
+type ListPublicDocumentsRow struct {
+	ID                    string         `json:"id"`
+	Title                 string         `json:"title"`
+	PublisherOrAuthor     string         `json:"publisher_or_author"`
+	CanonicalUrl          string         `json:"canonical_url"`
+	PublishedAt           sql.NullString `json:"published_at"`
+	AccessedAt            sql.NullString `json:"accessed_at"`
+	SourceType            string         `json:"source_type"`
+	SourceAccessStatus    string         `json:"source_access_status"`
+	SourceAccessCheckedAt sql.NullString `json:"source_access_checked_at"`
+	CreatedAt             string         `json:"created_at"`
+	UpdatedAt             string         `json:"updated_at"`
+	CitationsCount        int64          `json:"citations_count"`
+	EntitiesCount         int64          `json:"entities_count"`
+	HighestGrade          string         `json:"highest_grade"`
+	LastPublicUpdatedAt   string         `json:"last_public_updated_at"`
+	FirstPublicExcerpt    string         `json:"first_public_excerpt"`
+	FirstPublicLocator    string         `json:"first_public_locator"`
+}
+
+func (q *Queries) ListPublicDocuments(ctx context.Context, arg ListPublicDocumentsParams) ([]ListPublicDocumentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPublicDocuments,
+		arg.FilterSourceType,
+		arg.FilterAccessStatus,
+		arg.SearchQuery,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.OrderBy,
+		arg.OrderDir,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicDocumentsRow
+	for rows.Next() {
+		var i ListPublicDocumentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.PublisherOrAuthor,
+			&i.CanonicalUrl,
+			&i.PublishedAt,
+			&i.AccessedAt,
+			&i.SourceType,
+			&i.SourceAccessStatus,
+			&i.SourceAccessCheckedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CitationsCount,
+			&i.EntitiesCount,
+			&i.HighestGrade,
+			&i.LastPublicUpdatedAt,
+			&i.FirstPublicExcerpt,
+			&i.FirstPublicLocator,
 		); err != nil {
 			return nil, err
 		}

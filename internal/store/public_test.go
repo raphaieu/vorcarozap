@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -812,6 +813,342 @@ func TestPublic_PeriodFilter(t *testing.T) {
 		fArbitrary := store.SanitizeFilterWithClock(store.PublicEntityFilter{Period: "2026-01-01T00:00:00Z"}, baseTime)
 		if fArbitrary.Period != "" || fArbitrary.PeriodSince != "" {
 			t.Errorf("timestamp arbitrário não deveria ser aceito, obteve %q / %q", fArbitrary.Period, fArbitrary.PeriodSince)
+		}
+	})
+}
+
+func TestPublicDocuments_ListAndFilter(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	queries := sqlc.New(db)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Cria caso de teste
+	_, err := queries.CreateCase(ctx, sqlc.CreateCaseParams{
+		ID:          "case-doc-root",
+		Name:        "Caso Documental",
+		Slug:        "caso-documental",
+		Description: "Caso de teste",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar caso: %v", err)
+	}
+
+	// Cria fixtures:
+	// 1. Entidade pública A
+	eA, err := queries.CreateEntity(ctx, sqlc.CreateEntityParams{
+		ID:                 "ent-doc-a",
+		Type:               "person",
+		Name:               "Pessoa Alpha",
+		NormalizedName:     "pessoa alpha",
+		Slug:               "pessoa-alpha",
+		Category:           "Politica",
+		RoleOrContext:      "Deputado",
+		Reach:              "Nacional",
+		Summary:            "Resumo",
+		Relevance:          4,
+		RelevanceRationale: "Justificativa",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar entidade: %v", err)
+	}
+
+	// 2. Entidade pública B
+	eB, err := queries.CreateEntity(ctx, sqlc.CreateEntityParams{
+		ID:                 "ent-doc-b",
+		Type:               "person",
+		Name:               "Pessoa Beta",
+		NormalizedName:     "pessoa beta",
+		Slug:               "pessoa-beta",
+		Category:           "Empresas",
+		RoleOrContext:      "Empresário",
+		Reach:              "Estadual",
+		Summary:            "Resumo",
+		Relevance:          3,
+		RelevanceRationale: "Justificativa",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar entidade: %v", err)
+	}
+
+	// 3. Relações
+	rA, err := queries.CreateRelationship(ctx, sqlc.CreateRelationshipParams{
+		ID:               "rel-doc-a",
+		SubjectEntityID:  eA.ID,
+		CaseID:           sql.NullString{String: "case-doc-root", Valid: true},
+		RelationshipType: "Investigado",
+		Summary:          "Resumo",
+		ContextLimits:    "",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar rel A: %v", err)
+	}
+
+	rB, err := queries.CreateRelationship(ctx, sqlc.CreateRelationshipParams{
+		ID:               "rel-doc-b",
+		SubjectEntityID:  eB.ID,
+		CaseID:           sql.NullString{String: "case-doc-root", Valid: true},
+		RelationshipType: "Citado",
+		Summary:          "Resumo",
+		ContextLimits:    "",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar rel B: %v", err)
+	}
+
+	// 4. Claims:
+	// Claim 1 (Alpha): Publicado, Grau A, supports_link, metric_eligible=1
+	cl1, err := queries.CreateClaim(ctx, sqlc.CreateClaimParams{
+		ID:             "clm-doc-1",
+		RelationshipID: rA.ID,
+		Proposition:    "Alpha participou de reunião",
+		Attribution:    "",
+		Origin:         "curated_seed",
+		Grade:          "A",
+		Disposition:    "supports_link",
+		MetricEligible: 1,
+		Status:         "published",
+		ContextStatus:  "Confirmado",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar claim 1: %v", err)
+	}
+
+	// Claim 2 (Beta): Publicado, Grau B, context_only, metric_eligible=0 (Contexto)
+	cl2, err := queries.CreateClaim(ctx, sqlc.CreateClaimParams{
+		ID:             "clm-doc-2",
+		RelationshipID: rB.ID,
+		Proposition:    "Beta prestou depoimento técnico",
+		Attribution:    "",
+		Origin:         "curated_seed",
+		Grade:          "B",
+		Disposition:    "context_only",
+		MetricEligible: 0,
+		Status:         "published",
+		ContextStatus:  "Testemunha",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar claim 2: %v", err)
+	}
+
+	// Claim 3 (Alpha): Quarentenado
+	cl3, err := queries.CreateClaim(ctx, sqlc.CreateClaimParams{
+		ID:                "clm-doc-3",
+		RelationshipID:    rA.ID,
+		Proposition:       "Alpha em alegação não confirmada",
+		Attribution:       "",
+		Origin:            "openrouter",
+		Grade:             "E",
+		Disposition:       "possible_link",
+		MetricEligible:    0,
+		Status:            "quarantined",
+		ContextStatus:     "Pendente",
+		QuarantineReasons: "[\"GRADE_E\"]",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar claim 3: %v", err)
+	}
+
+	// 5. Evidências
+	ev1, _ := queries.CreateEvidence(ctx, sqlc.CreateEvidenceParams{ID: "ev-doc-1", ClaimID: cl1.ID, Summary: "Ev 1", EvidenceType: "document", CreatedAt: now, UpdatedAt: now})
+	ev2, _ := queries.CreateEvidence(ctx, sqlc.CreateEvidenceParams{ID: "ev-doc-2", ClaimID: cl2.ID, Summary: "Ev 2", EvidenceType: "document", CreatedAt: now, UpdatedAt: now})
+	ev3, _ := queries.CreateEvidence(ctx, sqlc.CreateEvidenceParams{ID: "ev-doc-3", ClaimID: cl3.ID, Summary: "Ev 3", EvidenceType: "document", CreatedAt: now, UpdatedAt: now})
+
+	// 6. Fontes:
+	// Fonte Compartilhada (usada por Alpha no cl1 e Beta no cl2)
+	srcShared, _ := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-shared-doc",
+		Title:              "Relatório da CPI nº 42",
+		PublisherOrAuthor:  "Senado Federal",
+		OriginalUrl:        "https://senado.leg.br/cpi42.pdf",
+		CanonicalUrl:       "https://senado.leg.br/cpi42.pdf",
+		SourceType:         "court_document",
+		SourceAccessStatus: "reachable",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+
+	// Fonte de Contexto exclusiva (usada por Beta no cl2 com metric_eligible=0)
+	srcContextOnly, _ := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-context-doc",
+		Title:              "Ata Notarial de Esclarecimentos",
+		PublisherOrAuthor:  "Cartório de Notas",
+		OriginalUrl:        "https://cartorio.com.br/ata",
+		CanonicalUrl:       "https://cartorio.com.br/ata",
+		SourceType:         "official_statement",
+		SourceAccessStatus: "reachable",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+
+	// Fonte Exclusiva de Quarentena (usada apenas no cl3)
+	srcQuarantine, _ := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-quarantine-only",
+		Title:              "Boato em Blog Anônimo",
+		PublisherOrAuthor:  "Blog Oculto",
+		OriginalUrl:        "https://blogoculto.com/boato",
+		CanonicalUrl:       "https://blogoculto.com/boato",
+		SourceType:         "article",
+		SourceAccessStatus: "unreachable",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+
+	// Fonte com EvidenceSource rejeitado exclusivamente
+	srcRejectedOnly, _ := queries.CreateSource(ctx, sqlc.CreateSourceParams{
+		ID:                 "src-rejected-only",
+		Title:              "Documento Desaprovado",
+		PublisherOrAuthor:  "Jornal Regional",
+		OriginalUrl:        "https://jornal.com/desaprovado",
+		CanonicalUrl:       "https://jornal.com/desaprovado",
+		SourceType:         "article",
+		SourceAccessStatus: "reachable",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+
+	// 7. Evidence Sources
+	// Suportes ativos
+	_, _ = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{ID: "es-sh-1", EvidenceID: ev1.ID, SourceID: srcShared.ID, Role: "supports", Excerpt: "Trecho Alpha", Locator: "Pág. 10", Status: "active", CreatedAt: now, UpdatedAt: now})
+	_, _ = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{ID: "es-sh-2", EvidenceID: ev2.ID, SourceID: srcShared.ID, Role: "supports", Excerpt: "Trecho Beta", Locator: "Pág. 20", Status: "active", CreatedAt: now, UpdatedAt: now})
+	_, _ = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{ID: "es-ctx-1", EvidenceID: ev2.ID, SourceID: srcContextOnly.ID, Role: "supports", Excerpt: "Trecho Contexto", Locator: "Folha 1", Status: "active", CreatedAt: now, UpdatedAt: now})
+
+	// EvidenceSource na quarentena
+	_, _ = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{ID: "es-quar-1", EvidenceID: ev3.ID, SourceID: srcQuarantine.ID, Role: "supports", Excerpt: "Trecho Quarentenado", Locator: "", Status: "active", CreatedAt: now, UpdatedAt: now})
+
+	// EvidenceSource rejeitado em claim publicado
+	_, _ = queries.CreateEvidenceSource(ctx, sqlc.CreateEvidenceSourceParams{ID: "es-rej-1", EvidenceID: ev1.ID, SourceID: srcRejectedOnly.ID, Role: "supports", Excerpt: "Trecho Rejeitado", Locator: "", Status: "rejected", CreatedAt: now, UpdatedAt: now})
+
+	t.Run("Fonte pública compartilhada aparece exatamente uma vez com contagens agregadas", func(t *testing.T) {
+		res, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{})
+		if err != nil {
+			t.Fatalf("erro ao listar documentos públicos: %v", err)
+		}
+
+		// Esperado: srcShared e srcContextOnly (2 fontes públicas no total)
+		if res.TotalCount != 2 {
+			t.Fatalf("total de documentos públicos: esperado 2, obtido %d", res.TotalCount)
+		}
+
+		var sharedDoc *sqlc.ListPublicDocumentsRow
+		for i := range res.Documents {
+			if res.Documents[i].ID == srcShared.ID {
+				sharedDoc = &res.Documents[i]
+				break
+			}
+		}
+		if sharedDoc == nil {
+			t.Fatalf("fonte compartilhada %s não encontrada na listagem", srcShared.ID)
+		}
+
+		// Valida contagens agregadas: 2 citações ativas, 2 entidades públicas vinculadas
+		if sharedDoc.CitationsCount != 2 {
+			t.Errorf("citations_count: esperado 2, obtido %d", sharedDoc.CitationsCount)
+		}
+		if sharedDoc.EntitiesCount != 2 {
+			t.Errorf("entities_count: esperado 2, obtido %d", sharedDoc.EntitiesCount)
+		}
+		if sharedDoc.FirstPublicExcerpt != "Trecho Alpha" {
+			t.Errorf("first_public_excerpt: esperado 'Trecho Alpha', obtido '%s'", sharedDoc.FirstPublicExcerpt)
+		}
+		if sharedDoc.FirstPublicLocator != "Pág. 10" {
+			t.Errorf("first_public_locator: esperado 'Pág. 10', obtido '%s'", sharedDoc.FirstPublicLocator)
+		}
+	})
+
+	t.Run("Fonte exclusiva de quarentena NÃO aparece no catálogo", func(t *testing.T) {
+		res, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{Search: "Blog Oculto"})
+		if err != nil {
+			t.Fatalf("erro ao buscar: %v", err)
+		}
+		if res.TotalCount != 0 {
+			t.Errorf("vazamento de quarentena: fonte de quarentena apareceu com %d resultados", res.TotalCount)
+		}
+	})
+
+	t.Run("Fonte com uso rejeitado exclusivamente NÃO aparece no catálogo", func(t *testing.T) {
+		res, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{Search: "Documento Desaprovado"})
+		if err != nil {
+			t.Fatalf("erro ao buscar: %v", err)
+		}
+		if res.TotalCount != 0 {
+			t.Errorf("vazamento de fonte rejeitada: obteve %d resultados", res.TotalCount)
+		}
+	})
+
+	t.Run("Fonte ligada a claim com metric_eligible=false ESTÁ presente no catálogo", func(t *testing.T) {
+		res, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{Search: "Ata Notarial"})
+		if err != nil {
+			t.Fatalf("erro ao buscar fonte de contexto: %v", err)
+		}
+		if res.TotalCount != 1 || res.Documents[0].ID != srcContextOnly.ID {
+			t.Errorf("fonte de contexto não encontrada no catálogo: %+v", res)
+		}
+		if res.Documents[0].FirstPublicExcerpt != "Trecho Contexto" {
+			t.Errorf("first_public_excerpt: esperado 'Trecho Contexto', obtido '%s'", res.Documents[0].FirstPublicExcerpt)
+		}
+	})
+
+	t.Run("Busca e filtros por source_type e access_status", func(t *testing.T) {
+		// Filtro por tipo court_document
+		resType, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{
+			SourceType: "court_document",
+		})
+		if err != nil || resType.TotalCount != 1 || resType.Documents[0].ID != srcShared.ID {
+			t.Errorf("filtro por source_type falhou: %+v, err=%v", resType, err)
+		}
+
+		// Filtro por access_status reachable
+		resAccess, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{
+			AccessStatus: "reachable",
+		})
+		if err != nil || resAccess.TotalCount != 2 {
+			t.Errorf("filtro por access_status falhou: %+v, err=%v", resAccess, err)
+		}
+	})
+
+	t.Run("Ordenação e paginação com limites conservadores", func(t *testing.T) {
+		// Página 1 com page_size 1
+		resP1, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{
+			OrderBy:  "title",
+			OrderDir: "asc",
+			Page:     1,
+			PageSize: 1,
+		})
+		if err != nil || resP1.TotalCount != 2 || len(resP1.Documents) != 1 {
+			t.Fatalf("página 1 falhou: %+v, err=%v", resP1, err)
+		}
+		if resP1.Documents[0].ID != srcContextOnly.ID { // "Ata Notarial" vem antes de "Relatório"
+			t.Errorf("ordenação ascendente por título falhou, obtido: %s", resP1.Documents[0].Title)
+		}
+
+		// Sanitização de página extrema e truncamento de busca em MaxSearchQueryLength (200 caracteres)
+		longQuery := strings.Repeat("busca-extensa-", 30) // 420 caracteres
+		fExtreme := store.SanitizeDocumentFilter(store.PublicDocumentFilter{
+			Search:   longQuery,
+			Page:     99999999,
+			PageSize: 1000,
+		})
+		if fExtreme.Page != store.MaxPage || fExtreme.PageSize != store.MaxPageSize {
+			t.Errorf("sanitização falhou: obtido page=%d, pageSize=%d", fExtreme.Page, fExtreme.PageSize)
+		}
+		if len([]rune(fExtreme.Search)) != store.MaxSearchQueryLength {
+			t.Errorf("truncamento de busca falhou: esperado %d caracteres, obtido %d", store.MaxSearchQueryLength, len([]rune(fExtreme.Search)))
 		}
 	})
 }

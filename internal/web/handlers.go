@@ -215,6 +215,95 @@ func (h *Handlers) HandleEntityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleDocuments renderiza a listagem paginada de documentos públicos com busca e filtros.
+func (h *Handlers) HandleDocuments(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
+	filter := store.PublicDocumentFilter{
+		Search:       q.Get("q"),
+		SourceType:   q.Get("source_type"),
+		AccessStatus: q.Get("access_status"),
+		OrderBy:      q.Get("sort"),
+		OrderDir:     q.Get("dir"),
+		Page:         page,
+		PageSize:     pageSize,
+	}
+
+	res, err := store.ListPublicDocuments(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("failed to list public documents", "error", err)
+		http.Error(w, "Erro ao consultar documentos públicos", http.StatusInternalServerError)
+		return
+	}
+
+	typesList, err := store.ListPublicDocumentSourceTypes(r.Context(), h.db)
+	if err != nil {
+		slog.Warn("failed to list document source types for filter", "error", err)
+		typesList = nil
+	}
+
+	// Monta opções de tipos disponíveis
+	var typeOpts []pages.SourceTypeOptionVM
+	if len(typesList) > 0 {
+		for _, tStr := range typesList {
+			st := domain.SourceType(tStr)
+			typeOpts = append(typeOpts, pages.SourceTypeOptionVM{
+				Value: tStr,
+				Label: st.Label(),
+			})
+		}
+	} else {
+		for _, st := range domain.CanonicalSourceTypes {
+			typeOpts = append(typeOpts, pages.SourceTypeOptionVM{
+				Value: string(st),
+				Label: st.Label(),
+			})
+		}
+	}
+
+	// Monta opções de status de acessibilidade
+	statusOpts := []pages.SourceStatusOptionVM{
+		{Value: string(domain.SourceAccessReachable), Label: "Acessível / Confirmada"},
+		{Value: string(domain.SourceAccessUnreachable), Label: "Inacessível na Origem"},
+		{Value: string(domain.SourceAccessCitedByProvider), Label: "Citada pelo Provedor"},
+		{Value: string(domain.SourceAccessNotChecked), Label: "Não Verificada"},
+	}
+
+	var cardVMs []pages.DocumentCardVM
+	for _, doc := range res.Documents {
+		cardVMs = append(cardVMs, pages.ToDocumentCardVM(doc))
+	}
+
+	sanitized := store.SanitizeDocumentFilter(filter)
+	vm := pages.DocumentListVM{
+		Documents: cardVMs,
+		Filter: pages.DocumentFilterParamsVM{
+			Search:            sanitized.Search,
+			SourceType:        sanitized.SourceType,
+			AccessStatus:      sanitized.AccessStatus,
+			OrderBy:           sanitized.OrderBy,
+			OrderDir:          sanitized.OrderDir,
+			Page:              res.Page,
+			PageSize:          res.PageSize,
+			TotalPages:        res.TotalPages,
+			TotalCount:        res.TotalCount,
+			AvailableTypes:    typeOpts,
+			AvailableStatuses: statusOpts,
+		},
+	}
+
+	component := pages.Documents(vm)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("failed to render documents template", "error", err)
+		http.Error(w, "Erro interno ao renderizar página", http.StatusInternalServerError)
+	}
+}
+
 // HandleDocumentDetail renderiza a página pública SSR de um documento e sua sequência contextual.
 func (h *Handlers) HandleDocumentDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

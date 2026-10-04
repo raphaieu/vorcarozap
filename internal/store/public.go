@@ -22,19 +22,30 @@ const (
 	OrderFieldName      = "name"
 	OrderFieldRelevance = "relevance"
 	OrderFieldUpdated   = "updated"
+	OrderFieldTitle     = "title"
+	OrderFieldPublisher = "publisher"
+	OrderFieldCitations = "citations"
 
 	OrderDirAsc  = "asc"
 	OrderDirDesc = "desc"
 
-	DefaultPageSize = 15
-	MaxPageSize     = 50
-	MaxPage         = 10000
+	DefaultPageSize      = 15
+	MaxPageSize          = 50
+	MaxPage              = 10000
+	MaxSearchQueryLength = 200
 )
 
 var allowedOrderFields = map[string]bool{
 	OrderFieldName:      true,
 	OrderFieldRelevance: true,
 	OrderFieldUpdated:   true,
+}
+
+var allowedDocumentOrderFields = map[string]bool{
+	OrderFieldTitle:     true,
+	OrderFieldPublisher: true,
+	OrderFieldUpdated:   true,
+	OrderFieldCitations: true,
 }
 
 var allowedOrderDirs = map[string]bool{
@@ -118,6 +129,9 @@ func SanitizeFilter(f PublicEntityFilter) PublicEntityFilter {
 func SanitizeFilterWithClock(f PublicEntityFilter, now time.Time) PublicEntityFilter {
 	// 1. Busca textual
 	f.Search = strings.TrimSpace(f.Search)
+	if len([]rune(f.Search)) > MaxSearchQueryLength {
+		f.Search = string([]rune(f.Search)[:MaxSearchQueryLength])
+	}
 
 	// 2. Categoria e Grau
 	f.Category = strings.TrimSpace(f.Category)
@@ -230,6 +244,139 @@ func ListPublicEntities(ctx context.Context, db *sql.DB, rawFilter PublicEntityF
 		PageSize:   filter.PageSize,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// PublicDocumentFilter encapsula os parâmetros de consulta do catálogo público de documentos.
+type PublicDocumentFilter struct {
+	Search       string
+	SourceType   string
+	AccessStatus string
+	OrderBy      string
+	OrderDir     string
+	Page         int
+	PageSize     int
+}
+
+// PublicDocumentsResult contém a lista paginada e os metadados de paginação de documentos.
+type PublicDocumentsResult struct {
+	Documents  []sqlc.ListPublicDocumentsRow
+	TotalCount int64
+	Page       int
+	PageSize   int
+	TotalPages int
+}
+
+// SanitizeDocumentFilter valida parâmetros do catálogo de documentos e aplica defaults seguros.
+func SanitizeDocumentFilter(f PublicDocumentFilter) PublicDocumentFilter {
+	// 1. Busca textual
+	f.Search = strings.TrimSpace(f.Search)
+	if len([]rune(f.Search)) > MaxSearchQueryLength {
+		f.Search = string([]rune(f.Search)[:MaxSearchQueryLength])
+	}
+
+	// 2. Tipo de Fonte
+	f.SourceType = strings.TrimSpace(f.SourceType)
+	if f.SourceType != "" && !domain.SourceType(f.SourceType).IsValid() {
+		f.SourceType = ""
+	}
+
+	// 3. Status de Acessibilidade
+	f.AccessStatus = strings.TrimSpace(f.AccessStatus)
+	if f.AccessStatus != "" && !domain.SourceAccessStatus(f.AccessStatus).IsValid() {
+		f.AccessStatus = ""
+	}
+
+	// 4. Ordenação
+	f.OrderBy = strings.ToLower(strings.TrimSpace(f.OrderBy))
+	if !allowedDocumentOrderFields[f.OrderBy] {
+		f.OrderBy = OrderFieldTitle
+	}
+
+	f.OrderDir = strings.ToLower(strings.TrimSpace(f.OrderDir))
+	if !allowedOrderDirs[f.OrderDir] {
+		if f.OrderBy == OrderFieldUpdated || f.OrderBy == OrderFieldCitations {
+			f.OrderDir = OrderDirDesc
+		} else {
+			f.OrderDir = OrderDirAsc
+		}
+	}
+
+	// 5. Paginação previsível e conservadora
+	if f.Page < 1 {
+		f.Page = 1
+	} else if f.Page > MaxPage {
+		f.Page = MaxPage
+	}
+	if f.PageSize < 1 {
+		f.PageSize = DefaultPageSize
+	} else if f.PageSize > MaxPageSize {
+		f.PageSize = MaxPageSize
+	}
+
+	return f
+}
+
+// ListPublicDocuments busca fontes públicas ativas respeitando busca, filtros, ordenação e paginação.
+func ListPublicDocuments(ctx context.Context, db *sql.DB, rawFilter PublicDocumentFilter) (*PublicDocumentsResult, error) {
+	filter := SanitizeDocumentFilter(rawFilter)
+	q := sqlc.New(db)
+
+	searchQuery := ""
+	if filter.Search != "" {
+		searchQuery = "%" + EscapeLike(filter.Search) + "%"
+	}
+
+	var offset int64
+	if filter.Page > 1 {
+		offset = int64(filter.Page-1) * int64(filter.PageSize)
+		if offset < 0 {
+			offset = 0
+		}
+	}
+	limit := int64(filter.PageSize)
+
+	// 1. Contagem total de documentos correspondentes
+	totalCount, err := q.CountPublicDocuments(ctx, sqlc.CountPublicDocumentsParams{
+		FilterSourceType:   filter.SourceType,
+		FilterAccessStatus: filter.AccessStatus,
+		SearchQuery:        searchQuery,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao contar documentos públicos: %w", err)
+	}
+
+	totalPages := int((totalCount + limit - 1) / limit)
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// 2. Consulta da página de documentos
+	rows, err := q.ListPublicDocuments(ctx, sqlc.ListPublicDocumentsParams{
+		OrderBy:            filter.OrderBy,
+		OrderDir:           filter.OrderDir,
+		FilterSourceType:   filter.SourceType,
+		FilterAccessStatus: filter.AccessStatus,
+		SearchQuery:        searchQuery,
+		PageOffset:         offset,
+		PageLimit:          limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: falha ao listar documentos públicos: %w", err)
+	}
+
+	return &PublicDocumentsResult{
+		Documents:  rows,
+		TotalCount: totalCount,
+		Page:       filter.Page,
+		PageSize:   filter.PageSize,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// ListPublicDocumentSourceTypes lista os tipos de fonte presentes nos documentos públicos ativos.
+func ListPublicDocumentSourceTypes(ctx context.Context, db *sql.DB) ([]string, error) {
+	q := sqlc.New(db)
+	return q.ListPublicDocumentSourceTypes(ctx)
 }
 
 // GetPublicEntityDetail obtém a entidade pelo slug e carrega seus claims públicos com as fontes segregadas e o histórico editorial.
