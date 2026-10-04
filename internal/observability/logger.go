@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -12,10 +13,13 @@ import (
 )
 
 var (
-	bearerRegex     = regexp.MustCompile(`(?i)bearer\s+[a-zA-Z0-9_\-\.]+`)
-	openRouterRegex = regexp.MustCompile(`sk-or-v1-[a-zA-Z0-9]+`)
-	emailRegex      = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
-	phoneRegex      = regexp.MustCompile(`(\+?[0-9]{1,3}[-.\s]?)?(\(?[0-9]{2,3}\)?[-.\s]?)?[0-9]{4,5}[-.\s]?[0-9]{4}`)
+	bearerRegex      = regexp.MustCompile(`(?i)bearer\s+[a-zA-Z0-9_\-\.]+`)
+	openRouterRegex  = regexp.MustCompile(`sk-or-v1-[a-zA-Z0-9]+`)
+	emailRegex       = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	phoneRegex       = regexp.MustCompile(`(\+?[0-9]{1,3}[-.\s]?)?(\(?[0-9]{2,3}\)?[-.\s]?)?[0-9]{4,5}[-.\s]?[0-9]{4}`)
+	queryParamsRegex = regexp.MustCompile(`(?i)(token|key|secret|password|totp|auth|authorization|api_key|apikey|access_key|secret_key|session_id|mfa_key)=([^&\s]+)`)
+	sigv4Regex       = regexp.MustCompile(`(?i)AWS4-HMAC-SHA256\s+Credential=[^,\s]+`)
+	bcryptRegex      = regexp.MustCompile(`\$2[abxy]?\$\d+\$[./A-Za-z0-9]{53}`)
 )
 
 var sensitiveKeySubstrings = []string{
@@ -57,6 +61,9 @@ func SanitizeStringValue(val string) string {
 	}
 	res := bearerRegex.ReplaceAllString(val, "Bearer [REDACTED]")
 	res = openRouterRegex.ReplaceAllString(res, "sk-or-v1-[REDACTED]")
+	res = sigv4Regex.ReplaceAllString(res, "AWS4-HMAC-SHA256 Credential=[REDACTED]")
+	res = queryParamsRegex.ReplaceAllString(res, "${1}=[REDACTED]")
+	res = bcryptRegex.ReplaceAllString(res, "[REDACTED_BCRYPT_HASH]")
 	res = emailRegex.ReplaceAllString(res, "[REDACTED_EMAIL]")
 	// Não aplicar regex de telefone se for formato de data/hora RFC3339
 	if !strings.Contains(res, "T") && !strings.Contains(res, "Z") {
@@ -75,6 +82,21 @@ func SanitizeAttr(a slog.Attr) slog.Attr {
 	case slog.KindString:
 		sanitized := SanitizeStringValue(a.Value.String())
 		return slog.String(a.Key, sanitized)
+	case slog.KindAny:
+		val := a.Value.Any()
+		if val == nil {
+			return a
+		}
+		if err, ok := val.(error); ok {
+			return slog.String(a.Key, SanitizeStringValue(err.Error()))
+		}
+		if s, ok := val.(fmt.Stringer); ok {
+			return slog.String(a.Key, SanitizeStringValue(s.String()))
+		}
+		if str, ok := val.(string); ok {
+			return slog.String(a.Key, SanitizeStringValue(str))
+		}
+		return a
 	case slog.KindGroup:
 		attrs := a.Value.Group()
 		sanitizedGroup := make([]slog.Attr, len(attrs))

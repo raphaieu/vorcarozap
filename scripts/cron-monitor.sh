@@ -60,7 +60,7 @@ for query in "${QUERIES[@]}"; do
     if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "^app$"; then
         EXEC_CMD=(docker compose exec -T app vorcarozap monitor --query "${query_trimmed}")
     else
-        EXEC_CMD=(docker compose run --rm -T app vorcarozap monitor --query "${query_trimmed}")
+        EXEC_CMD=(docker compose run --rm -T app monitor --query "${query_trimmed}")
     fi
 
     if "${EXEC_CMD[@]}" 2>&1 | tee -a "${LOG_FILE}"; then

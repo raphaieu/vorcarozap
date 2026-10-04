@@ -661,3 +661,51 @@ WHERE es.source_id = ?
 ORDER BY
     es.created_at ASC,
     es.id ASC;
+
+-- name: InsertBackupRun :exec
+INSERT INTO backup_runs (
+    id,
+    snapshot_path,
+    size_bytes,
+    schema_version,
+    duration_ms,
+    sha256_hex,
+    local_status,
+    local_error,
+    remote_provider,
+    remote_bucket,
+    remote_key,
+    remote_duration_ms,
+    remote_status,
+    remote_error,
+    created_at
+) VALUES (
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+);
+
+-- name: GetLatestLocalBackupRun :one
+SELECT *
+FROM backup_runs
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: GetLatestRemoteBackupRun :one
+SELECT *
+FROM backup_runs
+WHERE remote_status != 'disabled'
+ORDER BY created_at DESC
+LIMIT 1;

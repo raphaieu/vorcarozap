@@ -205,6 +205,17 @@ SET
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?;
 
+-- name: ConsumeTOTPTimestepAndRecordSuccess :execrows
+UPDATE admin_users
+SET
+    last_totp_timestep = @timestep,
+    failed_login_attempts = 0,
+    mfa_failed_attempts = 0,
+    locked_until = NULL,
+    last_login_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = @id AND (last_totp_timestep IS NULL OR last_totp_timestep < @timestep);
+
 -- name: UpdateAdminUserLoginSuccess :exec
 UPDATE admin_users
 SET

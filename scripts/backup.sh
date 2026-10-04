@@ -84,7 +84,7 @@ fi
 if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "^app$"; then
     EXEC_CMD=(docker compose exec -T app vorcarozap backup "${ARGS[@]}")
 else
-    EXEC_CMD=(docker compose run --rm -T app vorcarozap backup "${ARGS[@]}")
+    EXEC_CMD=(docker compose run --rm -T app backup "${ARGS[@]}")
 fi
 
 if "${EXEC_CMD[@]}" 2>&1 | tee -a "${LOG_FILE}"; then

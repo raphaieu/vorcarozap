@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
+	"regexp"
 	"runtime"
 	"sort"
 	"sync"
@@ -13,6 +15,11 @@ import (
 
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/research"
+)
+
+var (
+	sigV4ErrorRegex  = regexp.MustCompile(`(?i)(AWS4-HMAC-SHA256|Credential=[^,\s]+|Signature=[a-f0-9]+)`)
+	secretErrorRegex = regexp.MustCompile(`(?i)(key|secret|password|token)=([^\s&]+)`)
 )
 
 // HTTPMetrics resume os dados de tráfego HTTP.
@@ -251,7 +258,7 @@ func (r *MetricsRegistry) RecordLocalBackup(sizeBytes int64, duration time.Durat
 
 	if err != nil {
 		r.localStatus = "error"
-		r.localLastError = err.Error()
+		r.localLastError = sanitizeErrorString(err)
 	} else {
 		r.localStatus = "ok"
 		r.localLastError = ""
@@ -274,11 +281,24 @@ func (r *MetricsRegistry) RecordRemoteBackup(sizeBytes int64, duration time.Dura
 
 	if err != nil {
 		r.remoteStatus = "error"
-		r.remoteLastError = err.Error()
+		r.remoteLastError = sanitizeErrorString(err)
 	} else {
 		r.remoteStatus = "ok"
 		r.remoteLastError = ""
 	}
+}
+
+func sanitizeErrorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	msg = sigV4ErrorRegex.ReplaceAllString(msg, "[REDACTED_SIGV4]")
+	msg = secretErrorRegex.ReplaceAllString(msg, "$1=[REDACTED]")
+	if len(msg) > 256 {
+		msg = msg[:253] + "..."
+	}
+	return msg
 }
 
 // CollectSnapshot agrega métricas de runtime, banco, filas e telemetria em um snapshot imutável.
@@ -376,13 +396,13 @@ func (r *MetricsRegistry) CollectSnapshot(ctx context.Context, db *sql.DB, cfg *
 	var monMetrics MonitoringAccountingMetrics
 	if db != nil {
 		var totalCostMicros, dailyCostMicros int64
-		_ = db.QueryRowContext(ctx, `
+		err := db.QueryRowContext(ctx, `
 			SELECT 
 				count(*),
 				coalesce(sum(case when status='completed' then 1 else 0 end), 0),
 				coalesce(sum(case when status='partial' then 1 else 0 end), 0),
 				coalesce(sum(case when status='failed' then 1 else 0 end), 0),
-				coalesce(sum(total_cost_micros), 0)
+				coalesce(sum(total_cost_microusd), 0)
 			FROM monitoring_runs;
 		`).Scan(
 			&monMetrics.TotalRuns,
@@ -391,28 +411,45 @@ func (r *MetricsRegistry) CollectSnapshot(ctx context.Context, db *sql.DB, cfg *
 			&monMetrics.FailedRuns,
 			&totalCostMicros,
 		)
+		if err != nil {
+			slog.Error("observability: falha ao consultar métricas de monitoring_runs", "error", err)
+		}
 
-		_ = db.QueryRowContext(ctx, `
-			SELECT coalesce(sum(total_cost_micros), 0)
+		err = db.QueryRowContext(ctx, `
+			SELECT coalesce(sum(total_cost_microusd), 0)
 			FROM monitoring_runs
 			WHERE date(created_at) = date('now');
 		`).Scan(&dailyCostMicros)
+		if err != nil {
+			slog.Error("observability: falha ao consultar custo diário de monitoring_runs", "error", err)
+		}
 
-		_ = db.QueryRowContext(ctx, "SELECT count(*) FROM monitoring_candidates;").Scan(&monMetrics.TotalCandidates)
-
-		_ = db.QueryRowContext(ctx, `
+		// Candidatos e status editorial real decidido pela política Go
+		err = db.QueryRowContext(ctx, `
 			SELECT 
 				count(*),
-				coalesce(sum(case when recommendation='publish' then 1 else 0 end), 0),
-				coalesce(sum(case when recommendation='quarantine' then 1 else 0 end), 0),
-				coalesce(sum(case when recommendation='reject' then 1 else 0 end), 0)
-			FROM semantic_evaluations;
+				coalesce(sum(case when editorial_status='published' then 1 else 0 end), 0),
+				coalesce(sum(case when editorial_status='quarantined' then 1 else 0 end), 0),
+				coalesce(sum(case when editorial_status='rejected' then 1 else 0 end), 0)
+			FROM monitoring_candidates;
 		`).Scan(
-			&monMetrics.TotalEvaluations,
+			&monMetrics.TotalCandidates,
 			&monMetrics.PublishedCount,
 			&monMetrics.QuarantinedCount,
 			&monMetrics.RejectedCount,
 		)
+		if err != nil {
+			slog.Error("observability: falha ao consultar métricas de monitoring_candidates", "error", err)
+		}
+
+		// Total de avaliações semânticas executadas pelo OpenRouter
+		err = db.QueryRowContext(ctx, `
+			SELECT count(*)
+			FROM semantic_evaluations;
+		`).Scan(&monMetrics.TotalEvaluations)
+		if err != nil {
+			slog.Error("observability: falha ao consultar total de semantic_evaluations", "error", err)
+		}
 
 		monMetrics.TotalCostUSD = research.MicroUSDToFloat(totalCostMicros)
 		monMetrics.TotalCostUSDFormatted = fmt.Sprintf("$%.4f", monMetrics.TotalCostUSD)
@@ -431,12 +468,12 @@ func (r *MetricsRegistry) CollectSnapshot(ctx context.Context, db *sql.DB, cfg *
 	// 5. Queues and Moderation
 	var queueMetrics QueueMetrics
 	if db != nil {
-		_ = db.QueryRowContext(ctx, `
+		err := db.QueryRowContext(ctx, `
 			SELECT 
 				count(*),
-				coalesce(sum(case when editorial_status='active' then 1 else 0 end), 0),
-				coalesce(sum(case when editorial_status='quarantined' then 1 else 0 end), 0),
-				coalesce(sum(case when editorial_status='rejected' then 1 else 0 end), 0)
+				coalesce(sum(case when status='published' then 1 else 0 end), 0),
+				coalesce(sum(case when status='quarantined' then 1 else 0 end), 0),
+				coalesce(sum(case when status='rejected' then 1 else 0 end), 0)
 			FROM claims;
 		`).Scan(
 			&queueMetrics.TotalClaims,
@@ -444,18 +481,24 @@ func (r *MetricsRegistry) CollectSnapshot(ctx context.Context, db *sql.DB, cfg *
 			&queueMetrics.QuarantinedClaims,
 			&queueMetrics.RejectedClaims,
 		)
+		if err != nil {
+			slog.Error("observability: falha ao consultar métricas de claims", "error", err)
+		}
 
-		_ = db.QueryRowContext(ctx, `
+		err = db.QueryRowContext(ctx, `
 			SELECT 
 				count(*),
-				coalesce(sum(case when status='pending' then 1 else 0 end), 0)
+				coalesce(sum(case when status IN ('quarantined', 'under_review') then 1 else 0 end), 0)
 			FROM defense_statements;
 		`).Scan(
 			&queueMetrics.TotalManifestations,
 			&queueMetrics.PendingManifestations,
 		)
+		if err != nil {
+			slog.Error("observability: falha ao consultar métricas de defense_statements", "error", err)
+		}
 
-		_ = db.QueryRowContext(ctx, `
+		err = db.QueryRowContext(ctx, `
 			SELECT 
 				count(*),
 				coalesce(sum(case when status='locked' then 1 else 0 end), 0)
@@ -464,10 +507,16 @@ func (r *MetricsRegistry) CollectSnapshot(ctx context.Context, db *sql.DB, cfg *
 			&queueMetrics.TotalUsers,
 			&queueMetrics.LockedUsers,
 		)
+		if err != nil {
+			slog.Error("observability: falha ao consultar métricas de admin_users", "error", err)
+		}
 
-		_ = db.QueryRowContext(ctx, `
-			SELECT count(*) FROM admin_sessions WHERE expires_at > datetime('now');
+		err = db.QueryRowContext(ctx, `
+			SELECT count(*) FROM admin_sessions WHERE expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
 		`).Scan(&queueMetrics.ActiveSessions)
+		if err != nil {
+			slog.Error("observability: falha ao consultar métricas de admin_sessions", "error", err)
+		}
 	}
 
 	// 6. Backup Telemetry
@@ -500,29 +549,95 @@ func (r *MetricsRegistry) CollectSnapshot(ctx context.Context, db *sql.DB, cfg *
 		remoteStatus = "disabled"
 	}
 
+	localStatus := r.localStatus
+	localDurationMs := r.localDurationMs
+	localSizeBytes := r.localSizeBytes
+	localSchemaVersion := r.localSchemaVersion
+	localLastError := r.localLastError
+
+	remoteDurationMs := r.remoteDurationMs
+	remoteSizeBytes := r.remoteSizeBytes
+	remoteKey := r.remoteKey
+	remoteSHA256 := r.remoteSHA256
+	remoteLastError := r.remoteLastError
+
+	r.backupMu.RUnlock()
+
+	// Se a memória em processo estiver vazia (ex.: servidor HTTP reiniciado ou backup executado via CLI),
+	// consulta o histórico persistido em SQLite na tabela backup_runs
+	if db != nil {
+		if localStatus == "none" {
+			var snapPath string
+			var szBytes, schVer, durMs int64
+			var lStatus string
+			var lErrNull sql.NullString
+			var createdAtStr string
+			bErr := db.QueryRowContext(ctx, `
+				SELECT snapshot_path, size_bytes, schema_version, duration_ms, local_status, local_error, created_at
+				FROM backup_runs
+				ORDER BY created_at DESC
+				LIMIT 1;
+			`).Scan(&snapPath, &szBytes, &schVer, &durMs, &lStatus, &lErrNull, &createdAtStr)
+			if bErr == nil {
+				localRunStr = &createdAtStr
+				localDurationMs = durMs
+				localSizeBytes = szBytes
+				localSchemaVersion = schVer
+				localStatus = lStatus
+				if lErrNull.Valid {
+					localLastError = lErrNull.String
+				}
+			}
+		}
+
+		if remoteStatus == "none" || (remoteEnabled && remoteStatus == "disabled") {
+			var remProv, remBuck, remK, shaHex, rStatus string
+			var szBytes, remDurMs int64
+			var rErrNull sql.NullString
+			var createdAtStr string
+			bErr := db.QueryRowContext(ctx, `
+				SELECT remote_provider, remote_bucket, remote_key, size_bytes, remote_duration_ms, sha256_hex, remote_status, remote_error, created_at
+				FROM backup_runs
+				WHERE remote_status != 'disabled'
+				ORDER BY created_at DESC
+				LIMIT 1;
+			`).Scan(&remProv, &remBuck, &remK, &szBytes, &remDurMs, &shaHex, &rStatus, &rErrNull, &createdAtStr)
+			if bErr == nil {
+				remoteRunStr = &createdAtStr
+				remoteDurationMs = remDurMs
+				remoteSizeBytes = szBytes
+				remoteKey = remK
+				remoteSHA256 = shaHex
+				remoteStatus = rStatus
+				if rErrNull.Valid {
+					remoteLastError = rErrNull.String
+				}
+			}
+		}
+	}
+
 	backupMetrics := BackupTelemetry{
 		LocalLastRunAt:       localRunStr,
-		LocalDurationMs:      r.localDurationMs,
-		LocalSizeBytes:       r.localSizeBytes,
-		LocalSizeHuman:       formatBytes(r.localSizeBytes),
-		LocalSchemaVersion:   r.localSchemaVersion,
-		LocalStatus:          r.localStatus,
-		LocalLastError:       r.localLastError,
+		LocalDurationMs:      localDurationMs,
+		LocalSizeBytes:       localSizeBytes,
+		LocalSizeHuman:       formatBytes(localSizeBytes),
+		LocalSchemaVersion:   localSchemaVersion,
+		LocalStatus:          localStatus,
+		LocalLastError:       localLastError,
 		RemoteEnabled:        remoteEnabled,
 		RemoteProvider:       remoteProvider,
 		RemoteBucket:         remoteBucket,
 		RemotePrefix:         remotePrefix,
 		RemoteLastRunAt:      remoteRunStr,
-		RemoteDurationMs:     r.remoteDurationMs,
-		RemoteSizeBytes:      r.remoteSizeBytes,
-		RemoteSizeHuman:      formatBytes(r.remoteSizeBytes),
-		RemoteKey:            r.remoteKey,
-		RemoteSHA256:         r.remoteSHA256,
+		RemoteDurationMs:     remoteDurationMs,
+		RemoteSizeBytes:      remoteSizeBytes,
+		RemoteSizeHuman:      formatBytes(remoteSizeBytes),
+		RemoteKey:            remoteKey,
+		RemoteSHA256:         remoteSHA256,
 		RemoteStatus:         remoteStatus,
-		RemoteLastError:      r.remoteLastError,
+		RemoteLastError:      remoteLastError,
 		RemoteRetentionCount: remoteRetention,
 	}
-	r.backupMu.RUnlock()
 
 	envName := "development"
 	if cfg != nil && cfg.Env != "" {

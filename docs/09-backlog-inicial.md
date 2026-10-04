@@ -40,6 +40,7 @@ Itens de enriquecimento e maturidade inspirados nas discussões de navegação d
 | VZ-025 | P1 | Módulo de contraditório estruturado e submissão pública de manifestações de defesa | Concluído (Fase 7) |
 | VZ-026 | P1 | Gestão multiusuário do painel com perfis e autenticação reforçada (MFA/RBAC) | Concluído (Fase 7) |
 | VZ-027 | P1 | Observabilidade operacional aprofundada e backup externo seguro | Concluído (Fase 7) |
+| VZ-028 | P1 | Fechamento operacional e release de produção (hardening, race detector e prontidão para deploy) | Concluído (Fase 7) |
 
 ## P2 — Escala e Distribuição Futura
 

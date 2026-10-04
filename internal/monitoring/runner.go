@@ -531,17 +531,15 @@ func (r *Runner) Run(ctx context.Context, query string) (*RunSummary, error) {
 			break
 		}
 
-		// Avalia candidato (grava semantic_evaluations e atualiza run usage atomicamente na mesma transação)
+		// Avalia candidato
 		evalRes, err := evaluator.EvaluateCandidate(pipelineCtx, c.id)
+		if evalRes != nil && (evalRes.TotalTokens > 0 || evalRes.CostMicros > 0 || evalRes.SemanticPassed || len(evalRes.SemanticReasons) > 0) {
+			budgetTracker.RecordVerification(evalRes.CostMicros)
+		}
 		if err != nil {
 			isPartial = true
 			partialReasons = append(partialReasons, fmt.Sprintf("Erro ao avaliar candidato %s: %v", c.id, err))
 			continue
-		}
-
-		// Registra contabilidade no budgetTracker se houve verificação semântica executada
-		if evalRes.TotalTokens > 0 || evalRes.CostMicros > 0 || evalRes.SemanticPassed || len(evalRes.SemanticReasons) > 0 {
-			budgetTracker.RecordVerification(evalRes.CostMicros)
 		}
 
 		if evalRes.Published {

@@ -50,6 +50,25 @@ type AdminUser struct {
 	LastLoginAt               sql.NullString `json:"last_login_at"`
 	CreatedAt                 string         `json:"created_at"`
 	UpdatedAt                 string         `json:"updated_at"`
+	LastTotpTimestep          int64          `json:"last_totp_timestep"`
+}
+
+type BackupRun struct {
+	ID               string         `json:"id"`
+	SnapshotPath     string         `json:"snapshot_path"`
+	SizeBytes        int64          `json:"size_bytes"`
+	SchemaVersion    int64          `json:"schema_version"`
+	DurationMs       int64          `json:"duration_ms"`
+	Sha256Hex        string         `json:"sha256_hex"`
+	LocalStatus      string         `json:"local_status"`
+	LocalError       sql.NullString `json:"local_error"`
+	RemoteProvider   string         `json:"remote_provider"`
+	RemoteBucket     string         `json:"remote_bucket"`
+	RemoteKey        string         `json:"remote_key"`
+	RemoteDurationMs int64          `json:"remote_duration_ms"`
+	RemoteStatus     string         `json:"remote_status"`
+	RemoteError      sql.NullString `json:"remote_error"`
+	CreatedAt        string         `json:"created_at"`
 }
 
 type Case struct {

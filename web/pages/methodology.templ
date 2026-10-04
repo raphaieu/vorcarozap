@@ -189,8 +189,9 @@ templ Methodology() {
 							A base acompanha a integridade dos links de fontes públicas:
 						</p>
 						<ul>
-							<li><strong>Não checado (not_checked):</strong> Estado inicial de todas as fontes inseridas pelo seed curado inicial. A marcação <em>não checado</em> indica apenas que o endereço ainda não passou pelo robô de verificação, não significando que a fonte seja falsa ou inexistente.</li>
-							<li><strong>Verificação futura (VZ-020):</strong> A checagem automatizada periódica por meio de requisições HTTP GET seguras (com limites de taxa e sem rastreador invasivo) está planejada para a etapa VZ-020. No estágio atual do projeto, ainda não há robô de checagem contínua em execução.</li>
+							<li><strong>Não checado (not_checked):</strong> Estado inicial de fontes recém-inseridas pendentes de checagem. A marcação <em>não checado</em> indica que o endereço aguarda o ciclo periódico de validação, não significando que a fonte seja inválida ou inexistente.</li>
+							<li><strong>Verificação periódica (VZ-020):</strong> A checagem automatizada de acessibilidade utiliza requisições HTTP GET seguras e limitadas (com restrição de taxa, timeout estrito e proteção contra requisições a redes privadas/SSRF), identificando links quebrados ou indisponíveis sem atuar como rastreador invasivo.</li>
+							<li><strong>Acessível (reachable):</strong> Fonte validada com sucesso pelo verificador automatizado via requisição GET segura.</li>
 							<li><strong>Inacessível (unreachable):</strong> Classificação atribuída quando uma fonte testada retornar erros definitivos como HTTP 404 (página não encontrada), 410 (conteúdo removido) ou falha crítica de resolução de domínio.</li>
 							<li><strong>Citado pelo provedor (cited_by_provider):</strong> Fonte identificada por provedores externos ou agregadores de dados ainda pendente de validação direta.</li>
 						</ul>

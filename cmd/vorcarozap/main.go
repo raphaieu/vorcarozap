@@ -865,16 +865,18 @@ func runRestoreSandbox(args []string) error {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Uso do comando restore-sandbox:
-  vorcarozap restore-sandbox [--file <caminho.db>] [--remote-key <nome_do_objeto>]
+  vorcarozap restore-sandbox [--file <caminho.db> | --backup <caminho.db>] [--remote-key <nome_do_objeto>]
 
 Opções:
   --file string         Caminho do arquivo de backup local a validar
+  --backup string       Caminho do arquivo de backup local (alias para --file)
   --remote-key string   Chave do backup no Object Storage a baixar e validar
   -h, --help            Exibe esta ajuda
 `)
 	}
 
 	filePath := fs.String("file", "", "Caminho do arquivo de backup local")
+	backupPath := fs.String("backup", "", "Caminho do arquivo de backup local (alias para --file)")
 	remoteKey := fs.String("remote-key", "", "Chave do arquivo de backup no Object Storage")
 
 	if err := fs.Parse(args); err != nil {
@@ -884,9 +886,14 @@ Opções:
 		return fmt.Errorf("parâmetros inválidos: %w", err)
 	}
 
-	if *filePath == "" && *remoteKey == "" {
+	actualFile := *filePath
+	if actualFile == "" {
+		actualFile = *backupPath
+	}
+
+	if actualFile == "" && *remoteKey == "" {
 		fs.Usage()
-		return fmt.Errorf("informe ao menos uma origem para teste de restauração (--file ou --remote-key)")
+		return fmt.Errorf("informe ao menos uma origem para teste de restauração (--file/--backup ou --remote-key)")
 	}
 
 	cfg, err := config.Load()
@@ -903,8 +910,8 @@ Opções:
 		return fmt.Errorf("inicialização do gerenciador de backup: %w", err)
 	}
 
-	slog.Info("iniciando restauração não-destrutiva em sandbox isolado...", "file", *filePath, "remote_key", *remoteKey)
-	report, err := mgr.RestoreSandbox(ctx, *filePath, *remoteKey)
+	slog.Info("iniciando restauração não-destrutiva em sandbox isolado...", "file", actualFile, "remote_key", *remoteKey)
+	report, err := mgr.RestoreSandbox(ctx, actualFile, *remoteKey)
 	if err != nil {
 		return fmt.Errorf("teste de restauração em sandbox falhou: %w", err)
 	}

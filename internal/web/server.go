@@ -39,7 +39,7 @@ func NewServer(cfg *config.Config, db *sql.DB) (*http.Server, error) {
 	registry := observability.GetRegistry()
 	r.Use(middleware.RequestID)
 	r.Use(observability.Middleware(registry))
-	r.Use(middleware.Logger)
+	r.Use(observability.HTTPLoggingMiddleware())
 	r.Use(middleware.Recoverer)
 	r.Use(SecurityHeadersMiddleware)
 

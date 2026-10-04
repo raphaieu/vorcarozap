@@ -42,6 +42,31 @@ func (q *Queries) ConfirmAdminUserMFA(ctx context.Context, id string) error {
 	return err
 }
 
+const consumeTOTPTimestepAndRecordSuccess = `-- name: ConsumeTOTPTimestepAndRecordSuccess :execrows
+UPDATE admin_users
+SET
+    last_totp_timestep = ?1,
+    failed_login_attempts = 0,
+    mfa_failed_attempts = 0,
+    locked_until = NULL,
+    last_login_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?2 AND (last_totp_timestep IS NULL OR last_totp_timestep < ?1)
+`
+
+type ConsumeTOTPTimestepAndRecordSuccessParams struct {
+	Timestep int64  `json:"timestep"`
+	ID       string `json:"id"`
+}
+
+func (q *Queries) ConsumeTOTPTimestepAndRecordSuccess(ctx context.Context, arg ConsumeTOTPTimestepAndRecordSuccessParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, consumeTOTPTimestepAndRecordSuccess, arg.Timestep, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countAdminUsers = `-- name: CountAdminUsers :one
 SELECT count(*) FROM admin_users
 `
@@ -385,9 +410,29 @@ FROM admin_users
 WHERE id = ?
 `
 
-func (q *Queries) GetAdminUserByID(ctx context.Context, id string) (AdminUser, error) {
+type GetAdminUserByIDRow struct {
+	ID                        string         `json:"id"`
+	Username                  string         `json:"username"`
+	DisplayName               string         `json:"display_name"`
+	PasswordHash              string         `json:"password_hash"`
+	Role                      string         `json:"role"`
+	Status                    string         `json:"status"`
+	FailedLoginAttempts       int64          `json:"failed_login_attempts"`
+	MfaFailedAttempts         int64          `json:"mfa_failed_attempts"`
+	LockedUntil               sql.NullString `json:"locked_until"`
+	MfaEnabled                int64          `json:"mfa_enabled"`
+	MfaSecretEncrypted        string         `json:"mfa_secret_encrypted"`
+	MfaPendingSecretEncrypted string         `json:"mfa_pending_secret_encrypted"`
+	MfaPendingExpiresAt       sql.NullString `json:"mfa_pending_expires_at"`
+	MfaEnrolledAt             sql.NullString `json:"mfa_enrolled_at"`
+	LastLoginAt               sql.NullString `json:"last_login_at"`
+	CreatedAt                 string         `json:"created_at"`
+	UpdatedAt                 string         `json:"updated_at"`
+}
+
+func (q *Queries) GetAdminUserByID(ctx context.Context, id string) (GetAdminUserByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getAdminUserByID, id)
-	var i AdminUser
+	var i GetAdminUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -433,9 +478,29 @@ FROM admin_users
 WHERE username = ?
 `
 
-func (q *Queries) GetAdminUserByUsername(ctx context.Context, username string) (AdminUser, error) {
+type GetAdminUserByUsernameRow struct {
+	ID                        string         `json:"id"`
+	Username                  string         `json:"username"`
+	DisplayName               string         `json:"display_name"`
+	PasswordHash              string         `json:"password_hash"`
+	Role                      string         `json:"role"`
+	Status                    string         `json:"status"`
+	FailedLoginAttempts       int64          `json:"failed_login_attempts"`
+	MfaFailedAttempts         int64          `json:"mfa_failed_attempts"`
+	LockedUntil               sql.NullString `json:"locked_until"`
+	MfaEnabled                int64          `json:"mfa_enabled"`
+	MfaSecretEncrypted        string         `json:"mfa_secret_encrypted"`
+	MfaPendingSecretEncrypted string         `json:"mfa_pending_secret_encrypted"`
+	MfaPendingExpiresAt       sql.NullString `json:"mfa_pending_expires_at"`
+	MfaEnrolledAt             sql.NullString `json:"mfa_enrolled_at"`
+	LastLoginAt               sql.NullString `json:"last_login_at"`
+	CreatedAt                 string         `json:"created_at"`
+	UpdatedAt                 string         `json:"updated_at"`
+}
+
+func (q *Queries) GetAdminUserByUsername(ctx context.Context, username string) (GetAdminUserByUsernameRow, error) {
 	row := q.db.QueryRowContext(ctx, getAdminUserByUsername, username)
-	var i AdminUser
+	var i GetAdminUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,

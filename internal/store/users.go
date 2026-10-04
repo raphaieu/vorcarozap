@@ -544,10 +544,30 @@ func RecordUserPasswordLoginSuccess(ctx context.Context, db *sql.DB, id string) 
 	return q.UpdateAdminUserPasswordSuccess(ctx, id)
 }
 
+// ErrTOTPReplay indica que o código TOTP já foi consumido nessa janela temporal.
+var ErrTOTPReplay = errors.New("store: código TOTP já utilizado ou expirado (proteção contra replay)")
+
 // RecordUserMFASuccess registra o sucesso completo de MFA e reseta todos os contadores de falhas.
 func RecordUserMFASuccess(ctx context.Context, db *sql.DB, id string) error {
 	q := sqlc.New(db)
 	return q.UpdateAdminUserMFASuccess(ctx, id)
+}
+
+// ConsumeTOTPTimestepAndRecordSuccess consome atomicamente o timestep do TOTP e zera contadores de falhas.
+// Retorna ErrTOTPReplay se o timestep já foi consumido anteriormente para este usuário.
+func ConsumeTOTPTimestepAndRecordSuccess(ctx context.Context, db *sql.DB, id string, timestep int64) error {
+	q := sqlc.New(db)
+	rows, err := q.ConsumeTOTPTimestepAndRecordSuccess(ctx, sqlc.ConsumeTOTPTimestepAndRecordSuccessParams{
+		ID:       id,
+		Timestep: timestep,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrTOTPReplay
+	}
+	return nil
 }
 
 // RecordUserLoginSuccess registra o sucesso de login total e reseta contadores de falhas.
@@ -732,6 +752,11 @@ func DeleteAdminSession(ctx context.Context, db *sql.DB, sessionID string) error
 
 // DeleteUserAdminSessions remove todas as sessões de um usuário.
 func DeleteUserAdminSessions(ctx context.Context, db *sql.DB, userID string) error {
+	return DeleteUserAdminSessionsDBTX(ctx, db, userID)
+}
+
+// DeleteUserAdminSessionsDBTX remove todas as sessões de um usuário aceitando DBTX (*sql.DB ou *sql.Tx).
+func DeleteUserAdminSessionsDBTX(ctx context.Context, db sqlc.DBTX, userID string) error {
 	q := sqlc.New(db)
 	return q.DeleteUserAdminSessions(ctx, userID)
 }
@@ -744,6 +769,11 @@ func DeleteExpiredAdminSessions(ctx context.Context, db *sql.DB) error {
 
 // InsertAdminAuditLog grava um evento na trilha de auditoria administrativa.
 func InsertAdminAuditLog(ctx context.Context, db *sql.DB, log domain.AdminAuditLog) error {
+	return InsertAdminAuditLogDBTX(ctx, db, log)
+}
+
+// InsertAdminAuditLogDBTX grava um evento na trilha de auditoria administrativa aceitando DBTX (*sql.DB ou *sql.Tx).
+func InsertAdminAuditLogDBTX(ctx context.Context, db sqlc.DBTX, log domain.AdminAuditLog) error {
 	q := sqlc.New(db)
 	id := log.ID
 	if id == "" {

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,6 +89,9 @@ func NewS3Provider(cfg S3Config) (*S3Provider, error) {
 		}
 		client = &http.Client{
 			Timeout: timeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return errors.New("backup: redirecionamento HTTP/HTTPS rejeitado no cliente S3 (assinatura SigV4 é regional e estrita)")
+			},
 		}
 	}
 
@@ -148,8 +152,7 @@ func (p *S3Provider) PutObject(ctx context.Context, key string, data io.Reader, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("backup: S3 PutObject retornou status HTTP %d: %s", resp.StatusCode, string(bodySnippet))
+		return fmt.Errorf("backup: S3 PutObject retornou status HTTP %d", resp.StatusCode)
 	}
 
 	return nil
@@ -234,9 +237,8 @@ func (p *S3Provider) GetObject(ctx context.Context, key string) (io.ReadCloser, 
 		return nil, nil, fmt.Errorf("backup: objeto %q não encontrado no bucket", key)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		resp.Body.Close()
-		return nil, nil, fmt.Errorf("backup: S3 GetObject retornou status HTTP %d: %s", resp.StatusCode, string(bodySnippet))
+		return nil, nil, fmt.Errorf("backup: S3 GetObject retornou status HTTP %d", resp.StatusCode)
 	}
 
 	meta := &ObjectMetadata{
@@ -272,8 +274,7 @@ func (p *S3Provider) DeleteObject(ctx context.Context, key string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("backup: S3 DeleteObject retornou status HTTP %d: %s", resp.StatusCode, string(bodySnippet))
+		return fmt.Errorf("backup: S3 DeleteObject retornou status HTTP %d", resp.StatusCode)
 	}
 
 	return nil
@@ -281,10 +282,12 @@ func (p *S3Provider) DeleteObject(ctx context.Context, key string) error {
 
 // s3ListBucketResult mapeia a estrutura XML de resposta do S3 ListObjectsV2.
 type s3ListBucketResult struct {
-	XMLName  xml.Name `xml:"ListBucketResult"`
-	Name     string   `xml:"Name"`
-	Prefix   string   `xml:"Prefix"`
-	Contents []struct {
+	XMLName               xml.Name `xml:"ListBucketResult"`
+	Name                  string   `xml:"Name"`
+	Prefix                string   `xml:"Prefix"`
+	IsTruncated           bool     `xml:"IsTruncated"`
+	NextContinuationToken string   `xml:"NextContinuationToken"`
+	Contents              []struct {
 		Key          string `xml:"Key"`
 		LastModified string `xml:"LastModified"`
 		ETag         string `xml:"ETag"`
@@ -292,55 +295,68 @@ type s3ListBucketResult struct {
 	} `xml:"Contents"`
 }
 
-// ListObjects lista objetos com prefixo no bucket S3.
+// ListObjects lista objetos com prefixo no bucket S3 com suporte a paginação completa.
 func (p *S3Provider) ListObjects(ctx context.Context, prefix string) ([]ObjectMetadata, error) {
 	cleanPrefix := strings.Trim(prefix, "/")
-	listURL := fmt.Sprintf("%s/%s?list-type=2", strings.TrimRight(p.config.Endpoint, "/"), p.config.Bucket)
-	if cleanPrefix != "" {
-		listURL += "&prefix=" + url.QueryEscape(cleanPrefix)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("backup: falha ao criar requisição LIST: %w", err)
-	}
-
-	emptyHash := emptyPayloadSHA256()
-	req.Header.Set("x-amz-content-sha256", emptyHash)
-
-	now := time.Now().UTC()
-	if err := p.signRequest(req, emptyHash, now); err != nil {
-		return nil, fmt.Errorf("backup: falha ao assinar requisição LIST: %w", err)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("backup: falha ao listar objetos no S3: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("backup: S3 ListObjects retornou status HTTP %d: %s", resp.StatusCode, string(bodySnippet))
-	}
-
-	var result s3ListBucketResult
-	if err := xml.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("backup: falha ao interpretar XML do S3: %w", err)
-	}
-
 	var objects []ObjectMetadata
-	for _, item := range result.Contents {
-		var lm time.Time
-		if item.LastModified != "" {
-			lm, _ = time.Parse(time.RFC3339, item.LastModified)
+	var continuationToken string
+
+	for {
+		listURL := fmt.Sprintf("%s/%s?list-type=2", strings.TrimRight(p.config.Endpoint, "/"), p.config.Bucket)
+		if cleanPrefix != "" {
+			listURL += "&prefix=" + url.QueryEscape(cleanPrefix)
 		}
-		objects = append(objects, ObjectMetadata{
-			Key:          item.Key,
-			SizeBytes:    item.Size,
-			ETag:         strings.Trim(item.ETag, "\""),
-			LastModified: lm.UTC(),
-		})
+		if continuationToken != "" {
+			listURL += "&continuation-token=" + url.QueryEscape(continuationToken)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("backup: falha ao criar requisição LIST: %w", err)
+		}
+
+		emptyHash := emptyPayloadSHA256()
+		req.Header.Set("x-amz-content-sha256", emptyHash)
+
+		now := time.Now().UTC()
+		if err := p.signRequest(req, emptyHash, now); err != nil {
+			return nil, fmt.Errorf("backup: falha ao assinar requisição LIST: %w", err)
+		}
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("backup: falha ao listar objetos no S3: %w", err)
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("backup: S3 ListObjects retornou status HTTP %d", resp.StatusCode)
+		}
+
+		var result s3ListBucketResult
+		err = xml.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("backup: falha ao interpretar XML do S3: %w", err)
+		}
+
+		for _, item := range result.Contents {
+			var lm time.Time
+			if item.LastModified != "" {
+				lm, _ = time.Parse(time.RFC3339, item.LastModified)
+			}
+			objects = append(objects, ObjectMetadata{
+				Key:          item.Key,
+				SizeBytes:    item.Size,
+				ETag:         strings.Trim(item.ETag, "\""),
+				LastModified: lm.UTC(),
+			})
+		}
+
+		if !result.IsTruncated || result.NextContinuationToken == "" {
+			break
+		}
+		continuationToken = result.NextContinuationToken
 	}
 
 	return objects, nil

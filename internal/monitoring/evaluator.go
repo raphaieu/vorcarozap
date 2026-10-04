@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -263,6 +264,26 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 	}
 
 	verifyResult, verifyErr := e.provider.Verify(ctx, verifyInput)
+
+	// Persistência imediata e durável do consumo LLM na run (independente de transações editoriais subsequentes)
+	if verifyResult != nil && (verifyResult.TotalTokens > 0 || verifyResult.CostMicros > 0) && cand.MonitoringRunID != "" {
+		dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		q := sqlc.New(e.db)
+		_, incErr := q.IncrementMonitoringRunUsage(dctx, sqlc.IncrementMonitoringRunUsageParams{
+			PromptTokens:       int64(verifyResult.PromptTokens),
+			CompletionTokens:   int64(verifyResult.CompletionTokens),
+			TotalTokens:        int64(verifyResult.TotalTokens),
+			VerificationTokens: int64(verifyResult.TotalTokens),
+			CostMicrousd:       verifyResult.CostMicros,
+			ID:                 cand.MonitoringRunID,
+		})
+		dcancel()
+		if incErr != nil {
+			slog.Error("falha crítica ao registrar consumo LLM em monitoring_run", "error", incErr, "run_id", cand.MonitoringRunID)
+			return nil, fmt.Errorf("monitoring: falha crítica ao registrar consumo LLM: %w", incErr)
+		}
+	}
+
 	if verifyErr != nil || verifyResult == nil {
 		if verifyErr == nil {
 			verifyErr = research.ErrEmptyResponse
@@ -302,7 +323,7 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 			return nil, fmt.Errorf("monitoring: falha operacional no verify (%v) e falha crítica ao persistir quarentena no banco (%w)", verifyErr, updateErr)
 		}
 
-		return &EvaluationResult{
+		res := &EvaluationResult{
 			CandidateID:      cand.ID,
 			StructuralPassed: true,
 			SemanticPassed:   false,
@@ -312,7 +333,16 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 			EditorialStatus:  string(domain.ClaimStatusQuarantined),
 			Published:        false,
 			Error:            verifyErr,
-		}, nil
+		}
+		if verifyResult != nil {
+			res.Model = verifyResult.Model
+			res.PromptTokens = verifyResult.PromptTokens
+			res.CompletionTokens = verifyResult.CompletionTokens
+			res.TotalTokens = verifyResult.TotalTokens
+			res.Cost = research.MicroUSDToFloat(verifyResult.CostMicros)
+			res.CostMicros = verifyResult.CostMicros
+		}
+		return res, nil
 	}
 
 	// 6. Avaliação semântica e deliberação da Política Go
@@ -435,21 +465,6 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 			})
 			if err != nil {
 				return fmt.Errorf("monitoring: falha ao persistir semantic_evaluations: %w", err)
-			}
-
-			// Atualização atômica do consumo acumulado na monitoring_run dentro da mesma transação
-			if cand.MonitoringRunID != "" {
-				_, err = txQ.IncrementMonitoringRunUsage(ctx, sqlc.IncrementMonitoringRunUsageParams{
-					PromptTokens:       int64(verifyResult.PromptTokens),
-					CompletionTokens:   int64(verifyResult.CompletionTokens),
-					TotalTokens:        int64(verifyResult.TotalTokens),
-					VerificationTokens: int64(verifyResult.TotalTokens),
-					CostMicrousd:       costMicros,
-					ID:                 cand.MonitoringRunID,
-				})
-				if err != nil {
-					return fmt.Errorf("monitoring: falha ao atualizar consumo acumulado da run na transação: %w", err)
-				}
 			}
 
 			// 5. Montagem dos dados reais retornados pelo sourcecheck
@@ -706,7 +721,24 @@ func (e *Evaluator) EvaluateCandidate(ctx context.Context, candidateID string) (
 	})
 
 	if txErr != nil {
-		return nil, fmt.Errorf("monitoring: falha na transação editorial: %w", txErr)
+		return &EvaluationResult{
+			CandidateID:       cand.ID,
+			StructuralPassed:  true,
+			StructuralReasons: structuralRes.Reasons,
+			SemanticPassed:    semanticRes.Passed,
+			SemanticReasons:   semanticRes.Reasons,
+			PolicyAction:      policyRes.Action,
+			PolicyReasons:     policyRes.Reasons,
+			EditorialStatus:   string(domain.ClaimStatusQuarantined),
+			Published:         false,
+			Model:             verifyResult.Model,
+			PromptTokens:      verifyResult.PromptTokens,
+			CompletionTokens:  verifyResult.CompletionTokens,
+			TotalTokens:       verifyResult.TotalTokens,
+			Cost:              research.MicroUSDToFloat(verifyResult.CostMicros),
+			CostMicros:        verifyResult.CostMicros,
+			Error:             txErr,
+		}, fmt.Errorf("monitoring: falha na transação editorial: %w", txErr)
 	}
 
 	isPub := policyRes.Action == domain.PolicyActionPublish

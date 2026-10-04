@@ -72,20 +72,21 @@ func setupObservabilityTestServer(t *testing.T) (*http.Server, *sql.DB, *auth.Se
 
 func createObsTestUserAndSession(t *testing.T, ctx context.Context, authSvc *auth.Service, db *sql.DB, username string, role domain.UserRole) *http.Cookie {
 	t.Helper()
-	adminActor := domain.AdminUser{
-		ID:       "sys-admin",
-		Username: "sys-admin",
-		Role:     domain.RoleAdmin,
-		Status:   domain.UserStatusActive,
-	}
-	user, err := authSvc.CreateUser(ctx, adminActor, auth.CreateUserParams{
-		Username:    username,
-		DisplayName: "Usuário " + string(role),
-		Password:    "SenhaForte123!",
-		Role:        role,
-	}, "127.0.0.1")
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	userID := "user-" + username
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO admin_users (id, username, display_name, password_hash, role, status, mfa_enabled, mfa_secret_encrypted, created_at, updated_at)
+		VALUES (?, ?, ?, '$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', ?, 'active', 1, 'enc_dummy', ?, ?)
+		ON CONFLICT(username) DO UPDATE SET role = excluded.role, status = 'active'
+	`, userID, username, "Usuário "+string(role), string(role), now, now)
 	if err != nil {
-		t.Fatalf("falha ao criar usuário %s (role %s): %v", username, role, err)
+		t.Fatalf("falha ao criar/atualizar usuário de teste %s: %v", username, err)
+	}
+
+	var actualID string
+	err = db.QueryRowContext(ctx, "SELECT id FROM admin_users WHERE username = ?", username).Scan(&actualID)
+	if err != nil {
+		t.Fatalf("falha ao consultar id do usuário %s: %v", username, err)
 	}
 
 	rawToken, err := auth.GenerateSessionToken()
@@ -93,16 +94,16 @@ func createObsTestUserAndSession(t *testing.T, ctx context.Context, authSvc *aut
 		t.Fatalf("falha ao gerar token de sessão: %v", err)
 	}
 
-	now := time.Now().UTC()
+	nowTime := time.Now().UTC()
 	session := domain.AdminSession{
 		ID:             rawToken,
-		UserID:         user.ID,
+		UserID:         actualID,
 		MFAVerified:    true,
 		IPAddress:      "127.0.0.1",
 		UserAgent:      "TestAgent/1.0",
-		ExpiresAt:      now.Add(8 * time.Hour).Format(time.RFC3339Nano),
-		LastActivityAt: now.Format(time.RFC3339Nano),
-		CreatedAt:      now.Format(time.RFC3339Nano),
+		ExpiresAt:      nowTime.Add(8 * time.Hour).Format(time.RFC3339Nano),
+		LastActivityAt: nowTime.Format(time.RFC3339Nano),
+		CreatedAt:      nowTime.Format(time.RFC3339Nano),
 	}
 	if err := store.CreateAdminSession(ctx, db, session); err != nil {
 		t.Fatalf("falha ao persistir sessão de teste: %v", err)

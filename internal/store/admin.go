@@ -726,3 +726,122 @@ func GetAdminSourceDetail(ctx context.Context, db *sql.DB, sourceID string) (*Ad
 		Sequence: items,
 	}, nil
 }
+
+// BackupRunRecord representa uma execução de backup persistida.
+type BackupRunRecord struct {
+	ID               string
+	SnapshotPath     string
+	SizeBytes        int64
+	SchemaVersion    int64
+	DurationMs       int64
+	SHA256Hex        string
+	LocalStatus      string
+	LocalError       *string
+	RemoteProvider   string
+	RemoteBucket     string
+	RemoteKey        string
+	RemoteDurationMs int64
+	RemoteStatus     string
+	RemoteError      *string
+	CreatedAt        string
+}
+
+// InsertBackupRun grava um registro de execução de backup no SQLite.
+func InsertBackupRun(ctx context.Context, db *sql.DB, rec BackupRunRecord) error {
+	q := sqlc.New(db)
+	var localErr, remoteErr sql.NullString
+	if rec.LocalError != nil {
+		localErr = sql.NullString{String: *rec.LocalError, Valid: true}
+	}
+	if rec.RemoteError != nil {
+		remoteErr = sql.NullString{String: *rec.RemoteError, Valid: true}
+	}
+	return q.InsertBackupRun(ctx, sqlc.InsertBackupRunParams{
+		ID:               rec.ID,
+		SnapshotPath:     rec.SnapshotPath,
+		SizeBytes:        rec.SizeBytes,
+		SchemaVersion:    rec.SchemaVersion,
+		DurationMs:       rec.DurationMs,
+		Sha256Hex:        rec.SHA256Hex,
+		LocalStatus:      rec.LocalStatus,
+		LocalError:       localErr,
+		RemoteProvider:   rec.RemoteProvider,
+		RemoteBucket:     rec.RemoteBucket,
+		RemoteKey:        rec.RemoteKey,
+		RemoteDurationMs: rec.RemoteDurationMs,
+		RemoteStatus:     rec.RemoteStatus,
+		RemoteError:      remoteErr,
+	})
+}
+
+// GetLatestLocalBackupRun retorna o registro do último backup local executado.
+func GetLatestLocalBackupRun(ctx context.Context, db *sql.DB) (*BackupRunRecord, error) {
+	q := sqlc.New(db)
+	row, err := q.GetLatestLocalBackupRun(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var localErr, remoteErr *string
+	if row.LocalError.Valid {
+		localErr = &row.LocalError.String
+	}
+	if row.RemoteError.Valid {
+		remoteErr = &row.RemoteError.String
+	}
+	return &BackupRunRecord{
+		ID:               row.ID,
+		SnapshotPath:     row.SnapshotPath,
+		SizeBytes:        row.SizeBytes,
+		SchemaVersion:    row.SchemaVersion,
+		DurationMs:       row.DurationMs,
+		SHA256Hex:        row.Sha256Hex,
+		LocalStatus:      row.LocalStatus,
+		LocalError:       localErr,
+		RemoteProvider:   row.RemoteProvider,
+		RemoteBucket:     row.RemoteBucket,
+		RemoteKey:        row.RemoteKey,
+		RemoteDurationMs: row.RemoteDurationMs,
+		RemoteStatus:     row.RemoteStatus,
+		RemoteError:      remoteErr,
+		CreatedAt:        row.CreatedAt,
+	}, nil
+}
+
+// GetLatestRemoteBackupRun retorna o último backup executado com tentativa remota no Object Storage.
+func GetLatestRemoteBackupRun(ctx context.Context, db *sql.DB) (*BackupRunRecord, error) {
+	q := sqlc.New(db)
+	row, err := q.GetLatestRemoteBackupRun(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var localErr, remoteErr *string
+	if row.LocalError.Valid {
+		localErr = &row.LocalError.String
+	}
+	if row.RemoteError.Valid {
+		remoteErr = &row.RemoteError.String
+	}
+	return &BackupRunRecord{
+		ID:               row.ID,
+		SnapshotPath:     row.SnapshotPath,
+		SizeBytes:        row.SizeBytes,
+		SchemaVersion:    row.SchemaVersion,
+		DurationMs:       row.DurationMs,
+		SHA256Hex:        row.Sha256Hex,
+		LocalStatus:      row.LocalStatus,
+		LocalError:       localErr,
+		RemoteProvider:   row.RemoteProvider,
+		RemoteBucket:     row.RemoteBucket,
+		RemoteKey:        row.RemoteKey,
+		RemoteDurationMs: row.RemoteDurationMs,
+		RemoteStatus:     row.RemoteStatus,
+		RemoteError:      remoteErr,
+		CreatedAt:        row.CreatedAt,
+	}, nil
+}

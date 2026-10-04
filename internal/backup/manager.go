@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,11 @@ import (
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/observability"
 	"github.com/raphaieu/vorcarozap/internal/store"
+)
+
+var (
+	sigV4ErrorRegex  = regexp.MustCompile(`(?i)(AWS4-HMAC-SHA256|Credential=[^,\s]+|Signature=[a-f0-9]+)`)
+	secretErrorRegex = regexp.MustCompile(`(?i)(key|secret|password|token)=([^\s&]+)`)
 )
 
 // BackupExecutionReport resume a execução combinada do backup local e remoto.
@@ -27,6 +33,7 @@ type BackupExecutionReport struct {
 	LocalSchemaVersion int64
 	LocalDuration      time.Duration
 	LocalRotated       []string
+	LocalError         error
 	RemoteAttempted    bool
 	RemoteSuccess      bool
 	RemoteKey          string
@@ -117,6 +124,10 @@ func (m *BackupManager) RunBackup(ctx context.Context, destPath string, localRet
 		LocalPath: destPath,
 	}
 
+	defer func() {
+		m.recordRunTelemetry(ctx, report)
+	}()
+
 	// 1. Snapshot Local Consistente via VACUUM INTO
 	localStart := time.Now()
 	res, err := store.Backup(ctx, m.db, destPath)
@@ -124,6 +135,7 @@ func (m *BackupManager) RunBackup(ctx context.Context, destPath string, localRet
 	report.LocalDuration = localDuration
 
 	if err != nil {
+		report.LocalError = err
 		m.registry.RecordLocalBackup(0, localDuration, 0, err)
 		return nil, fmt.Errorf("backup: falha na geração local: %w", err)
 	}
@@ -138,6 +150,7 @@ func (m *BackupManager) RunBackup(ctx context.Context, destPath string, localRet
 		backupDir := filepath.Dir(res.BackupPath)
 		rotated, rotErr := store.RotateBackups(backupDir, localRetention)
 		if rotErr != nil {
+			report.LocalError = rotErr
 			return nil, fmt.Errorf("backup gerado com sucesso em %q, mas a política de retenção falhou: %w", res.BackupPath, rotErr)
 		}
 		report.LocalRotated = rotated
@@ -242,8 +255,8 @@ func (m *BackupManager) RunBackup(ctx context.Context, destPath string, localRet
 		return report, nil
 	}
 
-	if headMeta.SHA256Hex != "" && headMeta.SHA256Hex != sha256Hex {
-		report.RemoteError = fmt.Errorf("inconsistência de checksum SHA-256: local=%s, remoto=%s", sha256Hex, headMeta.SHA256Hex)
+	if headMeta.SHA256Hex == "" || headMeta.SHA256Hex != sha256Hex {
+		report.RemoteError = fmt.Errorf("inconsistência ou ausência de checksum SHA-256 no objeto remoto: local=%s, remoto=%s", sha256Hex, headMeta.SHA256Hex)
 		slog.Error("inconsistência de checksum no backup remoto", "error", report.RemoteError)
 		m.registry.RecordRemoteBackup(headMeta.SizeBytes, remoteDuration, m.cfg.BackupRemoteProvider, m.cfg.BackupRemoteBucket, remoteKey, sha256Hex, report.RemoteError)
 		return report, nil
@@ -265,6 +278,68 @@ func (m *BackupManager) RunBackup(ctx context.Context, destPath string, localRet
 	return report, nil
 }
 
+// sanitizeErrorMessage remove segredos, chaves de autenticação e detalhes sensíveis de erros de provedores remotos.
+func sanitizeErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Redige padrões de credenciais, assinaturas AWS e cabeçalhos de autorização
+	msg = sigV4ErrorRegex.ReplaceAllString(msg, "[REDACTED_SIGV4]")
+	msg = secretErrorRegex.ReplaceAllString(msg, "$1=[REDACTED]")
+	// Trunca a mensagem para no máximo 256 caracteres para evitar vazamento de payloads brutos
+	if len(msg) > 256 {
+		msg = msg[:253] + "..."
+	}
+	return msg
+}
+
+func (m *BackupManager) recordRunTelemetry(ctx context.Context, report *BackupExecutionReport) {
+	if m.db == nil || report == nil {
+		return
+	}
+	localStatus := "ok"
+	var localErr *string
+	if !report.LocalSuccess {
+		localStatus = "error"
+		if report.LocalError != nil {
+			s := sanitizeErrorMessage(report.LocalError)
+			localErr = &s
+		}
+	}
+
+	remoteStatus := "disabled"
+	var remoteErr *string
+	if report.RemoteAttempted {
+		if report.RemoteSuccess {
+			remoteStatus = "ok"
+		} else {
+			remoteStatus = "error"
+			if report.RemoteError != nil {
+				s := sanitizeErrorMessage(report.RemoteError)
+				remoteErr = &s
+			}
+		}
+	}
+
+	_ = store.InsertBackupRun(ctx, m.db, store.BackupRunRecord{
+		ID:               fmt.Sprintf("backup-%d", time.Now().UnixNano()),
+		SnapshotPath:     report.LocalPath,
+		SizeBytes:        report.LocalSizeBytes,
+		SchemaVersion:    report.LocalSchemaVersion,
+		DurationMs:       report.LocalDuration.Milliseconds(),
+		SHA256Hex:        report.RemoteSHA256,
+		LocalStatus:      localStatus,
+		LocalError:       localErr,
+		RemoteProvider:   report.RemoteProvider,
+		RemoteBucket:     report.RemoteBucket,
+		RemoteKey:        report.RemoteKey,
+		RemoteDurationMs: report.RemoteDuration.Milliseconds(),
+		RemoteStatus:     remoteStatus,
+		RemoteError:      remoteErr,
+	})
+}
+
 // RotateRemoteBackups aplica a retenção no Object Storage mantendo os N backups mais recentes.
 func (m *BackupManager) RotateRemoteBackups(ctx context.Context, keepCount int) ([]string, error) {
 	if keepCount <= 0 || m.provider == nil {
@@ -281,10 +356,20 @@ func (m *BackupManager) RotateRemoteBackups(ctx context.Context, keepCount int) 
 		lastModified time.Time
 	}
 
+	cleanPrefix := strings.Trim(m.cfg.BackupRemotePrefix, "/")
 	var matching []backupObj
 	for _, obj := range objects {
-		base := filepath.Base(obj.Key)
-		matched, _ := filepath.Match("vorcarozap-*.db", base)
+		key := obj.Key
+		if cleanPrefix != "" {
+			if !strings.HasPrefix(key, cleanPrefix+"/") {
+				continue
+			}
+			key = strings.TrimPrefix(key, cleanPrefix+"/")
+		}
+		if strings.Contains(key, "/") {
+			continue
+		}
+		matched, _ := filepath.Match("vorcarozap-*.db", key)
 		if matched {
 			matching = append(matching, backupObj{
 				key:          obj.Key,
@@ -312,12 +397,75 @@ func (m *BackupManager) RotateRemoteBackups(ctx context.Context, keepCount int) 
 	return deleted, nil
 }
 
-// VerifyRemote valida a integridade e metadados de um snapshot no Object Storage.
+// CheckRemoteMetadata consulta a existência e metadados básicos de um snapshot no Object Storage via HEAD.
+func (m *BackupManager) CheckRemoteMetadata(ctx context.Context, key string) (*ObjectMetadata, error) {
+	if m.provider == nil {
+		return nil, fmt.Errorf("backup: provedor remoto não inicializado")
+	}
+	meta, err := m.provider.HeadObject(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if meta.SizeBytes <= 0 {
+		return nil, fmt.Errorf("backup: objeto remoto %q possui tamanho inválido (%d bytes)", key, meta.SizeBytes)
+	}
+	if meta.SHA256Hex == "" {
+		return nil, fmt.Errorf("backup: objeto remoto %q não possui metadados de checksum SHA-256 (x-amz-meta-sha256)", key)
+	}
+	return meta, nil
+}
+
+// VerifyRemote executa verificação integral e forense de um snapshot remoto (download + streaming SHA-256 + integridade SQLite).
 func (m *BackupManager) VerifyRemote(ctx context.Context, key string) (*ObjectMetadata, error) {
 	if m.provider == nil {
 		return nil, fmt.Errorf("backup: provedor remoto não inicializado")
 	}
-	return m.provider.HeadObject(ctx, key)
+	// 1. Valida metadados no S3
+	meta, err := m.CheckRemoteMetadata(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Executa download temporário e valida hash SHA-256 em streaming + verificação SQLite
+	body, remoteMeta, err := m.provider.GetObject(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("backup: falha ao baixar objeto remoto para verificação forense %q: %w", key, err)
+	}
+	defer body.Close()
+
+	tmpDownload, err := os.CreateTemp("", "vorcarozap_remote_verify_*.db")
+	if err != nil {
+		return nil, fmt.Errorf("backup: falha ao criar arquivo temporário de verificação: %w", err)
+	}
+	tmpPath := tmpDownload.Name()
+	defer os.Remove(tmpPath)
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(tmpDownload, hasher)
+	written, err := io.Copy(multiWriter, body)
+	if err != nil {
+		_ = tmpDownload.Close()
+		return nil, fmt.Errorf("backup: falha durante download de verificação: %w", err)
+	}
+	_ = tmpDownload.Close()
+
+	if written != meta.SizeBytes {
+		return nil, fmt.Errorf("backup: tamanho do download (%d bytes) difere dos metadados remotos (%d bytes)", written, meta.SizeBytes)
+	}
+	downloadedSHA := hex.EncodeToString(hasher.Sum(nil))
+	if meta.SHA256Hex != downloadedSHA {
+		return nil, fmt.Errorf("backup: checksum SHA-256 do download (%s) difere dos metadados remotos (%s)", downloadedSHA, meta.SHA256Hex)
+	}
+
+	// 3. Validação forense completa do SQLite baixado
+	if _, err := store.VerifyBackup(ctx, tmpPath); err != nil {
+		return nil, fmt.Errorf("backup: objeto remoto baixado falhou na verificação de integridade SQLite: %w", err)
+	}
+
+	if remoteMeta != nil && remoteMeta.CreatedAt.IsZero() {
+		remoteMeta.CreatedAt = meta.CreatedAt
+	}
+	return meta, nil
 }
 
 // RestoreSandbox executa restauração não-destrutiva em sandbox isolado sem alterar o banco de produção.
@@ -336,7 +484,7 @@ func (m *BackupManager) RestoreSandbox(ctx context.Context, sourceLocalPath, sou
 			return nil, fmt.Errorf("backup: provedor remoto não inicializado")
 		}
 
-		body, _, err := m.provider.GetObject(ctx, sourceRemoteKey)
+		body, remoteMeta, err := m.provider.GetObject(ctx, sourceRemoteKey)
 		if err != nil {
 			return nil, fmt.Errorf("backup: falha ao baixar objeto remoto %q: %w", sourceRemoteKey, err)
 		}
@@ -349,11 +497,26 @@ func (m *BackupManager) RestoreSandbox(ctx context.Context, sourceLocalPath, sou
 		tmpPath := tmpDownload.Name()
 		defer os.Remove(tmpPath)
 
-		if _, err := io.Copy(tmpDownload, body); err != nil {
+		hasher := sha256.New()
+		multiWriter := io.MultiWriter(tmpDownload, hasher)
+		written, err := io.Copy(multiWriter, body)
+		if err != nil {
 			_ = tmpDownload.Close()
 			return nil, fmt.Errorf("backup: falha ao salvar dados baixados: %w", err)
 		}
 		_ = tmpDownload.Close()
+		downloadedSHA := hex.EncodeToString(hasher.Sum(nil))
+
+		if remoteMeta == nil || remoteMeta.SHA256Hex == "" {
+			return nil, fmt.Errorf("backup: objeto remoto %q não possui metadados válidos de SHA-256; restauração abortada por segurança", sourceRemoteKey)
+		}
+		if remoteMeta.SizeBytes > 0 && written != remoteMeta.SizeBytes {
+			return nil, fmt.Errorf("backup: tamanho do download (%d bytes) difere dos metadados remotos (%d bytes)", written, remoteMeta.SizeBytes)
+		}
+		if remoteMeta.SHA256Hex != downloadedSHA {
+			return nil, fmt.Errorf("backup: checksum SHA-256 do download (%s) difere dos metadados remotos (%s)", downloadedSHA, remoteMeta.SHA256Hex)
+		}
+
 		sourceFile = tmpPath
 	}
 

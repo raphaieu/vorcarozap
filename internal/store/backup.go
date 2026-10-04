@@ -356,21 +356,80 @@ func Restore(ctx context.Context, backupPath, targetDBPath string) error {
 		return fmt.Errorf("store: falha ao fechar arquivo temporário: %w", err)
 	}
 
+	if err := os.Chmod(tmpPath, 0600); err != nil {
+		return fmt.Errorf("store: falha ao definir permissão 0600 no arquivo temporário %q: %w", tmpPath, err)
+	}
+
 	// 9. Validação forense completa do arquivo temporário restaurado antes de tocar no destino
 	if _, err := VerifyBackup(ctx, tmpPath); err != nil {
 		return fmt.Errorf("store: arquivo temporário restaurado em %q reprovou na verificação de integridade: %w", tmpPath, err)
 	}
 
-	// 10. Remove eventuais arquivos WAL/SHM residuais do destino para evitar contaminação
-	_ = os.Remove(cleanTarget + "-wal")
-	_ = os.Remove(cleanTarget + "-shm")
+	// 10. Se já houver um banco no destino, preserva-o temporariamente em backup de segurança
+	var backupTarget, backupWal, backupShm string
+	if _, err := os.Stat(cleanTarget); err == nil {
+		backupTarget = cleanTarget + fmt.Sprintf(".prev-%d.bak", time.Now().UnixNano())
+		if err := os.Rename(cleanTarget, backupTarget); err != nil {
+			return fmt.Errorf("store: falha ao mover banco de destino anterior para backup: %w", err)
+		}
+		if _, err := os.Stat(cleanTarget + "-wal"); err == nil {
+			backupWal = backupTarget + "-wal"
+			if err := os.Rename(cleanTarget+"-wal", backupWal); err != nil {
+				_ = os.Rename(backupTarget, cleanTarget)
+				return fmt.Errorf("store: falha ao mover arquivo WAL anterior para backup: %w", err)
+			}
+		}
+		if _, err := os.Stat(cleanTarget + "-shm"); err == nil {
+			backupShm = backupTarget + "-shm"
+			if err := os.Rename(cleanTarget+"-shm", backupShm); err != nil {
+				_ = os.Rename(backupTarget, cleanTarget)
+				if backupWal != "" {
+					_ = os.Rename(backupWal, cleanTarget+"-wal")
+				}
+				return fmt.Errorf("store: falha ao mover arquivo SHM anterior para backup: %w", err)
+			}
+		}
+	}
 
-	// 11. Renomeação atômica no filesystem: o destino só é substituído após validação completa
+	// 11. Move o arquivo temporário validado para o caminho de destino definitivo
 	if err := os.Rename(tmpPath, cleanTarget); err != nil {
+		// Rollback defensivo: restaura o banco e WAL/SHM anteriores se a movimentação falhar
+		var rollbackErrs []error
+		if backupTarget != "" {
+			if rErr := os.Rename(backupTarget, cleanTarget); rErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Errorf("falha ao restaurar banco anterior: %w", rErr))
+			}
+			if backupWal != "" {
+				if rErr := os.Rename(backupWal, cleanTarget+"-wal"); rErr != nil {
+					rollbackErrs = append(rollbackErrs, fmt.Errorf("falha ao restaurar WAL anterior: %w", rErr))
+				}
+			}
+			if backupShm != "" {
+				if rErr := os.Rename(backupShm, cleanTarget+"-shm"); rErr != nil {
+					rollbackErrs = append(rollbackErrs, fmt.Errorf("falha ao restaurar SHM anterior: %w", rErr))
+				}
+			}
+		}
+		if len(rollbackErrs) > 0 {
+			return fmt.Errorf("store: falha ao renomear arquivo temporário para %q: %w (e erros no rollback: %v)", cleanTarget, err, rollbackErrs)
+		}
 		return fmt.Errorf("store: falha ao renomear arquivo temporário para o destino definitivo %q: %w", cleanTarget, err)
 	}
 
-	_ = os.Chmod(cleanTarget, 0644)
+	// 12. Substituição concluída com sucesso: expurga os arquivos temporários do estado anterior
+	if backupTarget != "" {
+		_ = os.Remove(backupTarget)
+		if backupWal != "" {
+			_ = os.Remove(backupWal)
+		}
+		if backupShm != "" {
+			_ = os.Remove(backupShm)
+		}
+	}
+	_ = os.Remove(cleanTarget + "-wal")
+	_ = os.Remove(cleanTarget + "-shm")
+
+	_ = os.Chmod(cleanTarget, 0600)
 	success = true
 	return nil
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -849,5 +851,132 @@ func TestAuthService_MFALockout_PersistsAcrossMultiplePasswordLogins(t *testing.
 	_, _, _, err = svc.AuthenticatePassword(ctx, "user.multisession.mfa", "SenhaCorreta123!", "127.0.0.1", "Browser4")
 	if !errors.Is(err, auth.ErrAccountLocked) {
 		t.Errorf("tentativa de login com senha em conta bloqueada deveria retornar ErrAccountLocked, obtido %v", err)
+	}
+}
+
+func TestAuthService_TOTP_ReplayProtection_Concurrent(t *testing.T) {
+	svc, _, db := setupAuthTest(t)
+	ctx := context.Background()
+
+	rawPass := "SenhaMFA123456!"
+	hash, err := bcrypt.GenerateFromPassword([]byte(rawPass), 12)
+	if err != nil {
+		t.Fatalf("falha ao gerar hash: %v", err)
+	}
+
+	u, err := store.CreateAdminUser(ctx, db, store.CreateUserParams{
+		Username:     "user.replay",
+		DisplayName:  "User Replay Test",
+		PasswordHash: string(hash),
+		Role:         domain.RoleEditor,
+		Status:       domain.UserStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar usuário: %v", err)
+	}
+
+	// Configura MFA para o usuário
+	_, sessSetup, _, err := svc.AuthenticatePassword(ctx, "user.replay", rawPass, "127.0.0.1", "BrowserSetup")
+	if err != nil {
+		t.Fatalf("falha ao autenticar para setup: %v", err)
+	}
+	secret, _, err := svc.GenerateMFASetup(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("falha ao gerar setup: %v", err)
+	}
+	setupCode, err := auth.GenerateCode(secret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("falha ao gerar código TOTP de setup: %v", err)
+	}
+	if _, _, err := svc.ConfirmMFASetup(ctx, sessSetup.ID, setupCode, "127.0.0.1"); err != nil {
+		t.Fatalf("falha ao confirmar setup MFA: %v", err)
+	}
+
+	// 10 goroutines tentam validar simultaneamente o MESMO código TOTP em 10 sessões pendentes distintas do mesmo usuário
+	numWorkers := 10
+	sessions := make([]*domain.AdminSession, numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		_, sess, needsMFA, err := svc.AuthenticatePassword(ctx, "user.replay", rawPass, "127.0.0.1", fmt.Sprintf("Browser%d", i))
+		if err != nil || !needsMFA {
+			t.Fatalf("falha ao autenticar sess %d: %v", i, err)
+		}
+		sessions[i] = sess
+	}
+
+	// Gera código TOTP atual
+	code, err := auth.GenerateCode(secret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("falha ao gerar código TOTP: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	successCount := int64(0)
+	replayCount := int64(0)
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			_, _, err := svc.VerifyMFALogin(ctx, sessions[workerID].ID, code, "127.0.0.1")
+			if err == nil {
+				atomic.AddInt64(&successCount, 1)
+			} else if errors.Is(err, auth.ErrMFAInvalidCode) {
+				atomic.AddInt64(&replayCount, 1)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	if successCount != 1 {
+		t.Fatalf("PROTEÇÃO CONTRA REPLAY FALHOU: exatamente 1 requisição deveria obter sucesso, obtido %d sucessos (e %d rejeições)", successCount, replayCount)
+	}
+	if replayCount != int64(numWorkers-1) {
+		t.Errorf("esperava %d rejeições por replay, obtido %d", numWorkers-1, replayCount)
+	}
+}
+
+func TestAuthService_DisableMFA_TransactionalRevocation(t *testing.T) {
+	svc, adminU, db := setupAuthTest(t)
+	ctx := context.Background()
+
+	rawPass := "SenhaValida123!"
+	hash, _ := bcrypt.GenerateFromPassword([]byte(rawPass), 12)
+
+	targetU, err := store.CreateAdminUser(ctx, db, store.CreateUserParams{
+		Username:     "target.mfa",
+		DisplayName:  "Target",
+		PasswordHash: string(hash),
+		Role:         domain.RoleEditor,
+		Status:       domain.UserStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar target: %v", err)
+	}
+
+	// Ativa MFA para o target
+	_, sessSetup, _, err := svc.AuthenticatePassword(ctx, "target.mfa", rawPass, "127.0.0.1", "BrowserSetup")
+	if err != nil {
+		t.Fatalf("falha ao autenticar target setup: %v", err)
+	}
+	secret, _, err := svc.GenerateMFASetup(ctx, targetU.ID)
+	if err != nil {
+		t.Fatalf("falha ao gerar setup target: %v", err)
+	}
+	setupCode, _ := auth.GenerateCode(secret, time.Now().UTC())
+	_, activeSess, err := svc.ConfirmMFASetup(ctx, sessSetup.ID, setupCode, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("falha ao confirmar setup target: %v", err)
+	}
+
+	// Desativa MFA
+	if err := svc.DisableMFA(ctx, *adminU, targetU.ID, "127.0.0.1"); err != nil {
+		t.Fatalf("falha ao desativar MFA: %v", err)
+	}
+
+	// Sessão ativa deve ter sido revogada imediatamente
+	_, _, err = svc.ValidateSession(ctx, activeSess.ID)
+	if !errors.Is(err, auth.ErrSessionNotFound) {
+		t.Fatalf("sessão ativa do usuário deveria ser revogada imediatamente após DisableMFA, obtido: %v", err)
 	}
 }

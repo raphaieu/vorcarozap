@@ -37,6 +37,7 @@ type Handlers struct {
 	moderation       *moderation.Service
 	contradiction    *contradiction.Service
 	rateLimiter      *contradiction.RateLimiter
+	loginRateLimiter *contradiction.RateLimiter
 	authService      *auth.Service
 	config           *config.Config
 	registry         *observability.MetricsRegistry
@@ -53,6 +54,7 @@ func NewHandlers(db *sql.DB, cutoff string, authSvc *auth.Service, cfg *config.C
 		moderation:       moderation.NewService(db),
 		contradiction:    contradiction.NewService(db),
 		rateLimiter:      contradiction.NewRateLimiter(5, 10*time.Minute),
+		loginRateLimiter: contradiction.NewRateLimiter(10, 1*time.Minute),
 		authService:      authSvc,
 		config:           cfg,
 		registry:         reg,
@@ -772,18 +774,80 @@ func (h *Handlers) HandleAdminModerateEvidenceSource(w http.ResponseWriter, r *h
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
+// isTrustedProxyIP verifica se o IP de conexão direta pertence aos proxies confiáveis configurados (ou loopback/rede interna do Docker).
+func isTrustedProxyIP(host string, trustedProxiesStr string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	if strings.TrimSpace(trustedProxiesStr) == "" {
+		return false
+	}
+	parts := strings.Split(trustedProxiesStr, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ipNet, err := net.ParseCIDR(p); err == nil {
+			if ipNet.Contains(ip) {
+				return true
+			}
+		} else if directIP := net.ParseIP(p); directIP != nil {
+			if directIP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // getClientIP extrai o IP de origem da conexão a partir de RemoteAddr.
-// Não confia em cabeçalhos de proxy controláveis pelo cliente (como X-Forwarded-For ou X-Real-IP).
+// Se a conexão direta provier de um proxy reverso confiável configurado (ex.: Caddy em loopback ou na rede Docker),
+// resolve o IP real do cliente a partir do primeiro endereço válido de X-Forwarded-For ou X-Real-IP.
+func (h *Handlers) getClientIP(r *http.Request) string {
+	trustedStr := ""
+	if h != nil && h.config != nil {
+		trustedStr = h.config.TrustedProxies
+	}
+	return getClientIPWithTrusted(r, trustedStr)
+}
+
 func getClientIP(r *http.Request) string {
+	return getClientIPWithTrusted(r, "")
+}
+
+func getClientIPWithTrusted(r *http.Request, trustedStr string) string {
 	remoteAddr := strings.TrimSpace(r.RemoteAddr)
 	if remoteAddr == "" {
 		return "unknown"
 	}
 	host, _, err := net.SplitHostPort(remoteAddr)
-	if err == nil && host != "" {
-		return host
+	if err != nil || host == "" {
+		host = remoteAddr
 	}
-	return remoteAddr
+
+	if isTrustedProxyIP(host, trustedStr) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			for _, part := range parts {
+				candidate := strings.TrimSpace(part)
+				if candidate != "" && net.ParseIP(candidate) != nil {
+					return candidate
+				}
+			}
+		}
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			if net.ParseIP(xri) != nil {
+				return xri
+			}
+		}
+	}
+
+	return host
 }
 
 // HandleManifestationForm renderiza a página pública SSR para submissão de manifestação/contraditório.
@@ -844,7 +908,7 @@ func (h *Handlers) HandleManifestationForm(w http.ResponseWriter, r *http.Reques
 
 // HandleSubmitManifestation processa o envio público de uma nova manifestação via POST com rate limit e quarentena compulsória.
 func (h *Handlers) HandleSubmitManifestation(w http.ResponseWriter, r *http.Request) {
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 	if !h.rateLimiter.Allow(clientIP) {
 		http.Error(w, "Limite de submissões excedido. Por favor, aguarde alguns minutos antes de enviar nova manifestação.", http.StatusTooManyRequests)
 		return
@@ -1111,7 +1175,18 @@ func (h *Handlers) HandleAdminLoginSubmit(w http.ResponseWriter, r *http.Request
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	returnTo := r.FormValue("return_to")
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
+
+	if !h.loginRateLimiter.Allow(clientIP) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusTooManyRequests)
+		vm := pages.AdminLoginVM{
+			ReturnTo:   returnTo,
+			FlashError: "Muitas tentativas de login a partir deste endereço IP. Por favor, aguarde alguns instantes antes de tentar novamente.",
+		}
+		_ = pages.AdminLogin(vm).Render(r.Context(), w)
+		return
+	}
 
 	user, session, needsMFA, err := h.authService.AuthenticatePassword(r.Context(), username, password, clientIP, r.UserAgent())
 	if err != nil {
@@ -1197,7 +1272,7 @@ func (h *Handlers) HandleAdminMFAChallengeSubmit(w http.ResponseWriter, r *http.
 
 	code := r.FormValue("code")
 	returnTo := r.FormValue("return_to")
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 
 	_, newSession, err := h.authService.VerifyMFALogin(r.Context(), cookie.Value, code, clientIP)
 	if err != nil {
@@ -1310,7 +1385,7 @@ func (h *Handlers) HandleAdminMFASetupSubmit(w http.ResponseWriter, r *http.Requ
 	}
 
 	code := strings.TrimSpace(r.FormValue("code"))
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 
 	_, newSession, err := h.authService.ConfirmMFASetup(r.Context(), cookie.Value, code, clientIP)
 	if err != nil {
@@ -1343,7 +1418,7 @@ func (h *Handlers) HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
-		_ = h.authService.RevokeSession(r.Context(), cookie.Value, getClientIP(r))
+		_ = h.authService.RevokeSession(r.Context(), cookie.Value, h.getClientIP(r))
 	}
 	ClearSessionCookie(w, r)
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
@@ -1392,7 +1467,7 @@ func (h *Handlers) HandleAdminChangePassword(w http.ResponseWriter, r *http.Requ
 
 	currentPassword := r.FormValue("current_password")
 	newPassword := r.FormValue("new_password")
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 
 	if err := h.authService.ChangeOwnPassword(r.Context(), user.ID, currentPassword, newPassword, clientIP); err != nil {
 		errMsg := "Falha ao alterar senha: senha atual incorreta ou nova senha fora dos padrões."
@@ -1489,7 +1564,7 @@ func (h *Handlers) HandleAdminUserCreate(w http.ResponseWriter, r *http.Request)
 	displayName := r.FormValue("display_name")
 	roleStr := r.FormValue("role")
 	password := r.FormValue("password")
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 
 	role, err := domain.ValidateUserRole(roleStr)
 	if err != nil {
@@ -1576,7 +1651,7 @@ func (h *Handlers) HandleAdminUserUpdateRole(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 	err = h.authService.UpdateUserRole(r.Context(), *actor, id, expectedUpdatedAt, newRole, clientIP)
 	if err != nil {
 		if errors.Is(err, auth.ErrConflict) {
@@ -1617,7 +1692,7 @@ func (h *Handlers) HandleAdminUserUpdateStatus(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 	err = h.authService.UpdateUserStatus(r.Context(), *actor, id, expectedUpdatedAt, newStatus, clientIP)
 	if err != nil {
 		if errors.Is(err, auth.ErrConflict) {
@@ -1652,7 +1727,7 @@ func (h *Handlers) HandleAdminUserResetPassword(w http.ResponseWriter, r *http.R
 	}
 
 	newPassword := r.FormValue("new_password")
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 
 	err := h.authService.ResetUserPassword(r.Context(), *actor, id, newPassword, clientIP)
 	if err != nil {
@@ -1678,7 +1753,7 @@ func (h *Handlers) HandleAdminUserDisableMFA(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	clientIP := getClientIP(r)
+	clientIP := h.getClientIP(r)
 	err := h.authService.DisableMFA(r.Context(), *actor, id, clientIP)
 	if err != nil {
 		if errors.Is(err, auth.ErrForbidden) {

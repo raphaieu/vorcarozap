@@ -50,8 +50,8 @@ Consultas SQL de rede agregam somente claims `published` e `metric_eligible = tr
 
 ## Admin
 
-SSR protegido por HTTP Basic Authentication e hash bcrypt (`ADMIN_USER`, `ADMIN_PASSWORD_HASH`, [ADR-016](adr/ADR-016-protecao-simples-do-admin-por-basic-auth-e-bcrypt.md)). Comportamento fail-closed (desabilitado responde 404 sem desafio) e ações editoriais protegidas contra CSRF via validação estrita de `Origin` com `ADMIN_ALLOWED_ORIGIN` ([ADR-017](adr/ADR-017-moderacao-humana-de-claims-transacoes-e-protecao-csrf.md)).
-Ações de moderação humana em claims (`approve`, `reject`, `restore`) executam em transação SQLite atômica, validam suportes ativos, aplicam o padrão PRG (303 See Other) e registram auditoria imutável na tabela `moderation_decisions` com autor derivado exclusivamente do contexto HTTP autenticado. Uma source não é rejeitada globalmente. Não é CMS completo.
+SSR protegido por sessões autenticadas com cookies seguros (`HttpOnly`, `SameSite=Lax`, `Secure`), MFA TOTP (RFC 6238) com segredos criptografados em repouso via AES-256-GCM (`ADMIN_MFA_ENCRYPTION_KEY`), proteção contra replay de timesteps e controle de acesso baseado em papéis (RBAC com `admin`, `editor`, `reviewer` e `auditor`, [ADR-025](adr/ADR-025-autenticacao-por-sessao-mfa-totp-e-rbac.md)). Comportamento fail-closed (desabilitado responde 404 sem desafio) e ações protegidas contra CSRF via validação estrita de `Origin` com `ADMIN_ALLOWED_ORIGIN` ([ADR-017](adr/ADR-017-moderacao-humana-de-claims-transacoes-e-protecao-csrf.md)).
+Ações de moderação humana em claims (`approve`, `reject`, `restore`) executam em transação SQLite atômica, validam suportes ativos, aplicam o padrão PRG (303 See Other) e registram auditoria imutável na tabela `moderation_decisions` com autor derivado exclusivamente da sessão autenticada. Mudanças de segurança (troca de senha, redefinição, alteração de papel ou status) são transacionadas atomicamente e revogam sessões ativas imediatamente. Uma source não é rejeitada globalmente. Não é CMS completo.
 
 ## Auditoria Administrativa e Histórico Público de Transparência (VZ-024)
 

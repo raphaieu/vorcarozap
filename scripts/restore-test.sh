@@ -39,7 +39,7 @@ else
 fi
 
 echo "Executando restore-sandbox isolado no container..."
-docker compose run --rm -T app vorcarozap restore-sandbox "${ARGS[@]}"
+docker compose run --rm -T app restore-sandbox "${ARGS[@]}"
 
 echo "=== TESTE DE RESTAURAÇÃO EM SANDBOX CONCLUÍDO COM SUCESSO ==="
 echo "O arquivo de backup é 100% íntegro e passível de restauração operacional."

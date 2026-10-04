@@ -66,6 +66,7 @@ type Config struct {
 	BackupRemoteSecretKey              string
 	BackupRemoteRetentionCount         int
 	BackupRemoteTimeout                time.Duration
+	TrustedProxies                     string
 }
 
 // Constantes para validação de segurança de senha administrativa (VZ-014).
@@ -370,7 +371,13 @@ func Load() (*Config, error) {
 	}
 
 	backupRemoteAccessKey := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_ACCESS_KEY"))
+	if backupRemoteAccessKey == "" {
+		backupRemoteAccessKey = strings.TrimSpace(os.Getenv("BACKUP_REMOTE_ACCESS_KEY_ID"))
+	}
 	backupRemoteSecretKey := strings.TrimSpace(os.Getenv("BACKUP_REMOTE_SECRET_KEY"))
+	if backupRemoteSecretKey == "" {
+		backupRemoteSecretKey = strings.TrimSpace(os.Getenv("BACKUP_REMOTE_SECRET_ACCESS_KEY"))
+	}
 
 	backupRemoteRetentionCount, err := parseInt("BACKUP_REMOTE_RETENTION_COUNT", os.Getenv("BACKUP_REMOTE_RETENTION_COUNT"), 14, 1, 1000)
 	if err != nil {
@@ -399,6 +406,11 @@ func Load() (*Config, error) {
 		if endpointURL.Scheme != "https" {
 			return nil, fmt.Errorf("config: BACKUP_REMOTE_ENDPOINT inválido %q: esquema deve ser https para transporte seguro", backupRemoteEndpoint)
 		}
+	}
+
+	trustedProxies := os.Getenv("APP_TRUSTED_PROXIES")
+	if trustedProxies == "" {
+		trustedProxies = "127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
 	}
 
 	return &Config{
@@ -450,6 +462,7 @@ func Load() (*Config, error) {
 		BackupRemoteSecretKey:              backupRemoteSecretKey,
 		BackupRemoteRetentionCount:         backupRemoteRetentionCount,
 		BackupRemoteTimeout:                backupRemoteTimeout,
+		TrustedProxies:                     trustedProxies,
 	}, nil
 }
 

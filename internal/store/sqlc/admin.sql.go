@@ -943,6 +943,140 @@ func (q *Queries) GetEvidenceSourceByIDForModeration(ctx context.Context, id str
 	return i, err
 }
 
+const getLatestLocalBackupRun = `-- name: GetLatestLocalBackupRun :one
+SELECT id, snapshot_path, size_bytes, schema_version, duration_ms, sha256_hex, local_status, local_error, remote_provider, remote_bucket, remote_key, remote_duration_ms, remote_status, remote_error, created_at
+FROM backup_runs
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestLocalBackupRun(ctx context.Context) (BackupRun, error) {
+	row := q.db.QueryRowContext(ctx, getLatestLocalBackupRun)
+	var i BackupRun
+	err := row.Scan(
+		&i.ID,
+		&i.SnapshotPath,
+		&i.SizeBytes,
+		&i.SchemaVersion,
+		&i.DurationMs,
+		&i.Sha256Hex,
+		&i.LocalStatus,
+		&i.LocalError,
+		&i.RemoteProvider,
+		&i.RemoteBucket,
+		&i.RemoteKey,
+		&i.RemoteDurationMs,
+		&i.RemoteStatus,
+		&i.RemoteError,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLatestRemoteBackupRun = `-- name: GetLatestRemoteBackupRun :one
+SELECT id, snapshot_path, size_bytes, schema_version, duration_ms, sha256_hex, local_status, local_error, remote_provider, remote_bucket, remote_key, remote_duration_ms, remote_status, remote_error, created_at
+FROM backup_runs
+WHERE remote_status != 'disabled'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestRemoteBackupRun(ctx context.Context) (BackupRun, error) {
+	row := q.db.QueryRowContext(ctx, getLatestRemoteBackupRun)
+	var i BackupRun
+	err := row.Scan(
+		&i.ID,
+		&i.SnapshotPath,
+		&i.SizeBytes,
+		&i.SchemaVersion,
+		&i.DurationMs,
+		&i.Sha256Hex,
+		&i.LocalStatus,
+		&i.LocalError,
+		&i.RemoteProvider,
+		&i.RemoteBucket,
+		&i.RemoteKey,
+		&i.RemoteDurationMs,
+		&i.RemoteStatus,
+		&i.RemoteError,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertBackupRun = `-- name: InsertBackupRun :exec
+INSERT INTO backup_runs (
+    id,
+    snapshot_path,
+    size_bytes,
+    schema_version,
+    duration_ms,
+    sha256_hex,
+    local_status,
+    local_error,
+    remote_provider,
+    remote_bucket,
+    remote_key,
+    remote_duration_ms,
+    remote_status,
+    remote_error,
+    created_at
+) VALUES (
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+)
+`
+
+type InsertBackupRunParams struct {
+	ID               string         `json:"id"`
+	SnapshotPath     string         `json:"snapshot_path"`
+	SizeBytes        int64          `json:"size_bytes"`
+	SchemaVersion    int64          `json:"schema_version"`
+	DurationMs       int64          `json:"duration_ms"`
+	Sha256Hex        string         `json:"sha256_hex"`
+	LocalStatus      string         `json:"local_status"`
+	LocalError       sql.NullString `json:"local_error"`
+	RemoteProvider   string         `json:"remote_provider"`
+	RemoteBucket     string         `json:"remote_bucket"`
+	RemoteKey        string         `json:"remote_key"`
+	RemoteDurationMs int64          `json:"remote_duration_ms"`
+	RemoteStatus     string         `json:"remote_status"`
+	RemoteError      sql.NullString `json:"remote_error"`
+}
+
+func (q *Queries) InsertBackupRun(ctx context.Context, arg InsertBackupRunParams) error {
+	_, err := q.db.ExecContext(ctx, insertBackupRun,
+		arg.ID,
+		arg.SnapshotPath,
+		arg.SizeBytes,
+		arg.SchemaVersion,
+		arg.DurationMs,
+		arg.Sha256Hex,
+		arg.LocalStatus,
+		arg.LocalError,
+		arg.RemoteProvider,
+		arg.RemoteBucket,
+		arg.RemoteKey,
+		arg.RemoteDurationMs,
+		arg.RemoteStatus,
+		arg.RemoteError,
+	)
+	return err
+}
+
 const listAdminCandidates = `-- name: ListAdminCandidates :many
 SELECT
     c.id,

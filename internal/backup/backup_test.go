@@ -3,6 +3,8 @@ package backup_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -422,9 +424,14 @@ func TestBackupManager_RestoreSandbox(t *testing.T) {
 	}
 
 	// 2. Teste RestoreSandbox a partir de chave remota no S3
-	// Envia o backup para o mock S3
+	// Envia o backup para o mock S3 com hash SHA-256 e metadados válidos
 	backupBytes, _ := io.ReadAll(mustOpen(t, backupPath))
-	_ = provider.PutObject(ctx, "backups/remote-test.db", bytes.NewReader(backupBytes), int64(len(backupBytes)), "", nil)
+	hasher := sha256.New()
+	hasher.Write(backupBytes)
+	backupSHA := hex.EncodeToString(hasher.Sum(nil))
+	_ = provider.PutObject(ctx, "backups/remote-test.db", bytes.NewReader(backupBytes), int64(len(backupBytes)), backupSHA, map[string]string{
+		"sha256": backupSHA,
+	})
 
 	remoteSandboxReport, err := mgr.RestoreSandbox(ctx, "", "backups/remote-test.db")
 	if err != nil {
@@ -435,6 +442,213 @@ func TestBackupManager_RestoreSandbox(t *testing.T) {
 	}
 	if remoteSandboxReport.SourceType != "remote" {
 		t.Errorf("esperado SourceType 'remote', obtido %q", remoteSandboxReport.SourceType)
+	}
+}
+
+func TestBackupManager_RemoteFailure_PreservesLocalAndSegregatesTelemetry(t *testing.T) {
+	mock, srv := newMockS3Server()
+	defer srv.Close()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "source.db")
+	destDir := filepath.Join(tempDir, "backups")
+
+	db, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("falha ao abrir sqlite: %v", err)
+	}
+	defer db.Close()
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("falha ao migrar: %v", err)
+	}
+
+	// Simula falha remota no S3 com cabeçalho contendo token sensível
+	mock.mu.Lock()
+	mock.shouldFail = true
+	mock.failStatus = http.StatusInternalServerError
+	mock.mu.Unlock()
+
+	provider, _ := backup.NewS3Provider(backup.S3Config{
+		Endpoint:   srv.URL,
+		Region:     "us-east-1",
+		Bucket:     "test-bucket",
+		AccessKey:  "AKIA123",
+		SecretKey:  "SECRET123",
+		HTTPClient: srv.Client(),
+	})
+
+	cfg := &config.Config{
+		DBPath:                     dbPath,
+		BackupRemoteEnabled:        true,
+		BackupRemoteProvider:       "s3",
+		BackupRemoteBucket:         "test-bucket",
+		BackupRemotePrefix:         "backups",
+		BackupRemoteRetentionCount: 5,
+	}
+
+	mgr, err := backup.NewManager(backup.ManagerConfig{
+		DB:       db,
+		Config:   cfg,
+		Provider: provider,
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar manager: %v", err)
+	}
+
+	destBackupPath := filepath.Join(destDir, "test-backup.db")
+	report, err := mgr.RunBackup(ctx, destBackupPath, 5, false)
+	if err != nil {
+		t.Fatalf("RunBackup não deveria retornar erro fatal quando apenas o remoto falha: %v", err)
+	}
+
+	// Snapshot local DEVE ter sucesso e arquivo local deve existir
+	if !report.LocalSuccess {
+		t.Fatalf("LocalSuccess deveria ser true")
+	}
+	if _, statErr := os.Stat(report.LocalPath); statErr != nil {
+		t.Fatalf("arquivo local de backup não encontrado: %v", statErr)
+	}
+
+	// Remoto DEVE registrar tentativa e falha
+	if !report.RemoteAttempted || report.RemoteSuccess {
+		t.Errorf("esperado RemoteAttempted=true e RemoteSuccess=false")
+	}
+
+	// Verifica registro segregado no banco SQLite (backup_runs)
+	rec, err := store.GetLatestLocalBackupRun(ctx, db)
+	if err != nil || rec == nil {
+		t.Fatalf("falha ao consultar backup_runs: %v", err)
+	}
+	if rec.LocalStatus != "ok" {
+		t.Errorf("esperado LocalStatus='ok', obtido %q", rec.LocalStatus)
+	}
+	if rec.RemoteStatus != "error" {
+		t.Errorf("esperado RemoteStatus='error', obtido %q", rec.RemoteStatus)
+	}
+	if rec.RemoteError == nil || *rec.RemoteError == "" {
+		t.Errorf("esperado RemoteError preenchido")
+	}
+}
+
+func TestS3Provider_ListObjects_Pagination(t *testing.T) {
+	// Servidor mock que simula paginação com IsTruncated e NextContinuationToken
+	pageCallCount := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pageCallCount++
+		token := r.URL.Query().Get("continuation-token")
+
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusOK)
+
+		if token == "" {
+			// Primeira página (Truncated=true)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+			<ListBucketResult>
+				<Name>paginated-bucket</Name>
+				<Prefix>backups</Prefix>
+				<IsTruncated>true</IsTruncated>
+				<NextContinuationToken>token-page-2</NextContinuationToken>
+				<Contents>
+					<Key>backups/vorcarozap-20260901_000000Z.db</Key>
+					<LastModified>2026-09-01T00:00:00Z</LastModified>
+					<Size>1024</Size>
+				</Contents>
+			</ListBucketResult>`))
+		} else {
+			// Segunda página (Truncated=false)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+			<ListBucketResult>
+				<Name>paginated-bucket</Name>
+				<Prefix>backups</Prefix>
+				<IsTruncated>false</IsTruncated>
+				<Contents>
+					<Key>backups/vorcarozap-20260902_000000Z.db</Key>
+					<LastModified>2026-09-02T00:00:00Z</LastModified>
+					<Size>2048</Size>
+				</Contents>
+			</ListBucketResult>`))
+		}
+	})
+
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	provider, err := backup.NewS3Provider(backup.S3Config{
+		Endpoint:   srv.URL,
+		Region:     "us-east-1",
+		Bucket:     "paginated-bucket",
+		AccessKey:  "AKIA123",
+		SecretKey:  "SECRET123",
+		HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("falha ao criar provider: %v", err)
+	}
+
+	objects, err := provider.ListObjects(context.Background(), "backups")
+	if err != nil {
+		t.Fatalf("falha no ListObjects paginado: %v", err)
+	}
+
+	if len(objects) != 2 {
+		t.Fatalf("esperava 2 objetos agregados de todas as páginas, obtido %d", len(objects))
+	}
+	if pageCallCount != 2 {
+		t.Errorf("esperava 2 chamadas de paginação ao S3, obtido %d", pageCallCount)
+	}
+}
+
+func TestS3Provider_SigV4_FullCryptographicSignature(t *testing.T) {
+	var capturedAuth, capturedDate, capturedContentSHA string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		capturedDate = r.Header.Get("x-amz-date")
+		capturedContentSHA = r.Header.Get("x-amz-content-sha256")
+		w.Header().Set("ETag", `"test-etag"`)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	provider, err := backup.NewS3Provider(backup.S3Config{
+		Endpoint:   srv.URL,
+		Region:     "sa-east-1",
+		Bucket:     "sigv4-bucket",
+		AccessKey:  "AKIA_TEST_KEY",
+		SecretKey:  "SECRET_TEST_KEY",
+		HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("falha ao instanciar provider: %v", err)
+	}
+
+	payload := []byte("Dados do snapshot de teste")
+	hasher := sha256.New()
+	hasher.Write(payload)
+	payloadSHA := hex.EncodeToString(hasher.Sum(nil))
+
+	err = provider.PutObject(context.Background(), "test.db", bytes.NewReader(payload), int64(len(payload)), payloadSHA, nil)
+	if err != nil {
+		t.Fatalf("falha no PutObject: %v", err)
+	}
+
+	if !strings.HasPrefix(capturedAuth, "AWS4-HMAC-SHA256 ") {
+		t.Fatalf("cabeçalho de autorização não usa AWS4-HMAC-SHA256: %q", capturedAuth)
+	}
+	if !strings.Contains(capturedAuth, "Credential=AKIA_TEST_KEY/") {
+		t.Errorf("cabeçalho de autorização não contém credencial correta: %q", capturedAuth)
+	}
+	if !strings.Contains(capturedAuth, "Signature=") {
+		t.Errorf("cabeçalho de autorização não contém assinatura: %q", capturedAuth)
+	}
+	if capturedDate == "" {
+		t.Errorf("cabeçalho x-amz-date ausente")
+	}
+	if capturedContentSHA != payloadSHA {
+		t.Errorf("x-amz-content-sha256 incorreto: obtido %s, esperado %s", capturedContentSHA, payloadSHA)
 	}
 }
 

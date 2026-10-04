@@ -3,21 +3,41 @@ package web_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/raphaieu/vorcarozap/internal/auth"
 	"github.com/raphaieu/vorcarozap/internal/config"
 	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
-	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 	"github.com/raphaieu/vorcarozap/internal/web"
 )
+
+var (
+	testUserHashCost12Once sync.Once
+	testUserHashCost12     string
+)
+
+func getTestUserHashCost12(t *testing.T) string {
+	t.Helper()
+	testUserHashCost12Once.Do(func() {
+		h, err := bcrypt.GenerateFromPassword([]byte("SenhaForte123!"), 12)
+		if err != nil {
+			panic(fmt.Sprintf("falha ao gerar hash bcrypt no teste: %v", err))
+		}
+		testUserHashCost12 = string(h)
+	})
+	return testUserHashCost12
+}
 
 // setupRBACTestServer cria o ambiente completo para testes de RBAC e autenticação.
 func setupRBACTestServer(t *testing.T) (*http.Server, *sql.DB, *auth.Service, string) {
@@ -96,32 +116,21 @@ func setupRBACTestServer(t *testing.T) (*http.Server, *sql.DB, *auth.Service, st
 // createTestUserAndSession cria um usuário com determinado papel e retorna um cookie de sessão válido e verificado.
 func createTestUserAndSession(t *testing.T, ctx context.Context, authSvc *auth.Service, db *sql.DB, username string, role domain.UserRole, status domain.UserStatus) *http.Cookie {
 	t.Helper()
-	adminActor := domain.AdminUser{
-		ID:       "sys-admin",
-		Username: "sys-admin",
-		Role:     domain.RoleAdmin,
-		Status:   domain.UserStatusActive,
-	}
-	user, err := authSvc.CreateUser(ctx, adminActor, auth.CreateUserParams{
-		Username:    username,
-		DisplayName: "Usuário " + string(role),
-		Password:    "SenhaForte123!",
-		Role:        role,
-	}, "127.0.0.1")
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	userID := "user-" + username
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO admin_users (id, username, display_name, password_hash, role, status, mfa_enabled, mfa_secret_encrypted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, 1, 'enc_dummy', ?, ?)
+		ON CONFLICT(username) DO UPDATE SET role = excluded.role, status = excluded.status
+	`, userID, username, "Usuário "+string(role), getTestUserHashCost12(t), string(role), string(status), now, now)
 	if err != nil {
-		t.Fatalf("falha ao criar usuário %s (role %s): %v", username, role, err)
+		t.Fatalf("falha ao criar/atualizar usuário de teste %s: %v", username, err)
 	}
 
-	if status != domain.UserStatusActive {
-		q := sqlc.New(db)
-		_, err = q.UpdateAdminUserStatus(ctx, sqlc.UpdateAdminUserStatusParams{
-			ID:                user.ID,
-			NewStatus:         string(status),
-			ExpectedUpdatedAt: user.UpdatedAt,
-		})
-		if err != nil {
-			t.Fatalf("falha ao atualizar status do usuário %s para %s: %v", username, status, err)
-		}
+	var actualID string
+	err = db.QueryRowContext(ctx, "SELECT id FROM admin_users WHERE username = ?", username).Scan(&actualID)
+	if err != nil {
+		t.Fatalf("falha ao consultar id do usuário %s: %v", username, err)
 	}
 
 	rawToken, err := auth.GenerateSessionToken()
@@ -129,16 +138,16 @@ func createTestUserAndSession(t *testing.T, ctx context.Context, authSvc *auth.S
 		t.Fatalf("falha ao gerar token de sessão: %v", err)
 	}
 
-	now := time.Now().UTC()
+	nowTime := time.Now().UTC()
 	session := domain.AdminSession{
 		ID:             rawToken,
-		UserID:         user.ID,
+		UserID:         actualID,
 		MFAVerified:    true,
 		IPAddress:      "127.0.0.1",
 		UserAgent:      "TestAgent/1.0",
-		ExpiresAt:      now.Add(8 * time.Hour).Format(time.RFC3339Nano),
-		LastActivityAt: now.Format(time.RFC3339Nano),
-		CreatedAt:      now.Format(time.RFC3339Nano),
+		ExpiresAt:      nowTime.Add(8 * time.Hour).Format(time.RFC3339Nano),
+		LastActivityAt: nowTime.Format(time.RFC3339Nano),
+		CreatedAt:      nowTime.Format(time.RFC3339Nano),
 	}
 	if err := store.CreateAdminSession(ctx, db, session); err != nil {
 		t.Fatalf("falha ao persistir sessão de teste: %v", err)

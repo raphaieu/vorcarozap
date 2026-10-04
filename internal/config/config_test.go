@@ -561,32 +561,11 @@ func TestConfigMonitorVariables(t *testing.T) {
 }
 
 func TestConfigAdminVariables(t *testing.T) {
-	hashCost11Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 11)
-	if err != nil {
-		t.Fatalf("falha ao gerar hash de teste custo 11: %v", err)
-	}
-	hashCost12Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 12)
-	if err != nil {
-		t.Fatalf("falha ao gerar hash de teste custo 12: %v", err)
-	}
-	hashCost13Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 13)
-	if err != nil {
-		t.Fatalf("falha ao gerar hash de teste custo 13: %v", err)
-	}
-	hashCost14Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 14)
-	if err != nil {
-		t.Fatalf("falha ao gerar hash de teste custo 14: %v", err)
-	}
-	hashCost15Bytes, err := bcrypt.GenerateFromPassword([]byte("password"), 15)
-	if err != nil {
-		t.Fatalf("falha ao gerar hash de teste custo 15: %v", err)
-	}
-
-	hashCost11 := string(hashCost11Bytes)
-	hashCost12 := string(hashCost12Bytes)
-	hashCost13 := string(hashCost13Bytes)
-	hashCost14 := string(hashCost14Bytes)
-	hashCost15 := string(hashCost15Bytes)
+	hashCost11 := "$2a$11$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	hashCost12 := "$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	hashCost13 := "$2a$13$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	hashCost14 := "$2a$14$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	hashCost15 := "$2a$15$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 	tests := []struct {
 		name          string

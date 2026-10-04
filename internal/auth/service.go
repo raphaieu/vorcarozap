@@ -17,6 +17,7 @@ import (
 
 	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/store"
+	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
 
 var (
@@ -241,7 +242,7 @@ func (s *Service) VerifyMFALogin(ctx context.Context, sessionID, code, ip string
 		return nil, nil, fmt.Errorf("auth: falha na decriptação do segredo MFA: %w", err)
 	}
 
-	valid, _, err := ValidateCode(rawSecret, code, time.Now().UTC(), TOTPDefaultWindow)
+	valid, timestep, err := ValidateCode(rawSecret, code, time.Now().UTC(), TOTPDefaultWindow)
 	if err != nil || !valid {
 		lockUntil := time.Now().UTC().Add(s.lockoutDuration)
 		failedRes, recordErr := store.RecordMFAFailedAttemptAndLock(ctx, s.db, u.ID, s.maxAttempts, lockUntil)
@@ -261,8 +262,12 @@ func (s *Service) VerifyMFALogin(ctx context.Context, sessionID, code, ip string
 		return nil, nil, ErrMFAInvalidCode
 	}
 
-	// Sucesso total no MFA: reseta contadores de senha E de MFA
-	if err := store.RecordUserMFASuccess(ctx, s.db, u.ID); err != nil {
+	// Consome atomicamente o timestep do TOTP e zera contadores de falhas (proteção contra replay)
+	if err := store.ConsumeTOTPTimestepAndRecordSuccess(ctx, s.db, u.ID, timestep); err != nil {
+		if errors.Is(err, store.ErrTOTPReplay) {
+			s.recordAudit(ctx, &u.ID, u.Username, "mfa_replay_blocked", &u.ID, u.Username, u.ID, "Tentativa de reutilização de código TOTP na mesma janela de tempo", ip)
+			return nil, nil, ErrMFAInvalidCode
+		}
 		return nil, nil, fmt.Errorf("auth: falha ao registrar sucesso de autenticação MFA: %w", err)
 	}
 
@@ -419,7 +424,7 @@ func (s *Service) ConfirmMFASetup(ctx context.Context, sessionID, code, ip strin
 		return nil, nil, ErrMFAInvalidCode
 	}
 
-	// Sucesso total no setup MFA: reseta contadores de senha E de MFA
+	// Reseta contadores de falhas após código válido no setup
 	if err := store.RecordUserMFASuccess(ctx, s.db, u.ID); err != nil {
 		return nil, nil, fmt.Errorf("auth: falha ao registrar sucesso de setup MFA: %w", err)
 	}
@@ -460,7 +465,7 @@ func (s *Service) ConfirmMFASetup(ctx context.Context, sessionID, code, ip strin
 	return &u, &newSession, nil
 }
 
-// DisableMFA desativa o MFA de um usuário (apenas por admin ou próprio usuário se permitido).
+// DisableMFA desativa o MFA de um usuário sob transação atômica (apenas por admin ou próprio usuário se permitido).
 func (s *Service) DisableMFA(ctx context.Context, actor domain.AdminUser, targetUserID, ip string) error {
 	if !actor.Role.HasPermission(domain.PermManageUsers) && actor.ID != targetUserID {
 		return ErrForbidden
@@ -471,17 +476,39 @@ func (s *Service) DisableMFA(ctx context.Context, actor domain.AdminUser, target
 		return err
 	}
 
-	if err := store.DisableAdminUserMFA(ctx, s.db, targetUserID); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("auth: falha ao iniciar transação: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := sqlc.New(tx)
+	if err := q.DisableAdminUserMFA(ctx, targetUserID); err != nil {
 		return fmt.Errorf("auth: falha ao desativar MFA: %w", err)
 	}
 
-	// Revoga sessões do usuário alvo para forçar reautenticação
-	if delErr := store.DeleteUserAdminSessions(ctx, s.db, targetUserID); delErr != nil {
-		slog.Error("falha ao revogar sessões no disable MFA", "user_id", targetUserID, "error", delErr)
+	// Revoga atomicamente todas as sessões do usuário alvo para forçar reautenticação
+	if err := q.DeleteUserAdminSessions(ctx, targetUserID); err != nil {
+		return fmt.Errorf("auth: falha ao revogar sessões no disable MFA: %w", err)
 	}
 
-	s.recordAudit(ctx, &target.User.ID, target.User.Username, "mfa_disabled", &actor.ID, actor.Username, target.User.ID, "MFA desativado por administrador", ip)
-	return nil
+	auditLog := domain.AdminAuditLog{
+		ID:            uuid.New().String(),
+		UserID:        &target.User.ID,
+		Username:      target.User.Username,
+		Action:        "mfa_disabled",
+		ActorID:       &actor.ID,
+		ActorUsername: actor.Username,
+		TargetID:      target.User.ID,
+		Details:       "MFA desativado por administrador",
+		IPAddress:     ip,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if err := store.InsertAdminAuditLogDBTX(ctx, tx, auditLog); err != nil {
+		return fmt.Errorf("auth: falha ao gravar auditoria na transação: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // ValidateSession valida se uma sessão existe, não está expirada e pertence a um usuário ativo.
@@ -575,27 +602,56 @@ func (s *Service) CreateUser(ctx context.Context, actor domain.AdminUser, p Crea
 	return user, nil
 }
 
-// UpdateUserRole atualiza o papel de um usuário com OCC.
+// UpdateUserRole atualiza o papel de um usuário com OCC em transação atômica.
 func (s *Service) UpdateUserRole(ctx context.Context, actor domain.AdminUser, targetUserID, expectedUpdatedAt string, newRole domain.UserRole, ip string) error {
 	if !actor.Role.HasPermission(domain.PermManageUsers) {
 		return ErrForbidden
 	}
 
-	err := store.UpdateAdminUserRole(ctx, s.db, targetUserID, expectedUpdatedAt, newRole)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("auth: falha ao iniciar transação: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := sqlc.New(tx)
+	rows, err := q.UpdateAdminUserRole(ctx, sqlc.UpdateAdminUserRoleParams{
+		ID:                targetUserID,
+		ExpectedUpdatedAt: expectedUpdatedAt,
+		NewRole:           string(newRole),
+	})
+	if err != nil {
+		return fmt.Errorf("auth: falha ao atualizar papel do usuário: %w", err)
+	}
+	if rows == 0 {
+		return store.ErrConflict
 	}
 
-	// Ao alterar papel, revoga sessões antigas para forçar reautenticação e atualização de permissões
-	if delErr := store.DeleteUserAdminSessions(ctx, s.db, targetUserID); delErr != nil {
-		slog.Error("falha ao revogar sessões após alteração de papel", "user_id", targetUserID, "error", delErr)
+	// Ao alterar papel, revoga atomicamente todas as sessões para forçar reautenticação
+	if err := q.DeleteUserAdminSessions(ctx, targetUserID); err != nil {
+		return fmt.Errorf("auth: falha ao revogar sessões na transação: %w", err)
 	}
 
-	s.recordAudit(ctx, nil, targetUserID, "user_role_updated", &actor.ID, actor.Username, targetUserID, fmt.Sprintf("Papel alterado para '%s'", newRole), ip)
-	return nil
+	auditLog := domain.AdminAuditLog{
+		ID:            uuid.New().String(),
+		UserID:        nil,
+		Username:      "",
+		Action:        "user_role_updated",
+		ActorID:       &actor.ID,
+		ActorUsername: actor.Username,
+		TargetID:      targetUserID,
+		Details:       fmt.Sprintf("Papel alterado para '%s'", newRole),
+		IPAddress:     ip,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if err := store.InsertAdminAuditLogDBTX(ctx, tx, auditLog); err != nil {
+		return fmt.Errorf("auth: falha ao gravar auditoria na transação: %w", err)
+	}
+
+	return tx.Commit()
 }
 
-// UpdateUserStatus atualiza o status de um usuário (ativação/desativação/bloqueio) com OCC.
+// UpdateUserStatus atualiza o status de um usuário (ativação/desativação/bloqueio) com OCC em transação atômica.
 func (s *Service) UpdateUserStatus(ctx context.Context, actor domain.AdminUser, targetUserID, expectedUpdatedAt string, newStatus domain.UserStatus, ip string) error {
 	if !actor.Role.HasPermission(domain.PermManageUsers) {
 		return ErrForbidden
@@ -606,22 +662,51 @@ func (s *Service) UpdateUserStatus(ctx context.Context, actor domain.AdminUser, 
 		return fmt.Errorf("auth: não é permitido desativar a própria conta conectada")
 	}
 
-	err := store.UpdateAdminUserStatus(ctx, s.db, targetUserID, expectedUpdatedAt, newStatus)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("auth: falha ao iniciar transação: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := sqlc.New(tx)
+	rows, err := q.UpdateAdminUserStatus(ctx, sqlc.UpdateAdminUserStatusParams{
+		ID:                targetUserID,
+		ExpectedUpdatedAt: expectedUpdatedAt,
+		NewStatus:         string(newStatus),
+	})
+	if err != nil {
+		return fmt.Errorf("auth: falha ao atualizar status do usuário: %w", err)
+	}
+	if rows == 0 {
+		return store.ErrConflict
 	}
 
 	if newStatus != domain.UserStatusActive {
-		if delErr := store.DeleteUserAdminSessions(ctx, s.db, targetUserID); delErr != nil {
-			slog.Error("falha ao revogar sessões após alteração de status", "user_id", targetUserID, "error", delErr)
+		if err := q.DeleteUserAdminSessions(ctx, targetUserID); err != nil {
+			return fmt.Errorf("auth: falha ao revogar sessões na transação: %w", err)
 		}
 	}
 
-	s.recordAudit(ctx, nil, targetUserID, "user_status_updated", &actor.ID, actor.Username, targetUserID, fmt.Sprintf("Status alterado para '%s'", newStatus), ip)
-	return nil
+	auditLog := domain.AdminAuditLog{
+		ID:            uuid.New().String(),
+		UserID:        nil,
+		Username:      "",
+		Action:        "user_status_updated",
+		ActorID:       &actor.ID,
+		ActorUsername: actor.Username,
+		TargetID:      targetUserID,
+		Details:       fmt.Sprintf("Status alterado para '%s'", newStatus),
+		IPAddress:     ip,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if err := store.InsertAdminAuditLogDBTX(ctx, tx, auditLog); err != nil {
+		return fmt.Errorf("auth: falha ao gravar auditoria na transação: %w", err)
+	}
+
+	return tx.Commit()
 }
 
-// ResetUserPassword redefine a senha de um usuário por ação administrativa.
+// ResetUserPassword redefine a senha de um usuário por ação administrativa em transação atômica.
 func (s *Service) ResetUserPassword(ctx context.Context, actor domain.AdminUser, targetUserID, newPassword, ip string) error {
 	if !actor.Role.HasPermission(domain.PermManageUsers) {
 		return ErrForbidden
@@ -636,19 +721,44 @@ func (s *Service) ResetUserPassword(ctx context.Context, actor domain.AdminUser,
 		return fmt.Errorf("auth: falha ao gerar hash da nova senha: %w", err)
 	}
 
-	if err := store.UpdateAdminUserPassword(ctx, s.db, targetUserID, string(hash)); err != nil {
-		return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("auth: falha ao iniciar transação: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := sqlc.New(tx)
+	if err := q.UpdateAdminUserPassword(ctx, sqlc.UpdateAdminUserPasswordParams{
+		ID:           targetUserID,
+		PasswordHash: string(hash),
+	}); err != nil {
+		return fmt.Errorf("auth: falha ao atualizar senha na transação: %w", err)
 	}
 
-	if delErr := store.DeleteUserAdminSessions(ctx, s.db, targetUserID); delErr != nil {
-		slog.Error("falha ao revogar sessões após reset de senha", "user_id", targetUserID, "error", delErr)
+	if err := q.DeleteUserAdminSessions(ctx, targetUserID); err != nil {
+		return fmt.Errorf("auth: falha ao revogar sessões na transação: %w", err)
 	}
 
-	s.recordAudit(ctx, nil, targetUserID, "password_reset_by_admin", &actor.ID, actor.Username, targetUserID, "Senha redefinida por administrador", ip)
-	return nil
+	auditLog := domain.AdminAuditLog{
+		ID:            uuid.New().String(),
+		UserID:        nil,
+		Username:      "",
+		Action:        "password_reset_by_admin",
+		ActorID:       &actor.ID,
+		ActorUsername: actor.Username,
+		TargetID:      targetUserID,
+		Details:       "Senha redefinida por administrador",
+		IPAddress:     ip,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if err := store.InsertAdminAuditLogDBTX(ctx, tx, auditLog); err != nil {
+		return fmt.Errorf("auth: falha ao gravar auditoria na transação: %w", err)
+	}
+
+	return tx.Commit()
 }
 
-// ChangeOwnPassword permite ao usuário conectado alterar a própria senha com confirmação da senha anterior.
+// ChangeOwnPassword permite ao usuário conectado alterar a própria senha com confirmação da senha anterior em transação atômica.
 func (s *Service) ChangeOwnPassword(ctx context.Context, userID, currentPassword, newPassword, ip string) error {
 	uWithCreds, err := store.GetUserByID(ctx, s.db, userID)
 	if err != nil {
@@ -668,12 +778,42 @@ func (s *Service) ChangeOwnPassword(ctx context.Context, userID, currentPassword
 		return fmt.Errorf("auth: falha ao gerar hash da nova senha: %w", err)
 	}
 
-	if err := store.UpdateAdminUserPassword(ctx, s.db, userID, string(hash)); err != nil {
-		return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("auth: falha ao iniciar transação: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := sqlc.New(tx)
+	if err := q.UpdateAdminUserPassword(ctx, sqlc.UpdateAdminUserPasswordParams{
+		ID:           userID,
+		PasswordHash: string(hash),
+	}); err != nil {
+		return fmt.Errorf("auth: falha ao atualizar senha: %w", err)
 	}
 
-	s.recordAudit(ctx, &uWithCreds.User.ID, uWithCreds.User.Username, "password_changed_by_user", &uWithCreds.User.ID, uWithCreds.User.Username, uWithCreds.User.ID, "Senha alterada pelo próprio operador", ip)
-	return nil
+	// Ao alterar a própria senha, revoga sessões antigas para assegurar revogação imediata
+	if err := q.DeleteUserAdminSessions(ctx, userID); err != nil {
+		return fmt.Errorf("auth: falha ao revogar sessões na transação: %w", err)
+	}
+
+	auditLog := domain.AdminAuditLog{
+		ID:            uuid.New().String(),
+		UserID:        &uWithCreds.User.ID,
+		Username:      uWithCreds.User.Username,
+		Action:        "password_changed_by_user",
+		ActorID:       &uWithCreds.User.ID,
+		ActorUsername: uWithCreds.User.Username,
+		TargetID:      uWithCreds.User.ID,
+		Details:       "Senha alterada pelo próprio operador",
+		IPAddress:     ip,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if err := store.InsertAdminAuditLogDBTX(ctx, tx, auditLog); err != nil {
+		return fmt.Errorf("auth: falha ao gravar auditoria: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 func (s *Service) recordAudit(ctx context.Context, userID *string, username, action string, actorID *string, actorUsername, targetID, details, ip string) {
