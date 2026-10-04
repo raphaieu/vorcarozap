@@ -43,6 +43,7 @@ Itens de enriquecimento e maturidade inspirados nas discussões de navegação d
 | VZ-028 | P1 | Fechamento operacional e release de produção (hardening, race detector e prontidão para deploy) | Concluído (Fase 7) |
 | VZ-029 | P1 | API pública documentada e somente leitura (`GET /api/v1/pessoas`, `GET /api/v1/pessoas/{slug}`) | Concluído (Fase 7) |
 | VZ-030 | P1 | Catálogo público de documentos e fontes (`GET /documentos`) | Concluído (Fase 7) |
+| VZ-031 | P1 | API pública de documentos e fontes (`GET /api/v1/documentos`, `GET /api/v1/documentos/{id}`) | Concluído (Fase 7) |
 
 ## P2 — Escala e Distribuição Futura
 

@@ -47,8 +47,11 @@ check_endpoint "Readiness probe" "/health/ready" "200"
 echo "2. Validando rotas públicas principais..."
 check_endpoint "Página inicial" "/" "200"
 check_endpoint "Listagem de pessoas" "/pessoas" "200"
+check_endpoint "Catálogo de documentos" "/documentos" "200"
 check_endpoint "Página de metodologia" "/metodologia" "200"
 check_endpoint "Exportação XLSX" "/exportar/base.xlsx" "200"
+check_endpoint "API v1 Pessoas" "/api/v1/pessoas" "200"
+check_endpoint "API v1 Documentos" "/api/v1/documentos" "200"
 
 echo "3. Validando proteção e segurança da área administrativa..."
 # Sem credenciais deve exigir autenticação (401 ou 303 Redirect) ou 404 se desabilitado

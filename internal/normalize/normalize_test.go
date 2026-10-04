@@ -134,9 +134,14 @@ func TestCanonicalURL(t *testing.T) {
 			expected: "https://api.example.com:8443/data",
 		},
 		{
-			name:     "Root path vazio vira slash",
-			input:    "https://banco.master",
-			expected: "https://banco.master/",
+			name:        "Rejeição de credenciais embutidas (user:pass)",
+			input:       "https://usuario:senha123@noticias.exemplo.com/materia",
+			expectError: true,
+		},
+		{
+			name:        "Rejeição de credenciais apenas com usuário",
+			input:       "https://admin@noticias.exemplo.com/materia",
+			expectError: true,
 		},
 	}
 
@@ -154,6 +159,32 @@ func TestCanonicalURL(t *testing.T) {
 			}
 			if got != tt.expected {
 				t.Errorf("CanonicalURL(%q) = %q; esperado %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSafeURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"URL válida", "https://example.com/noticia", "https://example.com/noticia"},
+		{"URL com fragmento", "https://example.com/noticia#token=123", "https://example.com/noticia"},
+		{"URL com credenciais", "https://user:pass@example.com/noticia", ""},
+		{"Esquema javascript", "javascript:alert(1)", ""},
+		{"Esquema data", "data:text/html,<html>", ""},
+		{"Esquema ftp", "ftp://example.com/file", ""},
+		{"Vazia", "", ""},
+		{"Apenas espaços", "   ", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SafeURL(tt.input)
+			if got != tt.expected {
+				t.Errorf("SafeURL(%q) = %q; esperado %q", tt.input, got, tt.expected)
 			}
 		})
 	}

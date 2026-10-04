@@ -66,4 +66,4 @@ As consultas são executadas diretamente contra o SQLite WAL, garantindo recálc
 - Garante total interoperabilidade com o visualizador detalhado de documentos existente.
 
 ### Negativas / Mitigações
-- Consultas dinâmicas a cada requisição em SQLite WAL utilizam índices existentes sobre chaves estrangeiras (`evidence_sources(source_id, claim_id, status)`), mantendo tempos de resposta sub-milissegundo para o volume do monólito.
+- Consultas dinâmicas a cada requisição em SQLite WAL utilizam índices existentes sobre chaves estrangeiras e a view canônica (`public_claims_view`), mantendo tempos de resposta adequados para o volume do monólito sem necessidade de cache de aplicação.

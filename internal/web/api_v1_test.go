@@ -61,9 +61,13 @@ func setupAPITestServer(t *testing.T) (*http.Server, *sql.DB) {
 		INSERT INTO evidence (id, claim_id, summary, evidence_type)
 		VALUES ('ev-1', 'clm-1', 'Evidência documental de contato', 'document');
 
-		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status)
-		VALUES ('src-1', 'Folha de S.Paulo', 'Redação', 'https://folha.com.br/artigo1#access_token=secret_fake_token_xyz', 'https://folha.com.br/artigo1', 'article', 'reachable'),
-		       ('src-2', 'Nota Oficial da Assessoria', 'Assessoria', 'https://assessoria.gov.br/nota', 'https://assessoria.gov.br/nota', 'official_statement', 'reachable');
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status, published_at, accessed_at)
+		VALUES ('src-1', 'Folha de S.Paulo', 'Redação', 'https://folha.com.br/artigo1#access_token=secret_fake_token_xyz', 'https://folha.com.br/artigo1', 'article', 'reachable', '2026-08-01T00:00:00Z', '2026-09-01T00:00:00Z'),
+		       ('src-2', 'Nota Oficial da Assessoria', 'Assessoria', 'https://assessoria.gov.br/nota', 'https://assessoria.gov.br/nota', 'official_statement', 'reachable', '2026-08-05T00:00:00Z', '2026-09-02T00:00:00Z'),
+		       ('src-3-police', 'Laudo Pericial INC nº 50/2026', 'Polícia Federal', 'https://pf.gov.br/laudo50#secret_frag', 'https://pf.gov.br/laudo50', 'police_report', 'reachable', '2026-08-10T00:00:00Z', '2026-09-03T00:00:00Z'),
+		       ('src-4-insecure', 'Documento Suspeito com URL Fragmentada', 'Blog Investigativo', 'https://blog.com/insecure#token_fragmento_persistido_xyz', 'https://blog.com/insecure#token_fragmento_persistido_xyz', 'article', 'reachable', '2026-08-12T00:00:00Z', '2026-09-03T00:00:00Z'),
+		       ('src-quar-exclusiva', 'Boato Blog Oculto', 'Blog Oculto', 'https://blog.com/quar', 'https://blog.com/quar', 'article', 'unreachable', NULL, NULL),
+		       ('src-rej-exclusiva', 'Artigo Rejeitado Exclusivo', 'Jornal Desaprovado', 'https://jornal.com/rej', 'https://jornal.com/rej', 'article', 'reachable', NULL, NULL);
 
 		INSERT INTO evidence_sources (id, evidence_id, source_id, role, excerpt, locator, status)
 		VALUES ('es-1', 'ev-1', 'src-1', 'supports', 'Trecho comprovando contato', 'Página 2', 'active'),
@@ -119,7 +123,14 @@ func setupAPITestServer(t *testing.T) (*http.Server, *sql.DB) {
 		VALUES ('ev-5', 'clm-5', 'Termo de depoimento', 'document');
 
 		INSERT INTO evidence_sources (id, evidence_id, source_id, role, excerpt, locator, status)
-		VALUES ('es-6', 'ev-5', 'src-1', 'supports', 'Depoimento prestado à comissão', 'Folha 12', 'active');
+		VALUES ('es-6', 'ev-5', 'src-1', 'supports', 'Depoimento prestado à comissão', 'Folha 12', 'active'),
+		       ('es-7', 'ev-5', 'src-3-police', 'supports', 'Laudo técnico pericial', 'Págs. 5–8', 'active'),
+		       ('es-8', 'ev-3', 'src-quar-exclusiva', 'supports', 'Trecho boato quarentena', 'Pág. 1', 'active'),
+		       ('es-9', 'ev-1', 'src-rej-exclusiva', 'supports', 'Trecho rejeitado', 'Pág. 99', 'rejected'),
+		       ('es-10', 'ev-5', 'src-4-insecure', 'supports', 'Trecho com localizador malicioso', '<script>alert("xss")</script>', 'active');
+
+		INSERT INTO defense_statements (id, claim_id, statement_type, title, content, source_url, contact_info, status)
+		VALUES ('stmt-1', 'clm-1', 'clarification', 'Nota de Alice', 'Alice esclarece os fatos detalhadamente.', 'https://alice.gov.br/nota#token_em_defesa_xyz', 'contato@alice.gov.br', 'accepted');
 	`)
 	if err != nil {
 		t.Fatalf("falha ao inserir dados de teste da API: %v", err)
@@ -414,6 +425,18 @@ func TestAPIV1EntityDetail(t *testing.T) {
 		if !supFound || !contrFound {
 			t.Errorf("esperado fontes supports e contradicts presentes: sup=%v, contr=%v", supFound, contrFound)
 		}
+
+		// Manifestação de defesa com sanitização de source_url
+		if len(clm.DefenseStatements) != 1 {
+			t.Fatalf("esperado 1 manifestação de defesa, obtido %d", len(clm.DefenseStatements))
+		}
+		stmt := clm.DefenseStatements[0]
+		if stmt.SourceURL != "https://alice.gov.br/nota" {
+			t.Errorf("source_url da manifestação: esperado 'https://alice.gov.br/nota', obtido %q", stmt.SourceURL)
+		}
+		if strings.Contains(stmt.SourceURL, "token_em_defesa_xyz") || strings.Contains(stmt.SourceURL, "#") {
+			t.Errorf("source_url da manifestação vazou fragmento/token: %q", stmt.SourceURL)
+		}
 	})
 
 	t.Run("detalhe com case_name (bob-silveira)", func(t *testing.T) {
@@ -625,6 +648,9 @@ func TestAPIV1HTTPMethodsAndSecurity(t *testing.T) {
 		endpoints := []string{
 			"/api/v1/pessoas",
 			"/api/v1/pessoas/alice-santos",
+			"/api/v1/documentos",
+			"/api/v1/documentos/src-1",
+			"/api/v1/documentos/src-3-police",
 		}
 
 		forbiddenKeys := []string{
@@ -646,6 +672,10 @@ func TestAPIV1HTTPMethodsAndSecurity(t *testing.T) {
 			"case_slug",
 			"secret_fake_token_xyz",
 			"carlos-quarentena", // slug do alvo em quarentena não pode vazar
+			"token_fragmento_persistido_xyz",
+			"token_em_defesa_xyz",
+			"<script>",
+			"alert(",
 		}
 
 		for _, ep := range endpoints {
@@ -667,7 +697,7 @@ func TestStorePaginationBoundsProtection(t *testing.T) {
 	_, db := setupAPITestServer(t)
 	ctx := context.Background()
 
-	// Testa chamada direta ao store com Page extremo
+	// Testa chamada direta ao store com Page extremo para entidades
 	res, err := store.ListPublicEntities(ctx, db, store.PublicEntityFilter{
 		Page:     999999999,
 		PageSize: 15,
@@ -678,4 +708,503 @@ func TestStorePaginationBoundsProtection(t *testing.T) {
 	if res.Page != store.MaxPage {
 		t.Errorf("Page não foi limitado a MaxPage (%d), obtido %d", store.MaxPage, res.Page)
 	}
+
+	// Testa chamada direta ao store com Page extremo para documentos
+	docRes, err := store.ListPublicDocuments(ctx, db, store.PublicDocumentFilter{
+		Page:     999999999,
+		PageSize: 15,
+	})
+	if err != nil {
+		t.Fatalf("ListPublicDocuments falhou com página astronômica: %v", err)
+	}
+	if docRes.Page != store.MaxPage {
+		t.Errorf("Page não foi limitado a MaxPage (%d), obtido %d", store.MaxPage, docRes.Page)
+	}
+}
+
+// =============================================================================
+// Testes dos Endpoints de Documentos da API v1 (VZ-031)
+// =============================================================================
+
+func TestAPIV1DocumentsList(t *testing.T) {
+	srv, _ := setupAPITestServer(t)
+
+	t.Run("listagem geral de documentos públicos ativos", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d (body: %s)", w.Code, w.Body.String())
+		}
+
+		// Valida cabeçalhos obrigatórios
+		if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			t.Errorf("Content-Type: esperado application/json, obtido %q", ct)
+		}
+		if cc := w.Header().Get("Cache-Control"); cc != "no-cache, no-store, must-revalidate" {
+			t.Errorf("Cache-Control: esperado 'no-cache, no-store, must-revalidate', obtido %q", cc)
+		}
+
+		var resp web.APIDocumentsListResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		// src-1, src-2, src-3-police e src-4-insecure devem constar (4 documentos públicos ativos)
+		if len(resp.Data) != 4 {
+			t.Fatalf("esperado 4 documentos públicos, obtido %d", len(resp.Data))
+		}
+		if resp.Pagination.TotalItems != 4 {
+			t.Errorf("total_items: esperado 4, obtido %d", resp.Pagination.TotalItems)
+		}
+		if resp.Pagination.Page != 1 || resp.Pagination.PageSize != 15 || resp.Pagination.TotalPages != 1 {
+			t.Errorf("paginação inesperada: %+v", resp.Pagination)
+		}
+
+		// Verifica que documentos de quarentena/rejeição exclusiva NÃO constam
+		for _, item := range resp.Data {
+			if item.ID == "src-quar-exclusiva" {
+				t.Errorf("vazamento de quarentena: src-quar-exclusiva apareceu na listagem da API")
+			}
+			if item.ID == "src-rej-exclusiva" {
+				t.Errorf("vazamento de rejeitado: src-rej-exclusiva apareceu na listagem da API")
+			}
+		}
+	})
+
+	t.Run("sanitização negativa de URL com fragmento e localizador malicioso", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentsListResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		var foundInsecure *web.APIDocumentItemDTO
+		for _, d := range resp.Data {
+			if d.ID == "src-4-insecure" {
+				item := d
+				foundInsecure = &item
+				break
+			}
+		}
+
+		if foundInsecure == nil {
+			t.Fatalf("documento src-4-insecure não encontrado na listagem")
+		}
+
+		// URL deve ter o fragmento/token sanitizado
+		if foundInsecure.CanonicalURL != "https://blog.com/insecure" {
+			t.Errorf("canonical_url: esperado 'https://blog.com/insecure', obtido %q", foundInsecure.CanonicalURL)
+		}
+		if strings.Contains(foundInsecure.CanonicalURL, "token_fragmento_persistido_xyz") || strings.Contains(foundInsecure.CanonicalURL, "#") {
+			t.Errorf("vazamento de fragmento/token na URL canônica da listagem: %q", foundInsecure.CanonicalURL)
+		}
+
+		// Localizador malicioso deve ser sanitizado para vazio ("")
+		if foundInsecure.FirstPublicLocator != "" {
+			t.Errorf("first_public_locator malicioso não foi esvaziado: obtido %q", foundInsecure.FirstPublicLocator)
+		}
+	})
+
+	t.Run("busca textual por q", func(t *testing.T) {
+		// Busca por Folha
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?q=Folha", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentsListResponse
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		if len(resp.Data) != 1 || resp.Data[0].ID != "src-1" {
+			t.Errorf("busca por 'Folha': esperado [src-1], obtido %+v", resp.Data)
+		}
+
+		// Busca por Polícia Federal
+		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?q=Polícia", nil)
+		w2 := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w2, req2)
+
+		var resp2 web.APIDocumentsListResponse
+		_ = json.NewDecoder(w2.Body).Decode(&resp2)
+		if len(resp2.Data) != 1 || resp2.Data[0].ID != "src-3-police" {
+			t.Errorf("busca por 'Polícia': esperado [src-3-police], obtido %+v", resp2.Data)
+		}
+	})
+
+	t.Run("filtro por source_type", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?source_type=police_report", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentsListResponse
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		if len(resp.Data) != 1 || resp.Data[0].ID != "src-3-police" {
+			t.Errorf("filtro source_type=police_report: esperado [src-3-police], obtido %+v", resp.Data)
+		}
+
+		// Valor inválido de source_type deve retornar 400
+		reqBad := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?source_type=tipo_inventado", nil)
+		wBad := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wBad, reqBad)
+		if wBad.Code != http.StatusBadRequest {
+			t.Errorf("source_type inválido: esperado 400, obtido %d", wBad.Code)
+		}
+	})
+
+	t.Run("filtro por access_status", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?access_status=reachable", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentsListResponse
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		if len(resp.Data) != 4 {
+			t.Errorf("filtro access_status=reachable: esperado 4 documentos, obtido %d", len(resp.Data))
+		}
+
+		// Valor inválido de access_status deve retornar 400
+		reqBad := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?access_status=status_invalido", nil)
+		wBad := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wBad, reqBad)
+		if wBad.Code != http.StatusBadRequest {
+			t.Errorf("access_status inválido: esperado 400, obtido %d", wBad.Code)
+		}
+	})
+
+	t.Run("ordenação por sort e dir", func(t *testing.T) {
+		sortFields := []string{"title", "publisher", "updated", "citations"}
+		for _, sf := range sortFields {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?sort="+sf+"&dir=asc", nil)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("sort=%s&dir=asc: esperado 200, obtido %d", sf, w.Code)
+			}
+		}
+
+		// Sort inválido deve retornar 400
+		reqBadSort := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?sort=hacked", nil)
+		wBadSort := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wBadSort, reqBadSort)
+		if wBadSort.Code != http.StatusBadRequest {
+			t.Errorf("sort inválido: esperado 400, obtido %d", wBadSort.Code)
+		}
+
+		// Dir inválido deve retornar 400
+		reqBadDir := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?dir=diagonal", nil)
+		wBadDir := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wBadDir, reqBadDir)
+		if wBadDir.Code != http.StatusBadRequest {
+			t.Errorf("dir inválido: esperado 400, obtido %d", wBadDir.Code)
+		}
+	})
+
+	t.Run("paginação e limites", func(t *testing.T) {
+		reqPage1 := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?page=1&page_size=2&sort=title&dir=asc", nil)
+		wPage1 := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wPage1, reqPage1)
+
+		var respPage1 web.APIDocumentsListResponse
+		_ = json.NewDecoder(wPage1.Body).Decode(&respPage1)
+		if len(respPage1.Data) != 2 || respPage1.Pagination.TotalPages != 2 || respPage1.Pagination.TotalItems != 4 {
+			t.Errorf("página 1 inesperada: %+v", respPage1.Pagination)
+		}
+
+		reqPage2 := httptest.NewRequest(http.MethodGet, "/api/v1/documentos?page=2&page_size=2&sort=title&dir=asc", nil)
+		wPage2 := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wPage2, reqPage2)
+
+		var respPage2 web.APIDocumentsListResponse
+		_ = json.NewDecoder(wPage2.Body).Decode(&respPage2)
+		if len(respPage2.Data) != 2 || respPage2.Pagination.Page != 2 {
+			t.Errorf("página 2 inesperada: %+v", respPage2.Pagination)
+		}
+
+		// Parâmetros inválidos de paginação
+		badCases := []string{
+			"?page=0",
+			"?page=-1",
+			"?page=9999999",
+			"?page=abc",
+			"?page_size=0",
+			"?page_size=100",
+			"?page_size=xyz",
+		}
+		for _, query := range badCases {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos"+query, nil)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("query %q: esperado 400 Bad Request, obtido %d", query, w.Code)
+			}
+		}
+	})
+}
+
+func TestAPIV1DocumentDetail(t *testing.T) {
+	srv, _ := setupAPITestServer(t)
+
+	t.Run("detalhe de documento público ativo com sequência e histórico", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-1", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d (body: %s)", w.Code, w.Body.String())
+		}
+
+		if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			t.Errorf("Content-Type: esperado application/json, obtido %q", ct)
+		}
+		if cc := w.Header().Get("Cache-Control"); cc != "no-cache, no-store, must-revalidate" {
+			t.Errorf("Cache-Control: esperado 'no-cache, no-store, must-revalidate', obtido %q", cc)
+		}
+
+		var resp web.APIDocumentDetailResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		doc := resp.Data
+		if doc.ID != "src-1" {
+			t.Errorf("id: esperado 'src-1', obtido %q", doc.ID)
+		}
+		if doc.Title != "Folha de S.Paulo" {
+			t.Errorf("title: esperado 'Folha de S.Paulo', obtido %q", doc.Title)
+		}
+		if doc.CanonicalURL != "https://folha.com.br/artigo1" {
+			t.Errorf("canonical_url: esperado 'https://folha.com.br/artigo1', obtido %q", doc.CanonicalURL)
+		}
+		if doc.SourceType != "article" {
+			t.Errorf("source_type: esperado 'article', obtido %q", doc.SourceType)
+		}
+		if doc.SourceAccessStatus != "reachable" {
+			t.Errorf("source_access_status: esperado 'reachable', obtido %q", doc.SourceAccessStatus)
+		}
+
+		// Sequência contextual: es-1 (Alice), es-3 (Bob), es-6 (Eduardo)
+		if len(doc.Sequence) != 3 {
+			t.Fatalf("sequência: esperado 3 itens, obtido %d", len(doc.Sequence))
+		}
+
+		// Valida normalização de localizadores na sequência
+		foundLocPág2 := false
+		foundLocPág10 := false
+		foundLocFl12 := false
+		for _, item := range doc.Sequence {
+			if item.Locator == "Pág. 2" {
+				foundLocPág2 = true
+			}
+			if item.Locator == "Pág. 10" {
+				foundLocPág10 = true
+			}
+			if item.Locator == "Fl. 12" {
+				foundLocFl12 = true
+			}
+			if item.SubjectEntityName == "" || item.SubjectEntitySlug == "" {
+				t.Errorf("sujeito vazio no item de sequência: %+v", item)
+			}
+		}
+		if !foundLocPág2 || !foundLocPág10 || !foundLocFl12 {
+			t.Errorf("localizadores normalizados não encontrados como esperado (pág2=%v, pág10=%v, fl12=%v)", foundLocPág2, foundLocPág10, foundLocFl12)
+		}
+
+		// Histórico editorial
+		if len(doc.EditorialHistory) == 0 {
+			t.Errorf("histórico editorial esperado não vazio para src-1")
+		}
+	})
+
+	t.Run("documento oficial primário com claim de contexto (src-3-police)", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-3-police", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentDetailResponse
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		if resp.Data.SourceType != "police_report" {
+			t.Errorf("source_type: esperado 'police_report', obtido %q", resp.Data.SourceType)
+		}
+		if len(resp.Data.Sequence) != 1 {
+			t.Fatalf("sequência: esperado 1 item, obtido %d", len(resp.Data.Sequence))
+		}
+		if resp.Data.Sequence[0].MetricEligible {
+			t.Errorf("metric_eligible: esperado false para claim de contexto, obtido true")
+		}
+	})
+
+	t.Run("sanitização negativa de URL com fragmento e localizador inseguro no detalhe", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-4-insecure", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d (body: %s)", w.Code, w.Body.String())
+		}
+
+		var resp web.APIDocumentDetailResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		// URL deve ter o fragmento/token sanitizado
+		if resp.Data.CanonicalURL != "https://blog.com/insecure" {
+			t.Errorf("canonical_url: esperado 'https://blog.com/insecure', obtido %q", resp.Data.CanonicalURL)
+		}
+		if strings.Contains(resp.Data.CanonicalURL, "#") || strings.Contains(resp.Data.CanonicalURL, "token_fragmento_persistido_xyz") {
+			t.Errorf("canonical_url vazou fragmento/token: %q", resp.Data.CanonicalURL)
+		}
+
+		// Na sequência, o localizador malicioso deve ter sido limpo para string vazia
+		if len(resp.Data.Sequence) == 0 {
+			t.Fatalf("sequência esperada não vazia para src-4-insecure")
+		}
+		for _, seq := range resp.Data.Sequence {
+			if seq.Locator != "" {
+				t.Errorf("localizador malicioso na sequência não foi limpo: obtido %q", seq.Locator)
+			}
+		}
+	})
+
+	t.Run("404 neutro para inexistente, quarentena exclusiva ou suporte rejeitado", func(t *testing.T) {
+		ids := []string{
+			"src-inexistente-xyz",
+			"src-quar-exclusiva",
+			"src-rej-exclusiva",
+		}
+
+		for _, id := range ids {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/"+id, nil)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusNotFound {
+				t.Errorf("id %s: esperado status 404, obtido %d", id, w.Code)
+			}
+
+			var errResp web.APIErrorResponse
+			if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+				t.Fatalf("falha ao decodificar erro: %v", err)
+			}
+			if errResp.Error.Code != "not_found" {
+				t.Errorf("id %s: code esperado 'not_found', obtido %q", id, errResp.Error.Code)
+			}
+			if errResp.Error.Message != "Documento público não encontrado." {
+				t.Errorf("id %s: mensagem esperada 'Documento público não encontrado.', obtido %q", id, errResp.Error.Message)
+			}
+		}
+	})
+
+	t.Run("métodos não-GET em /api/v1/documentos/{id} recebem 405 Method Not Allowed", func(t *testing.T) {
+		methods := []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
+		for _, method := range methods {
+			req := httptest.NewRequest(method, "/api/v1/documentos/src-1", nil)
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Errorf("método %s em /api/v1/documentos/src-1: esperado 405, obtido %d", method, w.Code)
+			}
+		}
+	})
+}
+
+func TestAPIV1DocumentImmediateReflectionAfterModeration(t *testing.T) {
+	srv, db := setupAPITestServer(t)
+	ctx := context.Background()
+
+	// 1. Rejeição de clm-1 remove src-2 imediatamente da API pública
+	t.Run("rejeição de claim desativa documento exclusivo e reflete imediatamente", func(t *testing.T) {
+		modSvc := moderation.NewService(db)
+
+		queries := sqlc.New(db)
+		clm, err := queries.GetClaimByID(ctx, "clm-1")
+		if err != nil {
+			t.Fatalf("falha ao obter claim: %v", err)
+		}
+
+		_, err = modSvc.ModerateClaim(ctx, moderation.ModerateClaimParams{
+			ClaimID:           "clm-1",
+			Action:            domain.ModerationActionReject,
+			Reason:            "Desaprovado em teste de API de documentos",
+			Actor:             "admin_tester",
+			ExpectedUpdatedAt: clm.UpdatedAt,
+		})
+		if err != nil {
+			t.Fatalf("falha ao moderar claim: %v", err)
+		}
+
+		// Imediatamente: GET /api/v1/documentos/src-2 deve retornar 404 (src-2 só era usada em clm-1)
+		reqDetail := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-2", nil)
+		wDetail := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wDetail, reqDetail)
+		if wDetail.Code != http.StatusNotFound {
+			t.Errorf("invalidação imediata: esperado 404 após rejeição de claim, obtido %d", wDetail.Code)
+		}
+
+		// Imediatamente: GET /api/v1/documentos não deve conter src-2
+		reqList := httptest.NewRequest(http.MethodGet, "/api/v1/documentos", nil)
+		wList := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wList, reqList)
+
+		var listResp web.APIDocumentsListResponse
+		_ = json.NewDecoder(wList.Body).Decode(&listResp)
+		for _, item := range listResp.Data {
+			if item.ID == "src-2" {
+				t.Errorf("invalidação imediata: src-2 ainda consta na listagem após rejeição de claim")
+			}
+		}
+	})
+
+	// 2. Rejeição do único evidence_source de src-3-police (es-7)
+	t.Run("desativação de evidence_source remove documento da API pública imediatamente", func(t *testing.T) {
+		modSvc := moderation.NewService(db)
+
+		queries := sqlc.New(db)
+		es, err := queries.GetAdminEvidenceSourceByID(ctx, "es-7")
+		if err != nil {
+			t.Fatalf("falha ao obter evidence_source: %v", err)
+		}
+
+		_, err = modSvc.ModerateEvidenceSource(ctx, moderation.ModerateEvidenceSourceParams{
+			EvidenceSourceID:  "es-7",
+			Action:            domain.ModerationActionReject,
+			Reason:            "Trecho documental de laudo desaprovado",
+			Actor:             "admin_tester",
+			ExpectedUpdatedAt: es.EvidenceSourceUpdatedAt,
+		})
+		if err != nil {
+			t.Fatalf("falha ao moderar evidence_source: %v", err)
+		}
+
+		// Imediatamente: GET /api/v1/documentos/src-3-police deve retornar 404
+		reqDoc := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-3-police", nil)
+		wDoc := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(wDoc, reqDoc)
+		if wDoc.Code != http.StatusNotFound {
+			t.Errorf("invalidação imediata: esperado 404 para src-3-police após desativação de suporte, obtido %d", wDoc.Code)
+		}
+	})
 }

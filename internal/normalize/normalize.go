@@ -76,6 +76,7 @@ func DisambiguateSlug(baseSlug string, index int) string {
 // CanonicalURL aplica normalização conservadora de URLs conforme ADR-006 e ADR-013:
 // - aceita somente esquemas 'http' e 'https';
 // - exige hostname válido e não vazio;
+// - rejeita credenciais embutidas (userinfo);
 // - hostname e esquema convertidos para minúsculas;
 // - remove fragmento (#...);
 // - remove portas padrão (:80 para http, :443 para https);
@@ -93,6 +94,10 @@ func CanonicalURL(raw string) (string, error) {
 		return "", fmt.Errorf("normalize: falha ao analisar url: %w", err)
 	}
 
+	if u.User != nil {
+		return "", fmt.Errorf("normalize: credenciais embutidas na url não são permitidas")
+	}
+
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return "", fmt.Errorf("normalize: esquema inválido %q: permitido apenas http ou https", u.Scheme)
@@ -100,7 +105,7 @@ func CanonicalURL(raw string) (string, error) {
 	u.Scheme = scheme
 
 	host := strings.ToLower(u.Host)
-	if host == "" {
+	if host == "" || u.Hostname() == "" {
 		return "", fmt.Errorf("normalize: hostname ausente")
 	}
 
@@ -121,6 +126,17 @@ func CanonicalURL(raw string) (string, error) {
 	}
 
 	return u.String(), nil
+}
+
+// SafeURL normaliza e sanitiza uma URL para serialização e exibição pública segura.
+// Exige esquema http ou https, hostname válido, ausência de credenciais (userinfo) e remove fragmentos (#...).
+// Em caso de URL inválida, vazia ou insegura, retorna string vazia "".
+func SafeURL(raw string) string {
+	cURL, err := CanonicalURL(raw)
+	if err != nil {
+		return ""
+	}
+	return cURL
 }
 
 // FingerprintV1 calcula o hash determinístico SHA-256 da versão 1 para um candidato de monitoramento.

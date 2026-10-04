@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/raphaieu/vorcarozap/internal/domain"
 	"github.com/raphaieu/vorcarozap/internal/normalize"
 	"github.com/raphaieu/vorcarozap/internal/store"
 )
@@ -140,6 +141,78 @@ type APIEntityDetailResponse struct {
 }
 
 // =============================================================================
+// DTOs de Documentos e Fontes da API Pública v1 (VZ-031)
+// =============================================================================
+
+// APIDocumentItemDTO representa um documento público na listagem da API v1.
+type APIDocumentItemDTO struct {
+	ID                    string `json:"id"`
+	Title                 string `json:"title"`
+	PublisherOrAuthor     string `json:"publisher_or_author"`
+	CanonicalURL          string `json:"canonical_url"`
+	PublishedAt           string `json:"published_at,omitempty"`
+	AccessedAt            string `json:"accessed_at,omitempty"`
+	SourceType            string `json:"source_type"`
+	SourceAccessStatus    string `json:"source_access_status"`
+	SourceAccessCheckedAt string `json:"source_access_checked_at,omitempty"`
+	CitationsCount        int64  `json:"citations_count"`
+	EntitiesCount         int64  `json:"entities_count"`
+	HighestGrade          string `json:"highest_grade"`
+	LastPublicUpdatedAt   string `json:"last_public_updated_at"`
+	FirstPublicExcerpt    string `json:"first_public_excerpt,omitempty"`
+	FirstPublicLocator    string `json:"first_public_locator,omitempty"`
+}
+
+// APIDocumentsListResponse representa o contrato de resposta de listagem de documentos da API v1.
+type APIDocumentsListResponse struct {
+	Data       []APIDocumentItemDTO `json:"data"`
+	Pagination APIPaginationDTO     `json:"pagination"`
+}
+
+// APIDocumentSequenceItemDTO representa um trecho/uso de evidência na sequência contextual de um documento público.
+type APIDocumentSequenceItemDTO struct {
+	ID                  string `json:"id"`
+	Excerpt             string `json:"excerpt"`
+	Locator             string `json:"locator"`
+	Role                string `json:"role"`
+	ClaimID             string `json:"claim_id"`
+	ClaimProposition    string `json:"claim_proposition"`
+	ClaimGrade          string `json:"claim_grade"`
+	ClaimDisposition    string `json:"claim_disposition"`
+	MetricEligible      bool   `json:"metric_eligible"`
+	RelationshipType    string `json:"relationship_type,omitempty"`
+	RelationshipSummary string `json:"relationship_summary,omitempty"`
+	ContextLimits       string `json:"context_limits,omitempty"`
+	SubjectEntityName   string `json:"subject_entity_name"`
+	SubjectEntitySlug   string `json:"subject_entity_slug"`
+	TargetEntityName    string `json:"target_entity_name,omitempty"`
+	CaseName            string `json:"case_name,omitempty"`
+}
+
+// APIDocumentDetailDTO representa o detalhe completo de um documento público.
+type APIDocumentDetailDTO struct {
+	ID                    string                       `json:"id"`
+	Title                 string                       `json:"title"`
+	PublisherOrAuthor     string                       `json:"publisher_or_author"`
+	CanonicalURL          string                       `json:"canonical_url"`
+	PublishedAt           string                       `json:"published_at,omitempty"`
+	AccessedAt            string                       `json:"accessed_at,omitempty"`
+	SourceType            string                       `json:"source_type"`
+	SourceAccessStatus    string                       `json:"source_access_status"`
+	SourceAccessCheckedAt string                       `json:"source_access_checked_at,omitempty"`
+	HTTPStatus            int                          `json:"http_status,omitempty"`
+	NormalizedErrorCode   string                       `json:"normalized_error_code,omitempty"`
+	UpdatedAt             string                       `json:"updated_at"`
+	Sequence              []APIDocumentSequenceItemDTO `json:"sequence"`
+	EditorialHistory      []APIEditorialEventDTO       `json:"editorial_history,omitempty"`
+}
+
+// APIDocumentDetailResponse representa o contrato de resposta de detalhe de documento da API v1.
+type APIDocumentDetailResponse struct {
+	Data APIDocumentDetailDTO `json:"data"`
+}
+
+// =============================================================================
 // Roteador e Handlers da API Pública v1
 // =============================================================================
 
@@ -162,6 +235,8 @@ func newAPIV1Router(handlers *Handlers) http.Handler {
 
 	r.Get("/pessoas", handlers.HandleAPIV1Entities)
 	r.Get("/pessoas/{slug}", handlers.HandleAPIV1EntityDetail)
+	r.Get("/documentos", handlers.HandleAPIV1Documents)
+	r.Get("/documentos/{id}", handlers.HandleAPIV1DocumentDetail)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusNotFound, "not_found", "Endpoint não encontrado na API v1.")
@@ -350,16 +425,13 @@ func (h *Handlers) HandleAPIV1EntityDetail(w http.ResponseWriter, r *http.Reques
 			if s.AccessedAt.Valid {
 				accAt = s.AccessedAt.String
 			}
-			loc := strings.TrimSpace(s.Locator)
-			if formattedLoc, err := normalize.Locator(loc); err == nil && formattedLoc != "" {
-				loc = formattedLoc
-			}
+			loc := normalize.SafeLocator(s.Locator)
 
 			sourcesDTO = append(sourcesDTO, APISourceDTO{
 				ID:                 s.SourceID,
 				Title:              strings.TrimSpace(s.Title),
 				PublisherOrAuthor:  strings.TrimSpace(s.PublisherOrAuthor),
-				CanonicalURL:       s.CanonicalUrl,
+				CanonicalURL:       normalize.SafeURL(s.CanonicalUrl),
 				PublishedAt:        pubAt,
 				AccessedAt:         accAt,
 				SourceType:         s.SourceType,
@@ -377,7 +449,7 @@ func (h *Handlers) HandleAPIV1EntityDetail(w http.ResponseWriter, r *http.Reques
 				StatementType: string(stmt.StatementType),
 				Title:         stmt.Title,
 				Content:       stmt.Content,
-				SourceURL:     stmt.SourceURL,
+				SourceURL:     normalize.SafeURL(stmt.SourceURL),
 				CreatedAt:     stmt.CreatedAt,
 			})
 		}
@@ -424,7 +496,7 @@ func (h *Handlers) HandleAPIV1EntityDetail(w http.ResponseWriter, r *http.Reques
 			ClaimGrade:     string(ev.ClaimGrade),
 			SourceID:       ev.SourceID,
 			SourceTitle:    ev.SourceTitle,
-			Locator:        ev.Locator,
+			Locator:        normalize.SafeLocator(ev.Locator),
 		})
 	}
 
@@ -450,5 +522,230 @@ func (h *Handlers) HandleAPIV1EntityDetail(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		slog.Error("falha ao serializar detalhe da entidade na API v1", "slug", slug, "error", err)
+	}
+}
+
+// HandleAPIV1Documents atende GET /api/v1/documentos com listagem paginada, busca e filtros.
+func (h *Handlers) HandleAPIV1Documents(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	sourceTypeParam := strings.TrimSpace(r.URL.Query().Get("source_type"))
+	if sourceTypeParam != "" {
+		if !domain.SourceType(sourceTypeParam).IsValid() {
+			writeAPIError(w, http.StatusBadRequest, "bad_request", "Parâmetro 'source_type' inválido. Valores permitidos: article, official_statement, court_document, police_report, interview, social_media.")
+			return
+		}
+	}
+
+	accessStatusParam := strings.TrimSpace(r.URL.Query().Get("access_status"))
+	if accessStatusParam != "" {
+		if !domain.SourceAccessStatus(accessStatusParam).IsValid() {
+			writeAPIError(w, http.StatusBadRequest, "bad_request", "Parâmetro 'access_status' inválido. Valores permitidos: reachable, unreachable, cited_by_provider, not_checked.")
+			return
+		}
+	}
+
+	sortParam := strings.TrimSpace(r.URL.Query().Get("sort"))
+	if sortParam == "" {
+		sortParam = strings.TrimSpace(r.URL.Query().Get("order_by"))
+	}
+	if sortParam != "" {
+		sortLower := strings.ToLower(sortParam)
+		if sortLower != store.OrderFieldTitle && sortLower != store.OrderFieldPublisher && sortLower != store.OrderFieldUpdated && sortLower != store.OrderFieldCitations {
+			writeAPIError(w, http.StatusBadRequest, "bad_request", "Parâmetro 'sort' inválido. Valores permitidos: title, publisher, updated, citations.")
+			return
+		}
+		sortParam = sortLower
+	}
+
+	dirParam := strings.TrimSpace(r.URL.Query().Get("dir"))
+	if dirParam == "" {
+		dirParam = strings.TrimSpace(r.URL.Query().Get("order_dir"))
+	}
+	if dirParam != "" {
+		dirLower := strings.ToLower(dirParam)
+		if dirLower != store.OrderDirAsc && dirLower != store.OrderDirDesc {
+			writeAPIError(w, http.StatusBadRequest, "bad_request", "Parâmetro 'dir' inválido. Valores permitidos: asc, desc.")
+			return
+		}
+		dirParam = dirLower
+	}
+
+	pageParam := strings.TrimSpace(r.URL.Query().Get("page"))
+	page := 1
+	if pageParam != "" {
+		val, err := strconv.Atoi(pageParam)
+		if err != nil || val < 1 || val > store.MaxPage {
+			writeAPIError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("Parâmetro 'page' inválido. O valor deve ser um número inteiro entre 1 e %d.", store.MaxPage))
+			return
+		}
+		page = val
+	}
+
+	pageSizeParam := strings.TrimSpace(r.URL.Query().Get("page_size"))
+	pageSize := store.DefaultPageSize
+	if pageSizeParam != "" {
+		val, err := strconv.Atoi(pageSizeParam)
+		if err != nil || val < 1 || val > store.MaxPageSize {
+			writeAPIError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("Parâmetro 'page_size' inválido. O valor deve ser um número inteiro entre 1 e %d.", store.MaxPageSize))
+			return
+		}
+		pageSize = val
+	}
+
+	filter := store.PublicDocumentFilter{
+		Search:       q,
+		SourceType:   sourceTypeParam,
+		AccessStatus: accessStatusParam,
+		OrderBy:      sortParam,
+		OrderDir:     dirParam,
+		Page:         page,
+		PageSize:     pageSize,
+	}
+
+	res, err := store.ListPublicDocuments(r.Context(), h.db, filter)
+	if err != nil {
+		slog.Error("falha ao listar documentos públicos para API v1", "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "Erro interno ao consultar documentos públicos.")
+		return
+	}
+
+	items := make([]APIDocumentItemDTO, len(res.Documents))
+	for i, doc := range res.Documents {
+		pubAt := ""
+		if doc.PublishedAt.Valid {
+			pubAt = doc.PublishedAt.String
+		}
+		accAt := ""
+		if doc.AccessedAt.Valid {
+			accAt = doc.AccessedAt.String
+		}
+		checkedAt := ""
+		if doc.SourceAccessCheckedAt.Valid {
+			checkedAt = doc.SourceAccessCheckedAt.String
+		}
+		loc := normalize.SafeLocator(doc.FirstPublicLocator)
+
+		items[i] = APIDocumentItemDTO{
+			ID:                    doc.ID,
+			Title:                 strings.TrimSpace(doc.Title),
+			PublisherOrAuthor:     strings.TrimSpace(doc.PublisherOrAuthor),
+			CanonicalURL:          normalize.SafeURL(doc.CanonicalUrl),
+			PublishedAt:           pubAt,
+			AccessedAt:            accAt,
+			SourceType:            doc.SourceType,
+			SourceAccessStatus:    doc.SourceAccessStatus,
+			SourceAccessCheckedAt: checkedAt,
+			CitationsCount:        doc.CitationsCount,
+			EntitiesCount:         doc.EntitiesCount,
+			HighestGrade:          doc.HighestGrade,
+			LastPublicUpdatedAt:   doc.LastPublicUpdatedAt,
+			FirstPublicExcerpt:    strings.TrimSpace(doc.FirstPublicExcerpt),
+			FirstPublicLocator:    loc,
+		}
+	}
+
+	resp := APIDocumentsListResponse{
+		Data: items,
+		Pagination: APIPaginationDTO{
+			Page:       res.Page,
+			PageSize:   res.PageSize,
+			TotalItems: res.TotalCount,
+			TotalPages: res.TotalPages,
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("falha ao serializar resposta de documentos na API v1", "error", err)
+	}
+}
+
+// HandleAPIV1DocumentDetail atende GET /api/v1/documentos/{id} expondo o detalhe completo e a sequência de um documento público.
+func (h *Handlers) HandleAPIV1DocumentDetail(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		writeAPIError(w, http.StatusNotFound, "not_found", "Documento público não encontrado.")
+		return
+	}
+
+	doc, err := store.GetPublicDocumentDetail(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "Documento público não encontrado.")
+			return
+		}
+		slog.Error("falha ao carregar detalhe do documento para API v1", "id", id, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "Erro interno ao carregar dados do documento.")
+		return
+	}
+
+	seqDTO := make([]APIDocumentSequenceItemDTO, 0, len(doc.Sequence))
+	for _, item := range doc.Sequence {
+		loc := normalize.SafeLocator(item.Locator)
+
+		seqDTO = append(seqDTO, APIDocumentSequenceItemDTO{
+			ID:                  item.ID,
+			Excerpt:             strings.TrimSpace(item.Excerpt),
+			Locator:             loc,
+			Role:                string(item.Role),
+			ClaimID:             item.ClaimID,
+			ClaimProposition:    item.ClaimProposition,
+			ClaimGrade:          string(item.ClaimGrade),
+			ClaimDisposition:    string(item.ClaimDisposition),
+			MetricEligible:      item.ClaimMetricEligible,
+			RelationshipType:    item.RelationshipType,
+			RelationshipSummary: item.RelationshipSummary,
+			ContextLimits:       item.ContextLimits,
+			SubjectEntityName:   item.SubjectEntityName,
+			SubjectEntitySlug:   item.SubjectEntitySlug,
+			TargetEntityName:    item.TargetEntityName,
+			CaseName:            item.CaseName,
+		})
+	}
+
+	historyDTO := make([]APIEditorialEventDTO, 0, len(doc.EditorialHistory))
+	for _, ev := range doc.EditorialHistory {
+		historyDTO = append(historyDTO, APIEditorialEventDTO{
+			ID:             ev.ID,
+			CreatedAt:      ev.CreatedAt,
+			Action:         string(ev.Action),
+			TargetType:     string(ev.TargetType),
+			Summary:        ev.Summary,
+			IsTargetPublic: ev.IsTargetPublic,
+			ClaimID:        ev.ClaimID,
+			ClaimGrade:     string(ev.ClaimGrade),
+			SourceID:       ev.SourceID,
+			SourceTitle:    ev.SourceTitle,
+			Locator:        normalize.SafeLocator(ev.Locator),
+		})
+	}
+
+	resp := APIDocumentDetailResponse{
+		Data: APIDocumentDetailDTO{
+			ID:                    doc.ID,
+			Title:                 strings.TrimSpace(doc.Title),
+			PublisherOrAuthor:     strings.TrimSpace(doc.PublisherOrAuthor),
+			CanonicalURL:          normalize.SafeURL(doc.CanonicalURL),
+			PublishedAt:           doc.PublishedAt,
+			AccessedAt:            doc.AccessedAt,
+			SourceType:            string(doc.SourceType),
+			SourceAccessStatus:    string(doc.SourceAccessStatus),
+			SourceAccessCheckedAt: doc.SourceAccessCheckedAt,
+			HTTPStatus:            doc.HTTPStatus,
+			NormalizedErrorCode:   doc.NormalizedErrorCode,
+			UpdatedAt:             doc.UpdatedAt,
+			Sequence:              seqDTO,
+			EditorialHistory:      historyDTO,
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("falha ao serializar detalhe do documento na API v1", "id", id, "error", err)
 	}
 }

@@ -173,3 +173,121 @@ Retorna o perfil documental completo da entidade pública identificada pelo seu 
   }
 }
 ```
+
+---
+
+### 3. Listagem de Documentos Públicos
+
+```http
+GET /api/v1/documentos
+```
+
+Retorna a lista paginada de documentos e fontes documentais públicas ativas no acervo, com métricas consolidadas de citações ativas, primeiro trecho contextualizado e localizador público.
+
+#### Parâmetros de Consulta (Query Parameters)
+
+| Parâmetro | Tipo | Padrão | Descrição |
+| :--- | :--- | :--- | :--- |
+| `q` | `string` | `""` | Busca textual por título do documento ou veículo/autor. |
+| `source_type` | `string` | `""` | Filtro por tipo de fonte (`article`, `official_statement`, `court_document`, `police_report`, `interview`, `social_media`). |
+| `access_status` | `string` | `""` | Filtro por status de acessibilidade técnica (`reachable`, `unreachable`, `cited_by_provider`, `not_checked`). |
+| `sort` | `string` | `title` | Campo de ordenação (`title`, `publisher`, `updated`, `citations`). |
+| `dir` | `string` | `asc` (ou `desc`) | Direção da ordenação (`asc`, `desc`). |
+| `page` | `integer` | `1` | Número da página solicitada (mínimo: `1`, máximo: `10000`). |
+| `page_size` | `integer` | `15` | Quantidade de itens por página (mínimo: `1`, máximo: `50`). |
+
+#### Exemplo de Resposta (`200 OK`)
+
+```json
+{
+  "data": [
+    {
+      "id": "src-1",
+      "title": "Registro Societário da Junta Comercial",
+      "publisher_or_author": "JUCESP",
+      "canonical_url": "https://exemplo.gov.br/registro",
+      "published_at": "2026-01-15T00:00:00Z",
+      "accessed_at": "2026-09-03T12:00:00Z",
+      "source_type": "court_document",
+      "source_access_status": "reachable",
+      "source_access_checked_at": "2026-09-03T12:05:00Z",
+      "citations_count": 2,
+      "entities_count": 2,
+      "highest_grade": "A",
+      "last_public_updated_at": "2026-09-03T18:00:00Z",
+      "first_public_excerpt": "Daniel Vorcaro é o titular do controle acionário direto e indireto.",
+      "first_public_locator": "Pág. 3"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 15,
+    "total_items": 18,
+    "total_pages": 2
+  }
+}
+```
+
+---
+
+### 4. Detalhe de Documento Público
+
+```http
+GET /api/v1/documentos/{id}
+```
+
+Retorna o perfil detalhado de um documento público, incluindo integridade técnica observada, sequência contextual completa de trechos vinculados a alegações públicas ativas (ordenada deterministicamente) e histórico editorial público redigido.
+
+> **Nota de Privacidade e Segurança:** Identificadores que não existem, que pertencem exclusivamente a itens restritos à quarentena ou cujos vínculos foram rejeitados retornam rigorosamente `404 Not Found` com a mesma mensagem neutra `{"error": {"code": "not_found", "message": "Documento público não encontrado."}}`, sem revelar se a fonte existe internamente no banco.
+
+#### Exemplo de Resposta (`200 OK`)
+
+```json
+{
+  "data": {
+    "id": "src-1",
+    "title": "Registro Societário da Junta Comercial",
+    "publisher_or_author": "JUCESP",
+    "canonical_url": "https://exemplo.gov.br/registro",
+    "published_at": "2026-01-15T00:00:00Z",
+    "accessed_at": "2026-09-03T12:00:00Z",
+    "source_type": "court_document",
+    "source_access_status": "reachable",
+    "source_access_checked_at": "2026-09-03T12:05:00Z",
+    "http_status": 200,
+    "updated_at": "2026-09-03T18:00:00Z",
+    "sequence": [
+      {
+        "id": "es-1",
+        "excerpt": "Daniel Vorcaro é o titular do controle acionário direto e indireto.",
+        "locator": "Pág. 3",
+        "role": "supports",
+        "claim_id": "clm-1",
+        "claim_proposition": "Controla o Banco Master e instituições coligadas",
+        "claim_grade": "A",
+        "claim_disposition": "supports_link",
+        "metric_eligible": true,
+        "relationship_type": "Controlador",
+        "relationship_summary": "Controla o Banco Master",
+        "context_limits": "Sem restrições documentais adicionais",
+        "subject_entity_name": "Daniel Vorcaro",
+        "subject_entity_slug": "daniel-vorcaro"
+      }
+    ],
+    "editorial_history": [
+      {
+        "id": "pub-doc-es-1",
+        "created_at": "2026-09-03T18:00:00Z",
+        "action": "initial_publish",
+        "target_type": "evidence_source",
+        "summary": "Trecho documental (Pág. 3) incluído e referenciado em alegação pública.",
+        "is_target_public": true,
+        "claim_id": "clm-1",
+        "claim_grade": "A",
+        "source_id": "src-1",
+        "locator": "Pág. 3"
+      }
+    ]
+  }
+}
+```
