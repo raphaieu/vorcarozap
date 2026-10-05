@@ -10,6 +10,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"github.com/raphaieu/vorcarozap/internal/normalize"
 	"github.com/raphaieu/vorcarozap/internal/store"
 	"github.com/raphaieu/vorcarozap/internal/store/sqlc"
 )
@@ -410,7 +411,7 @@ func (e *Exporter) populateSourcesSheet(f *excelize.File, rows []sqlc.ListPublic
 			SanitizeCellText(s.Excerpt),
 			SanitizeCellText(s.SourceTitle),
 			SanitizeCellText(s.SourcePublisher),
-			SanitizeCellText(s.CanonicalUrl),
+			SanitizeCellText(normalize.SafeURL(s.CanonicalUrl)),
 			SanitizeCellText(statusAcessoTexto),
 		}
 

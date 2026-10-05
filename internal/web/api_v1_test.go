@@ -1208,3 +1208,161 @@ func TestAPIV1DocumentImmediateReflectionAfterModeration(t *testing.T) {
 		}
 	})
 }
+
+func TestAPIV1_SensitiveURLOmission(t *testing.T) {
+	srv, db := setupAPITestServer(t)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO entities (id, type, name, normalized_name, slug, category, role_or_context, reach, summary, relevance, relevance_rationale)
+		VALUES ('ent-url', 'person', 'Pessoa Segura URL', 'pessoa segura url', 'pessoa-segura-url', 'Advocacia', 'Advogado', 'Nacional', 'Resumo', 4, 'Justificativa');
+
+		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary)
+		VALUES ('rel-url', 'ent-url', 'case-master', 'representacao', 'Representação legal');
+
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons)
+		VALUES ('clm-url', 'rel-url', 'Atuação documentada em processos', '', 'curated_seed', 'A', 'supports_link', 1, 'published', 'contact_confirmed', '[]');
+
+		INSERT INTO evidence (id, claim_id, summary, evidence_type)
+		VALUES ('ev-url', 'clm-url', 'Evidência comparativa de URLs', 'document');
+
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status)
+		VALUES
+			('src-tok', 'Documento com Token', 'Cartório', 'https://cartorio.com/doc.pdf?token=secret12345&sig=abcdef', 'https://cartorio.com/doc.pdf?token=secret12345&sig=abcdef', 'court_document', 'reachable'),
+			('src-leg', 'Notícia com Query Legítima', 'Portal de Notícias', 'https://portal.com/busca?q=vorcaro&page=2&id=10', 'https://portal.com/busca?q=vorcaro&page=2&id=10', 'article', 'reachable');
+
+		INSERT INTO evidence_sources (id, evidence_id, source_id, role, excerpt, locator, status)
+		VALUES
+			('es-tok', 'ev-url', 'src-tok', 'supports', 'Trecho com token privado', 'Pág. 5', 'active'),
+			('es-leg', 'ev-url', 'src-leg', 'supports', 'Trecho com query legítima', 'Pág. 10', 'active');
+
+		INSERT INTO defense_statements (id, claim_id, statement_type, title, content, source_url, status)
+		VALUES ('stmt-url', 'clm-url', 'clarification', 'Defesa Técnica', 'Manifestação formal...', 'https://defesa.com/laudo.pdf?auth_token=super_secret_token_123', 'accepted');
+	`)
+	if err != nil {
+		t.Fatalf("falha ao inserir dados de teste: %v", err)
+	}
+
+	// 1. Listagem de documentos: src-tok tem CanonicalURL vazia; src-leg tem CanonicalURL preservada
+	t.Run("listagem GET /api/v1/documentos omite URL sensível e preserva query legítima", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentsListResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		var foundTok, foundLeg *web.APIDocumentItemDTO
+		for _, d := range resp.Data {
+			if d.ID == "src-tok" {
+				item := d
+				foundTok = &item
+			}
+			if d.ID == "src-leg" {
+				item := d
+				foundLeg = &item
+			}
+		}
+
+		if foundTok == nil || foundLeg == nil {
+			t.Fatalf("documentos de teste não encontrados na listagem: tok=%v, leg=%v", foundTok, foundLeg)
+		}
+
+		if foundTok.CanonicalURL != "" {
+			t.Errorf("documento com token deveria ter canonical_url vazia na API, obtido %q", foundTok.CanonicalURL)
+		}
+
+		expectedLeg := "https://portal.com/busca?q=vorcaro&page=2&id=10"
+		if foundLeg.CanonicalURL != expectedLeg {
+			t.Errorf("documento com query legítima esperado %q, obtido %q", expectedLeg, foundLeg.CanonicalURL)
+		}
+	})
+
+	// 2. Detalhe de documento com token: GET /api/v1/documentos/src-tok
+	t.Run("detalhe GET /api/v1/documentos/src-tok omite URL sensível", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-tok", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentDetailResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		if resp.Data.CanonicalURL != "" {
+			t.Errorf("detalhe do documento com token deveria ter canonical_url vazia, obtido %q", resp.Data.CanonicalURL)
+		}
+	})
+
+	// 3. Detalhe de documento legítimo: GET /api/v1/documentos/src-leg
+	t.Run("detalhe GET /api/v1/documentos/src-leg preserva query legítima", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/documentos/src-leg", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIDocumentDetailResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		expected := "https://portal.com/busca?q=vorcaro&page=2&id=10"
+		if resp.Data.CanonicalURL != expected {
+			t.Errorf("detalhe do documento legítimo esperado %q, obtido %q", expected, resp.Data.CanonicalURL)
+		}
+	})
+
+	// 4. Detalhe de pessoa: GET /api/v1/pessoas/pessoa-segura-url
+	t.Run("detalhe GET /api/v1/pessoas/{slug} omite URLs com tokens em fontes e manifestações", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/pessoas/pessoa-segura-url", nil)
+		w := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: esperado 200, obtido %d", w.Code)
+		}
+
+		var resp web.APIEntityDetailResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("falha ao decodificar JSON: %v", err)
+		}
+
+		if len(resp.Data.Claims) == 0 {
+			t.Fatalf("nenhuma alegação encontrada para pessoa-segura-url")
+		}
+
+		claim := resp.Data.Claims[0]
+
+		// Valida fontes do claim
+		for _, s := range claim.Sources {
+			if s.ID == "src-tok" && s.CanonicalURL != "" {
+				t.Errorf("fonte src-tok no detalhe da pessoa deveria ter canonical_url vazia, obtido %q", s.CanonicalURL)
+			}
+			if s.ID == "src-leg" && s.CanonicalURL != "https://portal.com/busca?q=vorcaro&page=2&id=10" {
+				t.Errorf("fonte src-leg no detalhe da pessoa deveria ter canonical_url preservada, obtido %q", s.CanonicalURL)
+			}
+		}
+
+		// Valida manifestações da defesa
+		if len(claim.DefenseStatements) == 0 {
+			t.Fatalf("nenhuma manifestação encontrada no claim")
+		}
+		stmt := claim.DefenseStatements[0]
+		if stmt.SourceURL != "" {
+			t.Errorf("manifestação com auth_token deveria ter source_url vazia, obtido %q", stmt.SourceURL)
+		}
+	})
+}

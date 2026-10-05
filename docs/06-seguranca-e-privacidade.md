@@ -15,6 +15,8 @@ O MVP possui painel e OpenRouter, portanto aplica controles pequenos e proporcio
 - conteúdo web tratado como dado, não instrução;
 - nenhum HTML da LLM renderizado diretamente;
 - telefones, documentos e endereços desnecessários removidos;
+- sanitização estrita de URLs externas (`normalize.SafeURL`), detectando parâmetros de consulta sensíveis (tokens, chaves de API, senhas, assinaturas e URLs assinadas de AWS/GCP/Azure) de forma insensível a maiúsculas/minúsculas e omitindo o link externo nas superfícies públicas (SSR, API JSON, XLSX) e no painel administrativo ([ADR-031](adr/ADR-031-prevencao-de-exposicao-de-credenciais-em-urls-externas.md));
+- mascaramento incondicional de credenciais e parâmetros de consulta em URLs em logs estruturados e telemetria;
 - rejeição de claim retira a alegação imediatamente da página pública, métricas e exportação, marcando candidatos canônicos em `monitoring_candidates` para manter o bloqueio por fingerprint; rejeição de `evidence_source` (VZ-021) afeta apenas aquele uso e pode colocar o claim sem suporte em quarentena;
 - canal público de correção.
 

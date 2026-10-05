@@ -11,6 +11,7 @@ A API adota a mesma **fronteira pública canônica** da interface web (SSR): ape
 - **Formato**: `application/json; charset=utf-8`
 - **Cache**: `Cache-Control: no-cache, no-store, must-revalidate` (dados sempre refletem em tempo real o estado comitado no banco de dados SQLite WAL)
 - **Métodos**: Exclusivamente `GET`. Requisições com outros métodos HTTP retornam `405 Method Not Allowed`.
+- **Sanitização e Omissão de URLs Externas (`canonical_url`, `source_url`)**: URLs externas apresentadas na API passam por sanitização estrita (`normalize.SafeURL`). Se a URL contiver parâmetros de consulta com credenciais, senhas, tokens de sessão, chaves de API, assinaturas ou URLs assinadas de nuvem (ex.: `?token=...`, `?auth_token=...`, `?api_key=...`, `?X-Amz-Signature=...`, `?sig=...`), o campo é retornado vazio (`""` ou omitido via `omitempty`). Parâmetros legítimos de busca, paginação e identificação de notícias (`?id=123`, `?q=...`, `?page=2`) são preservados ([ADR-031](adr/ADR-031-prevencao-de-exposicao-de-credenciais-em-urls-externas.md)).
 
 ---
 

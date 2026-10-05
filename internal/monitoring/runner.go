@@ -331,7 +331,7 @@ func (r *Runner) Run(ctx context.Context, query string) (*RunSummary, error) {
 		canonicalURL, urlErr := normalize.CanonicalURL(rawCand.SourceURL)
 		if urlErr != nil {
 			return r.failRun(runID, cleanQuery, win, createdNow,
-				fmt.Errorf("monitoring: candidato[%d] com URL inválida %q: %w", i, rawCand.SourceURL, urlErr),
+				fmt.Errorf("monitoring: candidato[%d] com URL inválida: %w", i, urlErr),
 				"Falha na normalização da URL da fonte")
 		}
 

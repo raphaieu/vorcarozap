@@ -91,7 +91,7 @@ func CanonicalURL(raw string) (string, error) {
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("normalize: falha ao analisar url: %w", err)
+		return "", fmt.Errorf("normalize: falha ao analisar url")
 	}
 
 	if u.User != nil {
@@ -128,14 +128,174 @@ func CanonicalURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
-// SafeURL normaliza e sanitiza uma URL para serialização e exibição pública segura.
-// Exige esquema http ou https, hostname válido, ausência de credenciais (userinfo) e remove fragmentos (#...).
-// Em caso de URL inválida, vazia ou insegura, retorna string vazia "".
+var sensitiveQueryParams = map[string]struct{}{
+	// Tokens & Auth
+	"token":         {},
+	"access_token":  {},
+	"accesstoken":   {},
+	"auth_token":    {},
+	"authtoken":     {},
+	"api_token":     {},
+	"apitoken":      {},
+	"id_token":      {},
+	"idtoken":       {},
+	"bearer":        {},
+	"bearer_token":  {},
+	"bearertoken":   {},
+	"refresh_token": {},
+	"refreshtoken":  {},
+	"session":       {},
+	"session_token": {},
+	"sessiontoken":  {},
+	"session_id":    {},
+	"sessionid":     {},
+	"jwt":           {},
+	"auth":          {},
+	"authorization": {},
+	"code":          {},
+	"assertion":     {},
+	"passcode":      {},
+	"otp":           {},
+	"cf_token":      {},
+	"cftoken":       {},
+	"token_hash":    {},
+	"secure_token":  {},
+	// Passwords & Secrets
+	"password":      {},
+	"pass":          {},
+	"passwd":        {},
+	"pwd":           {},
+	"secret":        {},
+	"api_secret":    {},
+	"apisecret":     {},
+	"client_secret": {},
+	"clientsecret":  {},
+	"shared_secret": {},
+	"sharedsecret":  {},
+	"credential":    {},
+	"credentials":   {},
+	// Keys
+	"key":         {},
+	"apikey":      {},
+	"api_key":     {},
+	"access_key":  {},
+	"accesskey":   {},
+	"auth_key":    {},
+	"authkey":     {},
+	"secret_key":  {},
+	"secretkey":   {},
+	"app_key":     {},
+	"appkey":      {},
+	"private_key": {},
+	"privatekey":  {},
+	// Signatures & Signed URLs (AWS S3, GCP Storage, Azure SAS, Cloudflare)
+	"signature":             {},
+	"sig":                   {},
+	"sign":                  {},
+	"signed_url":            {},
+	"hmac":                  {},
+	"sas_token":             {},
+	"sastoken":              {},
+	"se":                    {},
+	"sp":                    {},
+	"sv":                    {},
+	"sr":                    {},
+	"skoid":                 {},
+	"sktid":                 {},
+	"x_amz_signature":       {},
+	"x_amz_credential":      {},
+	"x_amz_security_token":  {},
+	"x_amz_algorithm":       {},
+	"x_amz_date":            {},
+	"x_goog_signature":      {},
+	"x_goog_credential":     {},
+	"x_goog_security_token": {},
+	"x_goog_algorithm":      {},
+	"x_goog_date":           {},
+}
+
+// IsSensitiveQueryParamName avalia se um nome de parâmetro de consulta é sensível
+// (token, senha, segredo, chave de API, assinatura criptográfica ou credencial de URL assinada).
+// A comparação é insensível a maiúsculas/minúsculas e padroniza separadores ('-' e '_').
+func IsSensitiveQueryParamName(paramName string) bool {
+	k := strings.ToLower(strings.TrimSpace(paramName))
+	if k == "" {
+		return false
+	}
+	kClean := strings.ReplaceAll(k, "-", "_")
+
+	if _, found := sensitiveQueryParams[kClean]; found {
+		return true
+	}
+	if _, found := sensitiveQueryParams[k]; found {
+		return true
+	}
+
+	// Prefixos conhecidos de URLs assinadas de provedores de nuvem
+	if strings.HasPrefix(kClean, "x_amz_") || strings.HasPrefix(kClean, "x_goog_") {
+		return true
+	}
+
+	// Sufixos comuns de parâmetros sensíveis
+	if strings.HasSuffix(kClean, "_token") ||
+		strings.HasSuffix(kClean, "_secret") ||
+		strings.HasSuffix(kClean, "_password") ||
+		strings.HasSuffix(kClean, "_passwd") ||
+		strings.HasSuffix(kClean, "_signature") ||
+		strings.HasSuffix(kClean, "_sig") ||
+		strings.HasSuffix(kClean, "_apikey") ||
+		strings.HasSuffix(kClean, "_api_key") ||
+		strings.HasSuffix(kClean, "_session") ||
+		strings.HasSuffix(kClean, "_auth") {
+		return true
+	}
+
+	return false
+}
+
+// HasSensitiveQueryParams analisa a query string de uma URL e verifica se contém
+// parâmetros sensíveis como tokens, senhas, chaves de API, assinaturas ou credenciais.
+// A verificação é fail-closed em caso de erro de parsing.
+func HasSensitiveQueryParams(u *url.URL) bool {
+	if u == nil || u.RawQuery == "" {
+		return false
+	}
+
+	values, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return true // Fail-closed em caso de query malformada ou erro de parsing
+	}
+
+	for k := range values {
+		if IsSensitiveQueryParamName(k) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SafeURL normaliza e sanitiza uma URL para serialização e exibição pública ou administrativa segura.
+// Exige esquema http ou https, hostname válido, ausência de credenciais embutidas (userinfo),
+// remove fragmentos (#...) e omite integralmente URLs que contenham parâmetros de consulta sensíveis
+// (tokens, senhas, chaves de API, assinaturas criptográficas ou URLs assinadas de provedores em nuvem).
+// Preserva links com parâmetros de consulta legítimos (como ?id=123, ?page=2, ?q=termo).
+// Em caso de URL inválida, vazia, insegura ou com parâmetros sensíveis, retorna string vazia "".
 func SafeURL(raw string) string {
 	cURL, err := CanonicalURL(raw)
 	if err != nil {
 		return ""
 	}
+
+	u, err := url.Parse(cURL)
+	if err != nil {
+		return ""
+	}
+
+	if HasSensitiveQueryParams(u) {
+		return ""
+	}
+
 	return cURL
 }
 

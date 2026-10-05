@@ -17,7 +17,7 @@ var (
 	openRouterRegex  = regexp.MustCompile(`sk-or-v1-[a-zA-Z0-9]+`)
 	emailRegex       = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
 	phoneRegex       = regexp.MustCompile(`(\+?[0-9]{1,3}[-.\s]?)?(\(?[0-9]{2,3}\)?[-.\s]?)?[0-9]{4,5}[-.\s]?[0-9]{4}`)
-	queryParamsRegex = regexp.MustCompile(`(?i)(token|key|secret|password|totp|auth|authorization|api_key|apikey|access_key|secret_key|session_id|mfa_key)=([^&\s]+)`)
+	queryParamsRegex = regexp.MustCompile(`(?i)(token|key|secret|password|totp|auth|authorization|session|session_id|session_token|api_key|apikey|api_token|access_key|secret_key|mfa_key|signature|sig|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential|client_secret|shared_secret)=([^&\s]+)`)
 	sigv4Regex       = regexp.MustCompile(`(?i)AWS4-HMAC-SHA256\s+Credential=[^,\s]+`)
 	bcryptRegex      = regexp.MustCompile(`\$2[abxy]?\$\d+\$[./A-Za-z0-9]{53}`)
 )
@@ -35,12 +35,16 @@ var sensitiveKeySubstrings = []string{
 	"auth",
 	"authorization",
 	"cookie",
+	"session",
 	"session_id",
 	"access_key",
 	"secret_key",
 	"contact_email",
 	"contact_phone",
 	"bearer",
+	"signature",
+	"sig",
+	"credential",
 }
 
 // isSensitiveKey verifica se a chave do atributo remete a dados confidenciais.

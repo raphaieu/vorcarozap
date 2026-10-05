@@ -589,17 +589,24 @@ func TestExecuteRunDefensiveValidationFailure(t *testing.T) {
 }
 
 func TestExecuteRunInvalidURLs(t *testing.T) {
-	invalidURLs := []string{
-		"ftp://servidor.com/arquivo",
-		"javascript:alert(1)",
-		"exemplo.com/sem-esquema",
-		"",
-		"   ",
-		"http:///sem-host",
+	invalidURLs := []struct {
+		name          string
+		rawURL        string
+		sensitivePart string
+	}{
+		{"ftp", "ftp://servidor.com/arquivo", ""},
+		{"javascript", "javascript:alert(1)", ""},
+		{"sem esquema", "exemplo.com/sem-esquema", ""},
+		{"vazia", "", ""},
+		{"espacos", "   ", ""},
+		{"sem host", "http:///sem-host", ""},
+		{"userinfo com senha privada", "https://admin:SECRET_PASSWORD_999@noticias.exemplo.com/materia", "SECRET_PASSWORD_999"},
+		{"url malformada com token", "https://noticias.exemplo.com/doc.pdf?token=SECRET_TOKEN_XYZ_888\x00malicious", "SECRET_TOKEN_XYZ_888"},
+		{"porta invalida com segredo", "https://exemplo.com:SEGREDO_PORTA_9999/documento", "SEGREDO_PORTA_9999"},
 	}
 
-	for _, rawURL := range invalidURLs {
-		t.Run("URL: "+rawURL, func(t *testing.T) {
+	for _, tt := range invalidURLs {
+		t.Run(tt.name, func(t *testing.T) {
 			db, ctx := setupTestDB(t)
 
 			mockProvider := &mockResearchProvider{
@@ -610,7 +617,7 @@ func TestExecuteRunInvalidURLs(t *testing.T) {
 								EntityName:          "Daniel Vorcaro",
 								Proposition:         "Proposição",
 								SuggestedGrade:      "A",
-								SourceURL:           rawURL,
+								SourceURL:           tt.rawURL,
 								TechnicalConfidence: 0.9,
 							},
 						},
@@ -633,7 +640,7 @@ func TestExecuteRunInvalidURLs(t *testing.T) {
 			}
 
 			if res.Status != "failed" {
-				t.Errorf("status esperado 'failed' para URL inválida %q, obtido %q", rawURL, res.Status)
+				t.Errorf("status esperado 'failed' para URL inválida %q, obtido %q", tt.rawURL, res.Status)
 			}
 
 			run, err := svc.GetRun(ctx, res.RunID)
@@ -642,6 +649,16 @@ func TestExecuteRunInvalidURLs(t *testing.T) {
 			}
 			if run.Status != "failed" {
 				t.Errorf("status no banco esperado 'failed', obtido %q", run.Status)
+			}
+
+			// Não deve vazar a URL bruta nem segredos em error_message ou technical_summary
+			if tt.sensitivePart != "" {
+				if strings.Contains(run.ErrorMessage.String, tt.sensitivePart) {
+					t.Errorf("vazamento de segredo em error_message: %q contém %q", run.ErrorMessage.String, tt.sensitivePart)
+				}
+				if strings.Contains(run.TechnicalSummary, tt.sensitivePart) {
+					t.Errorf("vazamento de segredo em technical_summary: %q contém %q", run.TechnicalSummary, tt.sensitivePart)
+				}
 			}
 
 			// Nenhum candidato deve ser gravado

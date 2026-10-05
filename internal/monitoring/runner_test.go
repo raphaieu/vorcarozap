@@ -707,3 +707,131 @@ func TestRunner_InvalidLocatorFailsRunStrictly(t *testing.T) {
 		t.Errorf("nenhum candidato deveria ter sido persistido para localizador malicioso, obtido %d", count)
 	}
 }
+
+func TestRunner_InvalidURL_DoesNotLeakSensitiveURLInError(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	queries := sqlc.New(db)
+	seedEntity(t, db, "ent-1", "Daniel Vorcaro", "person")
+	seedCase(t, db, "case-1", "Operação Master")
+
+	sensitiveToken := "SUPER_SECRET_RUNNER_TOKEN_9999"
+	badURL := "https://noticias.exemplo.com/doc.pdf?token=" + sensitiveToken + "\x00malicious"
+
+	provider := &mockResearchProvider{
+		discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+			return &research.DiscoverResult{
+				Candidates: []research.CandidateExtraction{
+					{
+						EntityName:          "Daniel Vorcaro",
+						CaseName:            "Operação Master",
+						RelationshipType:    "investigado",
+						Proposition:         "Investigado em inquérito",
+						SuggestedGrade:      "A",
+						SourceURL:           badURL,
+						SourceTitle:         "Inquérito Policial",
+						Excerpt:             "Conforme autos...",
+						Locator:             "Fls 10",
+						TechnicalConfidence: 0.95,
+					},
+				},
+				Model:            "openai/gpt-4.1-mini",
+				PromptTokens:     100,
+				CompletionTokens: 50,
+				TotalTokens:      150,
+				Cost:             0.001,
+				CostMicros:       1000,
+			}, nil
+		},
+	}
+
+	verifier := &mockSourceVerifier{}
+
+	runner, err := monitoring.NewRunner(monitoring.RunnerConfig{
+		DB:             db,
+		Provider:       provider,
+		SourceVerifier: verifier,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar Runner: %v", err)
+	}
+
+	summary, err := runner.Run(ctx, "pesquisa com URL malformada contendo token")
+	if err == nil {
+		t.Fatal("esperava erro decorrente de URL malformada")
+	}
+
+	if summary == nil {
+		t.Fatal("summary não deve ser nil mesmo em caso de falha")
+	}
+	if summary.Status != "failed" {
+		t.Errorf("status esperado 'failed', obtido %q", summary.Status)
+	}
+
+	// Verifica se a mensagem de erro ou resumo técnico expõe o token
+	if strings.Contains(summary.ErrorMessage, sensitiveToken) {
+		t.Errorf("vazamento de segredo no summary.ErrorMessage: %q", summary.ErrorMessage)
+	}
+	if strings.Contains(summary.TechnicalSummary, sensitiveToken) {
+		t.Errorf("vazamento de segredo no summary.TechnicalSummary: %q", summary.TechnicalSummary)
+	}
+
+	// Testa também URL com porta inválida contendo segredo
+	portSecret := "SECRET_PORT_TOKEN_7777"
+	badPortURL := "https://exemplo.com:" + portSecret + "/doc.pdf"
+
+	providerPort := &mockResearchProvider{
+		discoverFn: func(ctx context.Context, input research.DiscoverInput) (*research.DiscoverResult, error) {
+			return &research.DiscoverResult{
+				Candidates: []research.CandidateExtraction{
+					{
+						EntityName:          "Daniel Vorcaro",
+						CaseName:            "Operação Master",
+						RelationshipType:    "investigado",
+						Proposition:         "Investigado em inquérito com porta inválida",
+						SuggestedGrade:      "A",
+						SourceURL:           badPortURL,
+						SourceTitle:         "Inquérito",
+						Excerpt:             "Autos...",
+						TechnicalConfidence: 0.95,
+					},
+				},
+				Model:       "openai/gpt-4.1-mini",
+				TotalTokens: 100,
+			}, nil
+		},
+	}
+
+	runnerPort, err := monitoring.NewRunner(monitoring.RunnerConfig{
+		DB:             db,
+		Provider:       providerPort,
+		SourceVerifier: verifier,
+	})
+	if err != nil {
+		t.Fatalf("erro ao criar Runner para teste de porta: %v", err)
+	}
+
+	summaryPort, err := runnerPort.Run(ctx, "pesquisa com porta invalida")
+	if err == nil {
+		t.Fatal("esperava erro decorrente de porta inválida")
+	}
+	if summaryPort.Status != "failed" {
+		t.Errorf("status esperado 'failed', obtido %q", summaryPort.Status)
+	}
+	if strings.Contains(summaryPort.ErrorMessage, portSecret) {
+		t.Errorf("vazamento de portSecret em summaryPort.ErrorMessage: %q", summaryPort.ErrorMessage)
+	}
+	if strings.Contains(summaryPort.TechnicalSummary, portSecret) {
+		t.Errorf("vazamento de portSecret em summaryPort.TechnicalSummary: %q", summaryPort.TechnicalSummary)
+	}
+
+	runInDBPort, err := queries.GetMonitoringRunByID(ctx, summaryPort.RunID)
+	if err != nil {
+		t.Fatalf("falha ao consultar run da porta no banco: %v", err)
+	}
+	if runInDBPort.ErrorMessage.Valid && strings.Contains(runInDBPort.ErrorMessage.String, portSecret) {
+		t.Errorf("vazamento de portSecret em runInDBPort.ErrorMessage: %q", runInDBPort.ErrorMessage.String)
+	}
+	if strings.Contains(runInDBPort.TechnicalSummary, portSecret) {
+		t.Errorf("vazamento de portSecret em runInDBPort.TechnicalSummary: %q", runInDBPort.TechnicalSummary)
+	}
+}

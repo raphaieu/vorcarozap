@@ -178,12 +178,16 @@ func ToAdminDashboardVM(counts *sqlc.GetAdminOverviewCountsRow) AdminDashboardVM
 
 // ExternalLinkVM encapsula e higieniza links para recursos externos, prevenindo esquemas inseguros (ex: javascript:).
 type ExternalLinkVM struct {
-	RawURL  string // URL original bruta para exibição textual caso inválida
-	SafeURL string // URL absoluta http/https higienizada
-	IsValid bool   // Verdadeiro somente se a URL tiver esquema http/https, host não vazio e sem credenciais (userinfo)
+	RawURL  string // URL original bruta para exibição textual caso seja uma URL inválida mas sem dados sensíveis
+	SafeURL string // URL absoluta http/https higienizada e livre de parâmetros sensíveis
+	IsValid bool   // Verdadeiro somente se a URL for segura, válida e sem credenciais/tokens
 }
 
 // SanitizeExternalLink valida se uma URL é segura para navegação externa.
+//   - Se a URL contiver parâmetros de consulta sensíveis (tokens, senhas, chaves, assinaturas) ou credenciais (userinfo),
+//     omite integralmente o link (SafeURL e RawURL vazios, IsValid false) para não expor credenciais em HTML.
+//   - Se a URL for válida e segura (esquema http/https, host não vazio), retorna IsValid true com SafeURL higienizada.
+//   - Se a URL for inválida mas sem credenciais (ex: javascript:, ftp://), retorna IsValid false e preserva RawURL para exibição textual de diagnóstico.
 func SanitizeExternalLink(raw string) ExternalLinkVM {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -192,18 +196,27 @@ func SanitizeExternalLink(raw string) ExternalLinkVM {
 
 	u, err := url.Parse(trimmed)
 	if err != nil {
-		return ExternalLinkVM{RawURL: trimmed, SafeURL: "", IsValid: false}
+		return ExternalLinkVM{RawURL: "", SafeURL: "", IsValid: false}
+	}
+
+	// Rejeição incondicional de credenciais embutidas (userinfo) ou parâmetros de consulta sensíveis
+	if u.User != nil || normalize.HasSensitiveQueryParams(u) {
+		return ExternalLinkVM{RawURL: "", SafeURL: "", IsValid: false}
 	}
 
 	scheme := strings.ToLower(u.Scheme)
-	// Aceita exclusivamente http ou https absoluto, com host não-vazio e sem credenciais na URL (userinfo)
-	if (scheme != "http" && scheme != "https") || u.Host == "" || u.User != nil {
+	if (scheme != "http" && scheme != "https") || u.Host == "" {
 		return ExternalLinkVM{RawURL: trimmed, SafeURL: "", IsValid: false}
+	}
+
+	safe := normalize.SafeURL(trimmed)
+	if safe == "" {
+		return ExternalLinkVM{RawURL: "", SafeURL: "", IsValid: false}
 	}
 
 	return ExternalLinkVM{
 		RawURL:  trimmed,
-		SafeURL: u.String(),
+		SafeURL: safe,
 		IsValid: true,
 	}
 }
@@ -1524,7 +1537,7 @@ func ToAdminDefenseStatementDetailVM(detail *domain.AdminDefenseStatementDetail,
 		StatementTypeHuman: detail.StatementType.Label(),
 		Title:              detail.Title,
 		Content:            detail.Content,
-		SourceURL:          detail.SourceURL,
+		SourceURL:          normalize.SafeURL(detail.SourceURL),
 		ContactInfo:        detail.ContactInfo,
 		Status:             string(detail.Status),
 		StatusHuman:        detail.Status.Label(),

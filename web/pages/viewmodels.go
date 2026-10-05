@@ -296,8 +296,8 @@ func ToPublicSourceVM(row sqlc.ListPublicEvidenceSourcesByClaimIDRow) PublicSour
 		ID:                row.SourceID,
 		Title:             title,
 		PublisherOrAuthor: publisher,
-		OriginalURL:       row.OriginalUrl,
-		CanonicalURL:      row.CanonicalUrl,
+		OriginalURL:       normalize.SafeURL(row.OriginalUrl),
+		CanonicalURL:      normalize.SafeURL(row.CanonicalUrl),
 		PublishedAtHuman:  FormatDate(row.PublishedAt.String),
 		AccessedAtHuman:   FormatDate(row.AccessedAt.String),
 		SourceType:        string(st),
@@ -320,7 +320,7 @@ func ToPublicDefenseStatementVM(s domain.PublicDefenseStatement) PublicDefenseSt
 		StatementTypeHuman: s.StatementType.Label(),
 		Title:              s.Title,
 		Content:            s.Content,
-		SourceURL:          s.SourceURL,
+		SourceURL:          normalize.SafeURL(s.SourceURL),
 		CreatedAtHuman:     FormatDate(s.CreatedAt),
 	}
 }

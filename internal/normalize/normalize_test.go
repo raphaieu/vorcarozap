@@ -143,6 +143,11 @@ func TestCanonicalURL(t *testing.T) {
 			input:       "https://admin@noticias.exemplo.com/materia",
 			expectError: true,
 		},
+		{
+			name:        "Porta inválida com potencial segredo",
+			input:       "https://exemplo.com:SEGREDO/documento",
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -164,15 +169,181 @@ func TestCanonicalURL(t *testing.T) {
 	}
 }
 
+func TestIsSensitiveQueryParamName(t *testing.T) {
+	tests := []struct {
+		paramName string
+		sensitive bool
+	}{
+		// Legítimos
+		{"id", false},
+		{"page", false},
+		{"q", false},
+		{"search", false},
+		{"category", false},
+		{"sort", false},
+		{"dir", false},
+		{"order", false},
+		{"ref", false},
+		{"utm_source", false},
+		{"utm_medium", false},
+		{"tab", false},
+		{"year", false},
+		{"month", false},
+		{"view", false},
+		{"format", false},
+
+		// Tokens & Auth
+		{"token", true},
+		{"TOKEN", true},
+		{"Token", true},
+		{"session", true},
+		{"SESSION", true},
+		{"Session", true},
+		{"session_token", true},
+		{"session-token", true},
+		{"session_id", true},
+		{"sessionid", true},
+		{"api_token", true},
+		{"api-token", true},
+		{"apitoken", true},
+		{"bearer", true},
+		{"bearer_token", true},
+		{"access_token", true},
+		{"access-token", true},
+		{"accessToken", true},
+		{"auth_token", true},
+		{"authtoken", true},
+		{"id_token", true},
+		{"refresh_token", true},
+		{"jwt", true},
+		{"JWT", true},
+		{"auth", true},
+		{"authorization", true},
+		{"code", true},
+		{"assertion", true},
+		{"passcode", true},
+		{"otp", true},
+		{"cf_token", true},
+		{"token_hash", true},
+		{"secure_token", true},
+		{"user_token", true},
+		{"download_token", true},
+		{"user_session", true},
+
+		// Passwords & Secrets
+		{"password", true},
+		{"PASSWORD", true},
+		{"pass", true},
+		{"passwd", true},
+		{"pwd", true},
+		{"secret", true},
+		{"SECRET", true},
+		{"api_secret", true},
+		{"client_secret", true},
+		{"client-secret", true},
+		{"shared_secret", true},
+		{"credential", true},
+		{"credentials", true},
+		{"admin_password", true},
+		{"master_secret", true},
+
+		// Keys
+		{"key", true},
+		{"KEY", true},
+		{"apikey", true},
+		{"apiKey", true},
+		{"api_key", true},
+		{"API_KEY", true},
+		{"api-key", true},
+		{"access_key", true},
+		{"access-key", true},
+		{"secret_key", true},
+		{"app_key", true},
+		{"private_key", true},
+		{"custom_apikey", true},
+		{"service_api_key", true},
+
+		// Signatures & Cloud Signed URLs
+		{"signature", true},
+		{"SIGNATURE", true},
+		{"sig", true},
+		{"SIG", true},
+		{"sign", true},
+		{"signed_url", true},
+		{"hmac", true},
+		{"HMAC", true},
+		{"x-amz-signature", true},
+		{"X-Amz-Signature", true},
+		{"x_amz_signature", true},
+		{"X-Amz-Credential", true},
+		{"x-amz-security-token", true},
+		{"x-amz-algorithm", true},
+		{"x-amz-date", true},
+		{"x-goog-signature", true},
+		{"X-Goog-Signature", true},
+		{"x-goog-credential", true},
+		{"x-goog-security-token", true},
+		{"x-goog-algorithm", true},
+		{"request_signature", true},
+		{"url_sig", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.paramName, func(t *testing.T) {
+			got := IsSensitiveQueryParamName(tt.paramName)
+			if got != tt.sensitive {
+				t.Errorf("IsSensitiveQueryParamName(%q) = %v; esperado %v", tt.paramName, got, tt.sensitive)
+			}
+		})
+	}
+}
+
 func TestSafeURL(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected string
 	}{
-		{"URL válida", "https://example.com/noticia", "https://example.com/noticia"},
-		{"URL com fragmento", "https://example.com/noticia#token=123", "https://example.com/noticia"},
-		{"URL com credenciais", "https://user:pass@example.com/noticia", ""},
+		// URLs Válidas sem parâmetros sensíveis
+		{"URL simples válida", "https://example.com/noticia", "https://example.com/noticia"},
+		{"URL com query legítima id e page", "https://example.com/noticia?id=123&page=2", "https://example.com/noticia?id=123&page=2"},
+		{"URL com busca e ordenação legítimas", "https://g1.globo.com/busca/?q=vorcaro&order=recent", "https://g1.globo.com/busca/?q=vorcaro&order=recent"},
+		{"URL com múltiplos parâmetros legítimos e UTM", "https://noticias.com/artigo?categoria=economia&ano=2026&utm_source=twitter&ref=share", "https://noticias.com/artigo?categoria=economia&ano=2026&utm_source=twitter&ref=share"},
+		{"URL com fragmento removido e query preservada", "https://example.com/noticia?id=100#secao-1", "https://example.com/noticia?id=100"},
+		{"URL com porta não-padrão e query", "https://api.example.com:8443/doc?view=summary", "https://api.example.com:8443/doc?view=summary"},
+
+		// URLs com parâmetros de credenciais / tokens (devem ser omitidas -> "")
+		{"URL com token em query", "https://example.com/documento.pdf?token=secret123", ""},
+		{"URL com token em maiúsculas", "https://example.com/documento.pdf?TOKEN=secret123", ""},
+		{"URL com token percent-encoded", "https://example.com/documento.pdf?%74%6f%6b%65%6e=secret123", ""},
+		{"URL com token sem valor", "https://example.com/documento.pdf?token", ""},
+		{"URL com session em query", "https://example.com/area?session=valor_ficticio", ""},
+		{"URL com SESSION em maiúsculas", "https://example.com/area?SESSION=valor_ficticio", ""},
+		{"URL com api_token", "https://example.com/dados?api_token=xyz123", ""},
+		{"URL com bearer", "https://example.com/dados?bearer=token_abc", ""},
+		{"URL com access_token", "https://example.com/doc.pdf?access_token=xyz987", ""},
+		{"URL com auth_token e id legítimo", "https://example.com/doc.pdf?id=123&auth_token=xyz", ""},
+		{"URL com apiKey", "https://example.com/dados?apiKey=secret_key_123", ""},
+		{"URL com api_key em maiúsculas", "https://example.com/dados?API_KEY=secret_key_123", ""},
+		{"URL com api-key codificado %5F", "https://example.com/dados?api%5fkey=secret_key_123", ""},
+		{"URL com password em query", "https://example.com/area?password=minhasenha", ""},
+		{"URL com secret em query", "https://example.com/api?secret=supersecret", ""},
+		{"URL com JWT em query", "https://example.com/relatorio?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", ""},
+		{"URL com auth em query", "https://example.com/relatorio?auth=bearer123", ""},
+
+		// URLs assinadas de provedores (AWS S3, GCP Storage, Azure SAS)
+		{"AWS S3 Presigned URL (X-Amz-Signature)", "https://s3.amazonaws.com/bucket/doc.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20260903%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260903T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=abcdef1234567890", ""},
+		{"GCP Cloud Storage Signed URL (x-goog-signature)", "https://storage.googleapis.com/meu-bucket/laudo.pdf?x-goog-signature=fedcba0987654321&x-goog-algorithm=GOOG4-RSA-SHA256", ""},
+		{"Azure Blob SAS URL (sig)", "https://storageacct.blob.core.windows.net/docs/pericia.pdf?sp=r&st=2026-09-03T00:00:00Z&se=2026-09-04T00:00:00Z&spr=https&sv=2020-08-04&sr=b&sig=M3V4c3NpZ25hdHVyZTEyMw%3D%3D", ""},
+		{"URL com hmac genérico", "https://cdn.exemplo.com/arquivo.pdf?hmac=987654321abcdef", ""},
+		{"URL com download_token", "https://downloads.exemplo.com/peça.pdf?download_token=abc123xyz", ""},
+
+		// Delimitadores alternativos e formatações
+		{"Query com ponto e vírgula e token", "https://example.com/noticia?id=123;token=secret", ""},
+		{"Query malformada com percent inválido (fail-closed)", "https://example.com/noticia?%ZZ=123", ""},
+
+		// Casos de segurança e validação básica já existentes
+		{"URL com credenciais no userinfo", "https://user:pass@example.com/noticia", ""},
 		{"Esquema javascript", "javascript:alert(1)", ""},
 		{"Esquema data", "data:text/html,<html>", ""},
 		{"Esquema ftp", "ftp://example.com/file", ""},

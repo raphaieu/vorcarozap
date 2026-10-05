@@ -87,6 +87,37 @@ func TestSanitizedHandler_StringContentSanitization(t *testing.T) {
 	}
 }
 
+func TestSanitizedHandler_URLQueryParamsRedaction(t *testing.T) {
+	var buf bytes.Buffer
+	innerHandler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	sanitizedHandler := observability.NewSanitizedHandler(innerHandler)
+	logger := slog.New(sanitizedHandler)
+
+	logger.Info("requisição externa processada",
+		"url_externa", "https://s3.amazonaws.com/bucket/doc.pdf?X-Amz-Signature=sig123456&X-Amz-Credential=cred987&token=sec999&api_key=key456&session=sess_val_999",
+		"erro_com_url", "falha ao acessar https://blob.core.windows.net/docs/laudo.pdf?sig=super_secret_sig",
+	)
+
+	out := buf.String()
+
+	if strings.Contains(out, "sig123456") || strings.Contains(out, "cred987") || strings.Contains(out, "sec999") || strings.Contains(out, "key456") || strings.Contains(out, "sess_val_999") || strings.Contains(out, "super_secret_sig") {
+		t.Errorf("vazamento de parâmetros sensíveis detectado no log: %s", out)
+	}
+
+	if !strings.Contains(out, "X-Amz-Signature=[REDACTED]") {
+		t.Errorf("esperava X-Amz-Signature=[REDACTED], obtido: %s", out)
+	}
+	if !strings.Contains(out, "token=[REDACTED]") {
+		t.Errorf("esperava token=[REDACTED], obtido: %s", out)
+	}
+	if !strings.Contains(out, "session=[REDACTED]") {
+		t.Errorf("esperava session=[REDACTED], obtido: %s", out)
+	}
+	if !strings.Contains(out, "sig=[REDACTED]") {
+		t.Errorf("esperava sig=[REDACTED], obtido: %s", out)
+	}
+}
+
 func TestMetricsRegistry_ConcurrentAccess(t *testing.T) {
 	registry := observability.NewMetricsRegistry()
 

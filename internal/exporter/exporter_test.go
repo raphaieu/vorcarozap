@@ -462,3 +462,122 @@ func TestExporter_ImmediateInvalidationAfterModeration(t *testing.T) {
 		t.Errorf("f3 Alegações: claim restaurado para quarentena vazou na exportação (linhas: %d)", len(claimRows3))
 	}
 }
+
+func TestExporter_SensitiveURLOmission(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Cria entidade pública com alegação publicada e duas fontes:
+	// 1. Fonte com parâmetros sensíveis (?token=segredo123&X-Amz-Signature=abc)
+	// 2. Fonte com parâmetros legítimos (?id=42&page=1)
+	entID := uuid.NewString()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO cases (id, name, slug, description)
+		VALUES ('case-test', 'Caso Teste', 'caso-teste', 'Descrição do caso de teste');
+
+		INSERT INTO entities (id, type, name, normalized_name, slug, category, role_or_context, reach, summary, relevance, relevance_rationale)
+		VALUES (?, 'person', 'Pessoa Teste URL', 'pessoa teste url', 'pessoa-teste-url', 'Outros', 'Função', 'Nacional', 'Resumo', 3, 'Justificativa');
+	`, entID)
+	if err != nil {
+		t.Fatalf("falha ao inserir entidade: %v", err)
+	}
+
+	relID := uuid.NewString()
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO relationships (id, subject_entity_id, case_id, relationship_type, summary)
+		VALUES (?, ?, 'case-test', 'contato', 'Resumo relação')
+	`, relID, entID)
+	if err != nil {
+		t.Fatalf("falha ao inserir relação: %v", err)
+	}
+
+	claimID := uuid.NewString()
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO claims (id, relationship_id, proposition, attribution, origin, grade, disposition, metric_eligible, status, context_status, quarantine_reasons)
+		VALUES (?, ?, 'Proposição com fontes variadas', '', 'curated_seed', 'A', 'supports_link', 1, 'published', 'contact_confirmed', '[]')
+	`, claimID, relID)
+	if err != nil {
+		t.Fatalf("falha ao inserir claim: %v", err)
+	}
+
+	evID := uuid.NewString()
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO evidence (id, claim_id, summary, evidence_type)
+		VALUES (?, ?, 'Evidência comparativa', 'document')
+	`, evID, claimID)
+	if err != nil {
+		t.Fatalf("falha ao inserir evidência: %v", err)
+	}
+
+	srcSensitiveID := uuid.NewString()
+	srcLegitID := uuid.NewString()
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO sources (id, title, publisher_or_author, original_url, canonical_url, source_type, source_access_status)
+		VALUES
+			(?, 'Documento com Token Privado', 'Arquivo Confidencial', 'https://storage.exemplo.com/doc.pdf?token=segredo123&X-Amz-Signature=abc', 'https://storage.exemplo.com/doc.pdf?token=segredo123&x_amz_signature=abc', 'court_document', 'reachable'),
+			(?, 'Notícia com Query Legítima', 'Jornal Aberto', 'https://jornal.com/artigo?id=42&page=1', 'https://jornal.com/artigo?id=42&page=1', 'article', 'reachable')
+	`, srcSensitiveID, srcLegitID)
+	if err != nil {
+		t.Fatalf("falha ao inserir sources: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO evidence_sources (id, evidence_id, source_id, excerpt, locator, role, status)
+		VALUES
+			(?, ?, ?, 'Trecho sensível', 'Pág. 1', 'supports', 'active'),
+			(?, ?, ?, 'Trecho legítimo', 'Pág. 2', 'supports', 'active')
+	`, uuid.NewString(), evID, srcSensitiveID, uuid.NewString(), evID, srcLegitID)
+	if err != nil {
+		t.Fatalf("falha ao inserir evidence_sources: %v", err)
+	}
+
+	exp := exporter.New(db, "2026-09-03")
+	var buf bytes.Buffer
+	if err := exp.WriteTo(ctx, &buf); err != nil {
+		t.Fatalf("falha em WriteTo: %v", err)
+	}
+
+	f, err := excelize.OpenReader(&buf)
+	if err != nil {
+		t.Fatalf("falha ao abrir XLSX: %v", err)
+	}
+	defer f.Close()
+
+	sourceRows, err := f.GetRows(exporter.SheetSources)
+	if err != nil {
+		t.Fatalf("falha ao ler linhas de Fontes: %v", err)
+	}
+
+	// Linha 1 = Cabeçalho; Linhas 2 e 3 = as 2 fontes
+	if len(sourceRows) != 3 {
+		t.Fatalf("esperado 3 linhas na aba Fontes, obtido %d", len(sourceRows))
+	}
+
+	foundSensitive := false
+	foundLegit := false
+
+	for _, r := range sourceRows[1:] {
+		title := r[8]
+		canonicalURL := r[10]
+
+		if title == "Documento com Token Privado" {
+			foundSensitive = true
+			if canonicalURL != "" {
+				t.Errorf("URL com token privado deveria estar vazia no XLSX, obtido %q", canonicalURL)
+			}
+		}
+
+		if title == "Notícia com Query Legítima" {
+			foundLegit = true
+			expected := "https://jornal.com/artigo?id=42&page=1"
+			if canonicalURL != expected {
+				t.Errorf("URL com query legítima esperada %q, obtido %q", expected, canonicalURL)
+			}
+		}
+	}
+
+	if !foundSensitive || !foundLegit {
+		t.Errorf("faltou validar alguma das fontes: sensitive=%v, legit=%v", foundSensitive, foundLegit)
+	}
+}

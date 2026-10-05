@@ -171,7 +171,7 @@ func (s *Service) ExecuteRun(ctx context.Context, input RunInput) (*RunResult, e
 		canonicalURL, urlErr := normalize.CanonicalURL(rawCand.SourceURL)
 		if urlErr != nil {
 			return s.failRun(ctx, queries, runID, run.CreatedAt,
-				fmt.Errorf("monitoring: candidato[%d] com URL inválida %q: %w", i, rawCand.SourceURL, urlErr),
+				fmt.Errorf("monitoring: candidato[%d] com URL inválida: %w", i, urlErr),
 				"Falha na normalização da URL da fonte")
 		}
 

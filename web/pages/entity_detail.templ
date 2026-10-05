@@ -168,14 +168,16 @@ templ EntityDetail(vm EntityDetailVM) {
 														<a href={ templ.SafeURL("/documentos/" + src.ID) } class="source-external-link" style="color: var(--color-primary); font-weight: 500;">
 															Ver contexto documental &rarr;
 														</a>
-														<span style="color: var(--color-border);">&bull;</span>
-														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
-															if src.IsPrimaryDocument {
-																Acessar documento oficial original &nearr;
-															} else {
-																Acessar documento/fonte original &nearr;
-															}
-														</a>
+														if src.CanonicalURL != "" {
+															<span style="color: var(--color-border);">&bull;</span>
+															<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+																if src.IsPrimaryDocument {
+																	Acessar documento oficial original &nearr;
+																} else {
+																	Acessar documento/fonte original &nearr;
+																}
+															</a>
+														}
 													</div>
 												</li>
 											}
@@ -230,10 +232,12 @@ templ EntityDetail(vm EntityDetailVM) {
 														<a href={ templ.SafeURL("/documentos/" + src.ID) } class="source-external-link" style="color: var(--color-primary); font-weight: 500;">
 															Ver contexto documental &rarr;
 														</a>
-														<span style="color: var(--color-border);">&bull;</span>
-														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
-															Consultar manifestação na íntegra &nearr;
-														</a>
+														if src.CanonicalURL != "" {
+															<span style="color: var(--color-border);">&bull;</span>
+															<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+																Consultar manifestação na íntegra &nearr;
+															</a>
+														}
 													</div>
 												</li>
 											}
@@ -285,10 +289,12 @@ templ EntityDetail(vm EntityDetailVM) {
 														<a href={ templ.SafeURL("/documentos/" + src.ID) } class="source-external-link" style="color: var(--color-primary); font-weight: 500;">
 															Ver contexto documental &rarr;
 														</a>
-														<span style="color: var(--color-border);">&bull;</span>
-														<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
-															Consultar documento de contexto &nearr;
-														</a>
+														if src.CanonicalURL != "" {
+															<span style="color: var(--color-border);">&bull;</span>
+															<a href={ templ.SafeURL(src.CanonicalURL) } target="_blank" rel="noopener noreferrer" class="source-external-link">
+																Consultar documento de contexto &nearr;
+															</a>
+														}
 													</div>
 												</li>
 											}
